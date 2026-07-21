@@ -1331,6 +1331,40 @@ class NavidromeClient:
         except Exception as e:
             raise Exception(f"Unexpected error updating playlist: {e}")
     
+    async def update_playlist_metadata(self, playlist_id: str, name: str = None, comment: str = None, is_public: bool = None) -> bool:
+        """Update a playlist's name, description/comment, and visibility in Navidrome if supported."""
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["playlistId"] = playlist_id
+            if name is not None:
+                params["name"] = name
+            if comment is not None:
+                params["comment"] = comment
+            if is_public is not None:
+                params["public"] = "true" if is_public else "false"
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/updatePlaylist.view",
+                params=params
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Failed to update playlist metadata: {error.get('message', 'Unknown error')}")
+
+            return True
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error updating playlist metadata: {e}")
+
     async def delete_playlist(self, playlist_id: str) -> bool:
         """Delete a playlist from Navidrome
         

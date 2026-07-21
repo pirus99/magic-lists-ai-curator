@@ -1,9 +1,12 @@
 // Global state for artist selection
 let selectedArtistId = null;
 let selectedGenres = [];
+let editSelectedGenres = [];
 let allArtists = [];
 let allGenres = [];
 let currentToast = null;
+let editGenreSettings = null;
+let editBlacklistArtistsLoaded = false;
 
 // Global state for library selection
 let selectedLibraryIds = [];
@@ -152,6 +155,23 @@ window.addEventListener('resize', function() {
         sidebarOverlay.classList.add('hidden');
     }
 });
+
+// Edit modal overlay click-to-close
+const editModalOverlay = document.getElementById('edit-modal-overlay');
+const editModal = document.getElementById('edit-modal');
+if (editModalOverlay) {
+    editModalOverlay.addEventListener('click', function() {
+        closeEditModal();
+    });
+}
+if (editModal) {
+    editModal.addEventListener('click', function(event) {
+        // Close only when clicking the backdrop, not the inner panel
+        if (event.target === editModal) {
+            closeEditModal();
+        }
+    });
+}
 
 // Sidebar navigation active state management
 function setActiveMenuItem(page) {
@@ -550,14 +570,13 @@ function handleGenreSelection(e) {
 // NOTE: HSSelect skips disabled <option> elements, so we inject the message as a
 // standalone element directly into the HSSelect dropdown panel instead of as an option.
 const BLACKLIST_PLACEHOLDER_ID = 'genre-blacklist-placeholder';
+const EDIT_BLACKLIST_PLACEHOLDER_ID = 'edit-genre-blacklist-placeholder';
 function showBlacklistPlaceholder() {
     const blacklistSelect = document.getElementById('genre-blacklist-select');
     if (!blacklistSelect) return;
 
-    // Remove any previously injected placeholder first
     removeBlacklistPlaceholder();
 
-    // Locate the HSSelect dropdown panel
     let panel = null;
     if (window.HSSelect) {
         const selectInstance = window.HSSelect.getInstance(blacklistSelect);
@@ -565,9 +584,28 @@ function showBlacklistPlaceholder() {
     }
     if (!panel) return;
 
-    // Inject the placeholder element at the bottom of the panel (after the search box)
     const placeholder = document.createElement('div');
     placeholder.id = BLACKLIST_PLACEHOLDER_ID;
+    placeholder.className = 'px-4 py-3 text-sm text-gray-400 italic';
+    placeholder.textContent = 'Click Refresh to load Artists for selected Genres';
+    panel.appendChild(placeholder);
+}
+
+function showEditBlacklistPlaceholder() {
+    const blacklistSelect = document.getElementById('edit-genre-blacklist-select');
+    if (!blacklistSelect) return;
+
+    removeEditBlacklistPlaceholder();
+
+    let panel = null;
+    if (window.HSSelect) {
+        const selectInstance = window.HSSelect.getInstance(blacklistSelect);
+        panel = selectInstance ? selectInstance.dropdown : null;
+    }
+    if (!panel) return;
+
+    const placeholder = document.createElement('div');
+    placeholder.id = EDIT_BLACKLIST_PLACEHOLDER_ID;
     placeholder.className = 'px-4 py-3 text-sm text-gray-400 italic';
     placeholder.textContent = 'Click Refresh to load Artists for selected Genres';
     panel.appendChild(placeholder);
@@ -578,12 +616,16 @@ function removeBlacklistPlaceholder() {
     if (existing) existing.remove();
 }
 
+function removeEditBlacklistPlaceholder() {
+    const existing = document.getElementById(EDIT_BLACKLIST_PLACEHOLDER_ID);
+    if (existing) existing.remove();
+}
+
 // Load artists for blacklist dropdown (filtered by selected genres)
 let blacklistArtistsLoaded = false;
 async function loadBlacklistArtists(force = false) {
     if (blacklistArtistsLoaded && !force) return;
     
-    // Show loading spinner, hide fetch button
     const fetchBtn = document.getElementById('genre-fetch-artists-btn');
     const fetchSpinner = document.getElementById('genre-fetch-artists-spinner');
     if (fetchBtn) fetchBtn.classList.add('hidden');
@@ -608,15 +650,12 @@ async function loadBlacklistArtists(force = false) {
 
         const blacklistSelect = document.getElementById('genre-blacklist-select');
         if (blacklistSelect) {
-            // Clear all existing options (including any placeholder)
             while (blacklistSelect.options.length > 0) {
                 blacklistSelect.remove(0);
             }
 
-            // Remove the injected placeholder message
             removeBlacklistPlaceholder();
 
-            // Add artist options
             artists.forEach(artist => {
                 const option = document.createElement('option');
                 option.value = artist.name;
@@ -624,7 +663,6 @@ async function loadBlacklistArtists(force = false) {
                 blacklistSelect.appendChild(option);
             });
 
-            // Reinitialize the HSSelect component
             if (window.HSSelect) {
                 const selectInstance = window.HSSelect.getInstance(blacklistSelect);
                 if (selectInstance) {
@@ -639,10 +677,98 @@ async function loadBlacklistArtists(force = false) {
         console.error('Error loading blacklist artists:', error);
         showToast('error', 'Failed to load artists for blacklist');
     } finally {
-        // Hide loading spinner, show fetch button
         if (fetchBtn) fetchBtn.classList.remove('hidden');
         if (fetchSpinner) fetchSpinner.classList.add('hidden');
     }
+}
+
+async function loadEditBlacklistArtists(force = false) {
+    if (editBlacklistArtistsLoaded && !force) return;
+
+    const fetchBtn = document.getElementById('edit-genre-fetch-artists-btn');
+    const fetchSpinner = document.getElementById('edit-genre-fetch-artists-spinner');
+    if (fetchBtn) fetchBtn.classList.add('hidden');
+    if (fetchSpinner) fetchSpinner.classList.remove('hidden');
+
+    try {
+        if (editSelectedGenres.length === 0) {
+            showToast('error', 'Please select genres first');
+            return;
+        }
+
+        let url = `/api/artists-by-genre?${editSelectedGenres.map(g => `genres=${encodeURIComponent(g)}`).join('&')}`;
+        if (selectedLibraryIds.length > 0) {
+            const libraryIdsParam = selectedLibraryIds.map(id => `library_id=${encodeURIComponent(id)}`).join('&');
+            url += `&${libraryIdsParam}`;
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error('Failed to fetch artists');
+        }
+        const artists = await response.json();
+
+        const blacklistSelect = document.getElementById('edit-genre-blacklist-select');
+        if (blacklistSelect) {
+            const previouslySelected = Array.from(blacklistSelect.options)
+                .filter(opt => opt.selected)
+                .map(opt => opt.value);
+
+            while (blacklistSelect.options.length > 0) {
+                blacklistSelect.remove(0);
+            }
+
+            removeEditBlacklistPlaceholder();
+
+            artists.forEach(artist => {
+                const option = document.createElement('option');
+                option.value = artist.name;
+                option.textContent = artist.name;
+                if (previouslySelected.includes(artist.name)) {
+                    option.selected = true;
+                }
+                blacklistSelect.appendChild(option);
+            });
+
+            if (window.HSSelect) {
+                const selectInstance = window.HSSelect.getInstance(blacklistSelect);
+                if (selectInstance) {
+                    selectInstance.destroy();
+                }
+                window.HSSelect.autoInit();
+            }
+
+            editBlacklistArtistsLoaded = true;
+            syncEditBlacklistToggleColor();
+        }
+    } catch (error) {
+        console.error('Error loading edit blacklist artists:', error);
+        showToast('error', 'Failed to load artists for exclude list');
+    } finally {
+        if (fetchBtn) fetchBtn.classList.remove('hidden');
+        if (fetchSpinner) fetchSpinner.classList.add('hidden');
+    }
+}
+
+function editHandleGenreSelection(e) {
+    const selectedOptions = Array.from(e.target.selectedOptions).map(option => option.value);
+    editSelectedGenres = selectedOptions;
+    editBlacklistArtistsLoaded = false;
+    showEditBlacklistPlaceholder();
+
+    const blacklistSelect = document.getElementById('edit-genre-blacklist-select');
+    if (blacklistSelect) {
+        Array.from(blacklistSelect.options).forEach(opt => { opt.selected = false; });
+    }
+    syncEditBlacklistToggleColor();
+}
+
+function syncEditBlacklistToggleColor() {
+    const blacklistSelect = document.getElementById('edit-genre-blacklist-select');
+    if (!blacklistSelect) return;
+    const hasSelection = Array.from(blacklistSelect.options).some(opt => opt.selected);
+    const toggle = blacklistSelect.closest('.hs-select')?.querySelector('.blacklist-toggle');
+    if (toggle) toggle.classList.toggle('has-value', hasSelection);
 }
 
 // Toggle the blacklist filter's toggle text color (gray -> black) based on
@@ -1319,13 +1445,36 @@ function renderPlaylists(playlists) {
                     </div>
                     ${playlist.description ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${truncateText(playlist.description, 140)}</p>` : ''}
                 </div>
-                <div class="flex-none">
-                    <button
-                        onclick="deletePlaylist(${playlist.id}, '${playlist.playlist_name}')"
-                        class="text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 px-2 py-1"
-                    >
-                        Delete
-                    </button>
+                <div class="flex-none flex flex-col items-end gap-1">
+                    <div class="flex items-center gap-1">
+                        <button
+                            onclick="refreshPlaylist(${playlist.id})"
+                            data-refresh-btn="${playlist.id}"
+                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 px-2 py-1"
+                        >
+                            <svg data-refresh-icon="${playlist.id}" class="size-3.5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 19v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/></svg>
+                            <span data-refresh-label="${playlist.id}">Refresh</span>
+                        </button>
+
+                        <button
+                            onclick="openEditModal(${playlist.id})"
+                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 px-2 py-1"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 20h9"/>
+                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                            </svg>
+                            <span>Edit</span>
+                        </button>
+
+                        <button
+                            onclick="deletePlaylist(${playlist.id}, '${playlist.playlist_name.replace(/'/g, "\\'")}')"
+                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 px-2 py-1"
+                        >
+                            <svg class="size-3.5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h6c1 0 2 1 2 2v2M8 10v10M12 10v10M16 10v10"/></svg>
+                            <span>Delete</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -1357,6 +1506,354 @@ async function deletePlaylist(playlistId, playlistName) {
     } catch (error) {
         console.error('Error deleting playlist:', error);
         showToast('error', error.message);
+    }
+}
+
+// Manually refresh a playlist from its saved curation settings
+async function refreshPlaylist(playlistId) {
+    if (!playlistId) {
+        showToast('error', 'Unable to refresh playlist because no playlist ID was provided.');
+        return;
+    }
+
+    const btn = document.querySelector(`[data-refresh-btn="${playlistId}"]`);
+    const icon = document.querySelector(`[data-refresh-icon="${playlistId}"]`);
+    const label = document.querySelector(`[data-refresh-label="${playlistId}"]`);
+
+    // Enter loading state
+    if (btn) btn.disabled = true;
+    if (icon) icon.classList.add('animate-spin');
+    if (label) label.textContent = 'Refreshing...';
+
+    try {
+        const response = await fetch(`/api/playlists/${playlistId}/refresh`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            throw new Error(errorData.detail || 'Failed to refresh playlist');
+        }
+
+        showToast('success', 'Playlist refreshed successfully');
+        loadPlaylists();
+        updatePlaylistCount();
+    } catch (error) {
+        console.error('Error refreshing playlist:', error);
+        showToast('error', error.message);
+    } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('animate-spin');
+        if (label) label.textContent = 'Refresh';
+    }
+}
+
+// Open the Edit modal for a playlist, prefilling its saved curation settings
+let currentEditPlaylistId = null;
+async function openEditModal(playlistId) {
+    try {
+        const response = await fetch(`/api/playlists/${playlistId}`);
+        if (!response.ok) {
+            throw new Error('Failed to load playlist settings');
+        }
+        const playlist = await response.json();
+        currentEditPlaylistId = playlistId;
+
+        const type = playlist.playlist_type || 'this_is';
+        const settings = playlist.curation_settings || {};
+
+        // Header
+        document.getElementById('edit-modal-title').textContent = playlist.playlist_name || 'Edit Playlist';
+        document.getElementById('edit-modal-type').textContent = typeLabel(type);
+        document.getElementById('edit-modal-type-value').value = type;
+
+        // Common: playlist metadata
+        document.getElementById('edit-playlist-name').value = playlist.playlist_name || '';
+        document.getElementById('edit-playlist-description').value = playlist.description || '';
+        document.getElementById('edit-playlist-public').checked = Boolean(playlist.is_public ?? playlist.public ?? false);
+
+        // Common: playlist length
+        const length = settings.playlist_length || playlist.playlist_length || 25;
+        document.querySelectorAll('input[name="edit-playlist-length"]').forEach(r => {
+            r.checked = (parseInt(r.value, 10) === parseInt(length, 10));
+        });
+
+        // Common: refresh frequency
+        const freq = settings.refresh_frequency || playlist.refresh_frequency || 'none';
+        document.querySelectorAll('input[name="edit-refresh-frequency"]').forEach(r => {
+            r.checked = (r.value === freq);
+        });
+
+        // Type-specific sections
+        const thisIsSection = document.getElementById('edit-this-is-section');
+        const genreSection = document.getElementById('edit-genre-section');
+        const rediscoverSection = document.getElementById('edit-rediscover-section');
+
+        if (type === 'genre_mix') {
+            thisIsSection.classList.add('hidden');
+            rediscoverSection.classList.add('hidden');
+            genreSection.classList.remove('hidden');
+            editGenreSettings = settings || {};
+            if (allGenres.length === 0) {
+                await loadGenres();
+            }
+            await populateEditGenreModal(settings);
+        } else if (type === 'this_is') {
+            genreSection.classList.add('hidden');
+            rediscoverSection.classList.add('hidden');
+            thisIsSection.classList.remove('hidden');
+            editGenreSettings = null;
+            document.getElementById('edit-this-is-artist').textContent = settings.artist_name || settings.artist_id || 'Unknown';
+            document.getElementById('edit-this-is-artist-id').value = settings.artist_id || '';
+            document.getElementById('edit-this-is-library-ids').value = JSON.stringify(settings.library_ids || []);
+        } else {
+            // rediscover / rediscover_weekly_v2
+            thisIsSection.classList.add('hidden');
+            genreSection.classList.add('hidden');
+            rediscoverSection.classList.remove('hidden');
+            document.getElementById('edit-rediscover-library-ids').value = JSON.stringify(settings.library_ids || []);
+        }
+
+        // Show modal
+        document.getElementById('edit-modal-overlay').classList.remove('hidden');
+        document.getElementById('edit-modal').classList.remove('hidden');
+    } catch (error) {
+        console.error('Error opening edit modal:', error);
+        showToast('error', error.message);
+    }
+}
+
+function closeEditModal() {
+    document.getElementById('edit-modal-overlay').classList.add('hidden');
+    document.getElementById('edit-modal').classList.add('hidden');
+    currentEditPlaylistId = null;
+}
+
+function typeLabel(type) {
+    switch (type) {
+        case 'genre_mix': return 'Genre Mix';
+        case 'this_is': return 'This Is';
+        case 'rediscover_weekly_v2': return 'Re-Discover';
+        case 'rediscover': return 'Re-Discover';
+        default: return type;
+    }
+}
+
+// Populate the genre-specific fields in the edit modal
+async function populateEditGenreModal(settings) {
+    const genres = settings.genres || [];
+    const genreSelect = document.getElementById('edit-genre-select');
+
+    if (genreSelect) {
+        if (window.HSSelect) {
+            const existingInstance = window.HSSelect.getInstance(genreSelect);
+            if (existingInstance) {
+                existingInstance.destroy();
+            }
+        }
+
+        while (genreSelect.options.length > 1) {
+            genreSelect.remove(genreSelect.options.length - 1);
+        }
+
+        allGenres.forEach(genre => {
+            const option = document.createElement('option');
+            option.value = genre.name;
+            option.textContent = `${genre.name} (${genre.songCount})`;
+            if (genres.includes(genre.name)) {
+                option.selected = true;
+            }
+            genreSelect.appendChild(option);
+        });
+
+        genreSelect.removeEventListener('change', editHandleGenreSelection);
+        genreSelect.addEventListener('change', editHandleGenreSelection);
+    }
+
+    editSelectedGenres = genres.slice();
+
+    document.getElementById('edit-genre-year-start').value = settings.year_start || '';
+    document.getElementById('edit-genre-year-end').value = settings.year_end || '';
+
+    document.getElementById('edit-genre-min-bitrate').value = settings.min_bitrate || '';
+    document.getElementById('edit-genre-min-format').value = settings.min_format || '';
+    document.getElementById('edit-genre-min-bitdepth').value = settings.min_bit_depth || '';
+
+    const capsEnabled = (settings.max_tracks_per_album !== null && settings.max_tracks_per_album !== undefined)
+        || (settings.max_tracks_per_artist !== null && settings.max_tracks_per_artist !== undefined);
+    document.getElementById('edit-genre-caps-enabled').checked = capsEnabled;
+    document.getElementById('edit-genre-max-tracks-per-album').value = settings.max_tracks_per_album != null ? settings.max_tracks_per_album : 2;
+    document.getElementById('edit-genre-max-tracks-per-artist').value = settings.max_tracks_per_artist != null ? settings.max_tracks_per_artist : 3;
+
+    const blacklist = settings.blacklisted_artists || [];
+    const blacklistSelect = document.getElementById('edit-genre-blacklist-select');
+    if (blacklistSelect) {
+        while (blacklistSelect.options.length > 0) {
+            blacklistSelect.remove(0);
+        }
+        blacklist.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            option.selected = true;
+            blacklistSelect.appendChild(option);
+        });
+
+        if (window.HSSelect) {
+            const inst = window.HSSelect.getInstance(blacklistSelect);
+            if (inst) { inst.destroy(); }
+            window.HSSelect.autoInit();
+        }
+
+        editBlacklistArtistsLoaded = blacklist.length > 0;
+        if (!editBlacklistArtistsLoaded) {
+            showEditBlacklistPlaceholder();
+        }
+    }
+
+    const blacklistSelectElement = document.getElementById('edit-genre-blacklist-select');
+    if (blacklistSelectElement && !blacklistSelectElement.dataset.colorSyncAttached) {
+        blacklistSelectElement.dataset.colorSyncAttached = 'true';
+        blacklistSelectElement.addEventListener('change', syncEditBlacklistToggleColor);
+    }
+    syncEditBlacklistToggleColor();
+
+    const capsToggle = document.getElementById('edit-genre-caps-enabled');
+    const capsInputs = document.getElementById('edit-genre-caps-inputs');
+    if (capsToggle && capsInputs) {
+        const syncCapsInputs = () => {
+            const disabled = !capsToggle.checked;
+            capsInputs.querySelectorAll('input').forEach(input => { input.disabled = disabled; });
+            capsInputs.style.opacity = disabled ? '0.5' : '1';
+        };
+        capsToggle.addEventListener('change', syncCapsInputs);
+        syncCapsInputs();
+    }
+
+    const formatSelect = document.getElementById('edit-genre-min-format');
+    const bitrateWrap = document.getElementById('edit-genre-bitrate-wrap');
+    const bitdepthWrap = document.getElementById('edit-genre-bitdepth-wrap');
+    const bitrateSelect = document.getElementById('edit-genre-min-bitrate');
+    const bitdepthSelect = document.getElementById('edit-genre-min-bitdepth');
+    if (formatSelect && bitrateWrap && bitdepthWrap) {
+        const syncQualityInputs = () => {
+            const isFlac = formatSelect.value === 'flac';
+            bitrateWrap.classList.toggle('hidden', isFlac);
+            bitdepthWrap.classList.toggle('hidden', !isFlac);
+            if (bitrateSelect) bitrateSelect.disabled = isFlac;
+            if (bitdepthSelect) bitdepthSelect.disabled = !isFlac;
+        };
+        formatSelect.addEventListener('change', syncQualityInputs);
+        syncQualityInputs();
+    }
+
+    if (window.HSSelect) {
+        window.HSSelect.autoInit();
+    }
+
+    const fetchArtistsBtn = document.getElementById('edit-genre-fetch-artists-btn');
+    if (fetchArtistsBtn) {
+        fetchArtistsBtn.addEventListener('click', () => loadEditBlacklistArtists(true));
+    }
+}
+
+// Collect the modal fields into a curation_settings object
+function collectEditSettings() {
+    const type = document.getElementById('edit-modal-type-value').value || document.getElementById('edit-modal-type').textContent;
+    const lengthEl = document.querySelector('input[name="edit-playlist-length"]:checked');
+    const freqEl = document.querySelector('input[name="edit-refresh-frequency"]:checked');
+    const playlist_length = lengthEl ? parseInt(lengthEl.value, 10) : 25;
+    const refresh_frequency = freqEl ? freqEl.value : 'none';
+    const playlist_name = document.getElementById('edit-playlist-name').value.trim();
+    const description = document.getElementById('edit-playlist-description').value.trim();
+    const is_public = document.getElementById('edit-playlist-public').checked;
+
+    let curation_settings = { playlist_length, refresh_frequency };
+
+    if (type === 'genre_mix') {
+        const capsEnabled = document.getElementById('edit-genre-caps-enabled').checked;
+        const genreSelect = document.getElementById('edit-genre-select');
+        const selectedGenres = genreSelect
+            ? Array.from(genreSelect.selectedOptions).map(o => o.value)
+            : [];
+
+        const blacklistSelect = document.getElementById('edit-genre-blacklist-select');
+        curation_settings = {
+            ...curation_settings,
+            genres: selectedGenres,
+            year_start: parseIntOrNull(document.getElementById('edit-genre-year-start').value),
+            year_end: parseIntOrNull(document.getElementById('edit-genre-year-end').value),
+            min_bitrate: parseIntOrNull(document.getElementById('edit-genre-min-bitrate').value),
+            min_format: document.getElementById('edit-genre-min-format').value || null,
+            min_bit_depth: parseIntOrNull(document.getElementById('edit-genre-min-bitdepth').value),
+            max_tracks_per_album: capsEnabled ? parseInt(document.getElementById('edit-genre-max-tracks-per-album').value, 10) : null,
+            max_tracks_per_artist: capsEnabled ? parseInt(document.getElementById('edit-genre-max-tracks-per-artist').value, 10) : null,
+            blacklisted_artists: blacklistSelect
+                ? Array.from(blacklistSelect.options).filter(o => o.selected).map(o => o.value)
+                : []
+        };
+
+        if (editGenreSettings && Array.isArray(editGenreSettings.library_ids)) {
+            curation_settings.library_ids = editGenreSettings.library_ids;
+        }
+    } else if (type === 'this_is') {
+        curation_settings.artist_id = document.getElementById('edit-this-is-artist-id').value;
+        curation_settings.artist_name = document.getElementById('edit-this-is-artist').textContent;
+        curation_settings.library_ids = JSON.parse(document.getElementById('edit-this-is-library-ids').value || '[]');
+    } else {
+        curation_settings.library_ids = JSON.parse(document.getElementById('edit-rediscover-library-ids').value || '[]');
+    }
+
+    return { curation_settings, refresh_frequency, playlist_name, description, is_public };
+}
+
+function parseIntOrNull(v) {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = parseInt(v, 10);
+    return isNaN(n) ? null : n;
+}
+
+// Save (and optionally regenerate) the edited playlist settings
+async function savePlaylistSettings(regenerate) {
+    if (!currentEditPlaylistId) return;
+
+    const { curation_settings, refresh_frequency, playlist_name, description, is_public } = collectEditSettings();
+
+    const saveBtn = document.getElementById('edit-save-btn');
+    const refreshBtn = document.getElementById('edit-save-refresh-btn');
+    saveBtn.disabled = true;
+    refreshBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/api/playlists/${currentEditPlaylistId}/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ curation_settings, refresh_frequency, playlist_name, description, is_public })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            throw new Error(errorData.detail || 'Failed to save settings');
+        }
+
+        showToast('success', 'Settings saved');
+
+        if (regenerate) {
+            const playlistIdToRefresh = currentEditPlaylistId;
+            const currentPlaylistId = playlistIdToRefresh;
+            closeEditModal();
+            await refreshPlaylist(currentPlaylistId);
+        } else {
+            closeEditModal();
+            loadPlaylists();
+            updatePlaylistCount();
+        }
+    } catch (error) {
+        console.error('Error saving playlist settings:', error);
+        showToast('error', error.message);
+    } finally {
+        saveBtn.disabled = false;
+        refreshBtn.disabled = false;
     }
 }
 

@@ -43,8 +43,10 @@ class Playlist(BaseModel):
     songs: List[str] = []
     description: Optional[str] = None
     navidrome_playlist_id: Optional[str] = None
+    is_public: Optional[bool] = None
     library_ids: List[str] = []
     playlist_length: Optional[int] = None
+    playlist_type: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -115,6 +117,7 @@ class PlaylistWithScheduleInfo(BaseModel):
     created_at: str
     updated_at: str
     navidrome_playlist_id: Optional[str] = None
+    is_public: Optional[bool] = None
     refresh_frequency: Optional[str] = None
     next_refresh: Optional[str] = None
     playlist_type: Optional[str] = None

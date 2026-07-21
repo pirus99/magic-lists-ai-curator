@@ -64,6 +64,27 @@ class DatabaseManager:
                 # Column already exists or other error - ignore
                 pass
 
+            # Add playlist_type column if it doesn't exist (authoritative type marker)
+            try:
+                await db.execute("ALTER TABLE playlists ADD COLUMN playlist_type TEXT")
+            except:
+                # Column already exists or other error - ignore
+                pass
+
+            # Add curation_settings column if it doesn't exist (JSON blob of saved curation settings)
+            try:
+                await db.execute("ALTER TABLE playlists ADD COLUMN curation_settings TEXT")
+            except:
+                # Column already exists or other error - ignore
+                pass
+
+            # Add is_public column if it doesn't exist (for Navidrome visibility)
+            try:
+                await db.execute("ALTER TABLE playlists ADD COLUMN is_public INTEGER DEFAULT 0")
+            except:
+                # Column already exists or other error - ignore
+                pass
+
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS scheduled_playlists (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,26 +177,85 @@ class DatabaseManager:
             """)
 
             await db.commit()
+
+            # Backfill the authoritative playlist_type column for existing rows
+            await self._backfill_playlist_types()
+
+    async def _backfill_playlist_types(self):
+        """Idempotently populate playlists.playlist_type for rows that lack it.
+
+        Priority:
+          1. Copy from a matching scheduled_playlists row (most reliable).
+          2. Infer from curation_settings.genres (genre_mix).
+          3. Infer from the synthetic artist_id used for rediscover playlists.
+          4. Fall back to 'this_is'.
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # 1. Copy from scheduled_playlists where the playlists row is missing a type
+                await db.execute("""
+                    UPDATE playlists
+                    SET playlist_type = (
+                        SELECT sp.playlist_type
+                        FROM scheduled_playlists sp
+                        WHERE sp.navidrome_playlist_id = playlists.navidrome_playlist_id
+                        LIMIT 1
+                    )
+                    WHERE (playlist_type IS NULL OR playlist_type = '')
+                      AND navidrome_playlist_id IN (
+                          SELECT navidrome_playlist_id FROM scheduled_playlists
+                      )
+                """)
+
+                # 2 & 3 & 4. Infer for remaining rows without a type
+                async with db.execute("""
+                    SELECT id, artist_id, curation_settings
+                    FROM playlists
+                    WHERE playlist_type IS NULL OR playlist_type = ''
+                """) as cursor:
+                    rows = await cursor.fetchall()
+
+                for row in rows:
+                    playlist_id = row[0]
+                    artist_id = row[1] or ""
+                    curation_settings = json.loads(row[2]) if row[2] else {}
+
+                    if curation_settings.get("genres"):
+                        inferred = "genre_mix"
+                    elif artist_id in ("rediscover", "rediscover_v2"):
+                        inferred = "rediscover_weekly_v2" if artist_id == "rediscover_v2" else "rediscover"
+                    else:
+                        inferred = "this_is"
+
+                    await db.execute("""
+                        UPDATE playlists SET playlist_type = ? WHERE id = ?
+                    """, (inferred, playlist_id))
+
+                await db.commit()
+        except Exception:
+            # Backfill is best-effort; never block startup on it
+            pass
     
-    async def create_playlist(self, artist_id: str, playlist_name: str, songs: Optional[List[str]] = None, description: Optional[str] = None, navidrome_playlist_id: Optional[str] = None, playlist_length: Optional[int] = None, library_ids: Optional[List[str]] = None) -> Optional[Playlist]:
+    async def create_playlist(self, artist_id: str, playlist_name: str, songs: Optional[List[str]] = None, description: Optional[str] = None, navidrome_playlist_id: Optional[str] = None, playlist_length: Optional[int] = None, library_ids: Optional[List[str]] = None, curation_settings: Optional[Dict] = None, playlist_type: Optional[str] = None) -> Optional[Playlist]:
         """Create a new playlist in the database"""
         await self.init_db()
         
         songs_json = json.dumps(songs or [])
         library_ids_json = json.dumps(library_ids or [])
+        curation_settings_json = json.dumps(curation_settings or {})
 
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-                INSERT INTO playlists (artist_id, playlist_name, songs, description, navidrome_playlist_id, playlist_length, library_ids)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (artist_id, playlist_name, songs_json, description, navidrome_playlist_id, playlist_length, library_ids_json))
+                INSERT INTO playlists (artist_id, playlist_name, songs, description, navidrome_playlist_id, playlist_length, library_ids, curation_settings, playlist_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (artist_id, playlist_name, songs_json, description, navidrome_playlist_id, playlist_length, library_ids_json, curation_settings_json, playlist_type))
             
             playlist_id = cursor.lastrowid
             await db.commit()
             
             # Fetch the created playlist
             async with db.execute("""
-                SELECT id, artist_id, playlist_name, songs, description, navidrome_playlist_id, created_at, updated_at, playlist_length, library_ids
+                SELECT id, artist_id, playlist_name, songs, description, navidrome_playlist_id, created_at, updated_at, playlist_length, library_ids, curation_settings, playlist_type, is_public
                 FROM playlists WHERE id = ?
             """, (playlist_id,)) as cursor:
                 row = await cursor.fetchone()
@@ -191,7 +271,10 @@ class DatabaseManager:
                         playlist_length=row[8],
                         created_at=row[6],
                         updated_at=row[7],
-                        library_ids=json.loads(row[9]) if row[9] else []
+                        library_ids=json.loads(row[9]) if row[9] else [],
+                        curation_settings=json.loads(row[10]) if row[10] else {},
+                        playlist_type=row[11],
+                        is_public=bool(row[12])
                     )
                 return None
     
@@ -201,7 +284,7 @@ class DatabaseManager:
         
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("""
-                SELECT id, artist_id, playlist_name, songs, description, navidrome_playlist_id, created_at, updated_at, playlist_length, library_ids
+                SELECT id, artist_id, playlist_name, songs, description, navidrome_playlist_id, created_at, updated_at, playlist_length, library_ids, is_public
                 FROM playlists WHERE id = ?
             """, (playlist_id,)) as cursor:
                 row = await cursor.fetchone()
@@ -216,7 +299,8 @@ class DatabaseManager:
                         navidrome_playlist_id=row[5],
                         created_at=row[6],
                         updated_at=row[7],
-                        library_ids=json.loads(row[9]) if row[9] else []
+                        library_ids=json.loads(row[9]) if row[9] else [],
+                        is_public=bool(row[10])
                     )
         return None
     
@@ -260,10 +344,13 @@ class DatabaseManager:
                     p.songs, 
                     p.description,
                     p.navidrome_playlist_id,
+                    p.is_public,
                     p.created_at, 
                     p.updated_at,
                     p.last_refreshed,
                     p.playlist_length,
+                    p.curation_settings,
+                    p.playlist_type,
                     sp.refresh_frequency,
                     sp.next_refresh,
                     sp.playlist_type
@@ -274,6 +361,9 @@ class DatabaseManager:
                 rows = await cursor.fetchall()
                 
                 for row in rows:
+                    # Prefer the authoritative type stored on the playlists row;
+                    # fall back to the scheduled_playlists join only if missing.
+                    resolved_type = row[12] or row[15] or "this_is"
                     playlist_data = {
                         "id": row[0],
                         "artist_id": row[1],
@@ -281,13 +371,15 @@ class DatabaseManager:
                         "songs": json.loads(row[3]),
                         "description": row[4],
                         "navidrome_playlist_id": row[5],
-                        "created_at": row[6],
-                        "updated_at": row[7],
-                        "last_refreshed": row[8],
-                        "playlist_length": row[9],
-                        "refresh_frequency": row[10],
-                        "next_refresh": row[11],
-                        "playlist_type": row[12]
+                        "is_public": bool(row[6]),
+                        "created_at": row[7],
+                        "updated_at": row[8],
+                        "last_refreshed": row[9],
+                        "playlist_length": row[10],
+                        "curation_settings": json.loads(row[11]) if row[11] else {},
+                        "playlist_type": resolved_type,
+                        "refresh_frequency": row[13],
+                        "next_refresh": row[14]
                     }
                     playlists.append(playlist_data)
         
@@ -305,9 +397,12 @@ class DatabaseManager:
                     p.playlist_name, 
                     p.songs, 
                     p.description,
+                    p.is_public,
                     p.created_at, 
                     p.updated_at,
                     p.navidrome_playlist_id,
+                    p.curation_settings,
+                    p.playlist_type,
                     sp.refresh_frequency,
                     sp.next_refresh,
                     sp.playlist_type
@@ -318,18 +413,23 @@ class DatabaseManager:
                 row = await cursor.fetchone()
                 
                 if row:
+                    # Prefer the authoritative type stored on the playlists row;
+                    # fall back to the scheduled_playlists join only if missing.
+                    resolved_type = row[10] or row[13] or "this_is"
                     return {
                         "id": row[0],
                         "artist_id": row[1],
                         "playlist_name": row[2],
                         "songs": json.loads(row[3]),
                         "description": row[4],
-                        "created_at": row[5],
-                        "updated_at": row[6],
-                        "navidrome_playlist_id": row[7],
-                        "refresh_frequency": row[8],
-                        "next_refresh": row[9],
-                        "playlist_type": row[10]
+                        "is_public": bool(row[5]),
+                        "created_at": row[6],
+                        "updated_at": row[7],
+                        "navidrome_playlist_id": row[8],
+                        "curation_settings": json.loads(row[9]) if row[9] else {},
+                        "playlist_type": resolved_type,
+                        "refresh_frequency": row[11],
+                        "next_refresh": row[12]
                     }
         
         return None
@@ -459,6 +559,44 @@ class DatabaseManager:
             
             await db.commit()
             return cursor.rowcount > 0
+
+    async def get_scheduled_playlist_by_navidrome_id(self, navidrome_playlist_id: str) -> Optional[ScheduledPlaylist]:
+        """Get a scheduled playlist record by Navidrome playlist ID"""
+        await self.init_db()
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("""
+                SELECT id, playlist_type, navidrome_playlist_id, refresh_frequency, next_refresh, created_at, updated_at
+                FROM scheduled_playlists 
+                WHERE navidrome_playlist_id = ?
+            """, (navidrome_playlist_id,)) as cursor:
+                row = await cursor.fetchone()
+                
+                if row:
+                    return ScheduledPlaylist(
+                        id=row[0],
+                        playlist_type=row[1],
+                        navidrome_playlist_id=row[2],
+                        refresh_frequency=row[3],
+                        next_refresh=row[4],
+                        created_at=row[5],
+                        updated_at=row[6]
+                    )
+        return None
+
+    async def update_scheduled_playlist_frequency(self, scheduled_id: int, refresh_frequency: str, next_refresh: datetime) -> bool:
+        """Update the refresh frequency and next refresh time for a scheduled playlist"""
+        await self.init_db()
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                UPDATE scheduled_playlists 
+                SET refresh_frequency = ?, next_refresh = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (refresh_frequency, next_refresh.isoformat(), scheduled_id))
+            
+            await db.commit()
+            return cursor.rowcount > 0
     
     async def update_playlist_last_refreshed(self, navidrome_playlist_id: str) -> bool:
         """Update the last_refreshed timestamp for a playlist"""
@@ -487,6 +625,62 @@ class DatabaseManager:
                 WHERE navidrome_playlist_id = ?
             """, (songs_json, description, navidrome_playlist_id))
             
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def update_playlist_settings(self, playlist_id: int, curation_settings: Dict, playlist_length: Optional[int] = None) -> bool:
+        """Update the saved curation settings (and optionally playlist length) for a playlist"""
+        await self.init_db()
+        
+        curation_settings_json = json.dumps(curation_settings or {})
+        
+        if playlist_length is not None:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    UPDATE playlists 
+                    SET curation_settings = ?, playlist_length = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (curation_settings_json, playlist_length, playlist_id))
+                await db.commit()
+                return cursor.rowcount > 0
+        else:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    UPDATE playlists 
+                    SET curation_settings = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (curation_settings_json, playlist_id))
+                await db.commit()
+                return cursor.rowcount > 0
+
+    async def update_playlist_metadata(self, playlist_id: int, playlist_name: Optional[str] = None, description: Optional[str] = None, is_public: Optional[bool] = None) -> bool:
+        """Update a playlist's editable metadata such as name, description, and public flag."""
+        await self.init_db()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            updates = []
+            values = []
+
+            if playlist_name is not None:
+                updates.append("playlist_name = ?")
+                values.append(playlist_name)
+            if description is not None:
+                updates.append("description = ?")
+                values.append(description)
+            if is_public is not None:
+                updates.append("is_public = ?")
+                values.append(1 if is_public else 0)
+
+            if not updates:
+                return False
+
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            values.append(playlist_id)
+
+            cursor = await db.execute(
+                f"UPDATE playlists SET {', '.join(updates)} WHERE id = ?",
+                values,
+            )
             await db.commit()
             return cursor.rowcount > 0
     

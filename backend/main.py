@@ -46,6 +46,9 @@ from .navidrome_client import NavidromeClient
 from .ai_client import AIClient
 from .database import DatabaseManager, get_db
 from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
+from .playlist_metadata import resolve_refresh_description
+from pydantic import BaseModel
+from typing import Any, Dict
 from .recipe_manager import recipe_manager
 from .rediscover import RediscoverWeekly, ReDiscoverV2Processor
 from .track_scoring import filter_tracks_for_this_is_playlist
@@ -413,6 +416,13 @@ async def create_playlist(
         
         
         # Store playlist in local database (using the first artist_id for now)
+        curation_settings = {
+            "artist_id": request.artist_ids[0],
+            "artist_name": artist_names[0],
+            "playlist_length": request.playlist_length,
+            "library_ids": request.library_ids,
+            "refresh_frequency": request.refresh_frequency
+        }
         playlist = await db.create_playlist(
             artist_id=request.artist_ids[0],
             playlist_name=playlist_name,
@@ -420,7 +430,9 @@ async def create_playlist(
             description=description,
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=request.playlist_length,
-            library_ids=request.library_ids
+            library_ids=request.library_ids,
+            curation_settings=curation_settings,
+            playlist_type="this_is"
         )
         
         # Handle scheduling if not "none" or "never"
@@ -662,6 +674,20 @@ async def create_genre_playlist(
 
 
         # Store playlist in local database (using genres as identifier)
+        curation_settings = {
+            "genres": request.genres,
+            "playlist_length": request.playlist_length,
+            "library_ids": request.library_ids,
+            "refresh_frequency": request.refresh_frequency,
+            "year_start": request.year_start,
+            "year_end": request.year_end,
+            "blacklisted_artists": request.blacklisted_artists,
+            "min_bitrate": request.min_bitrate,
+            "min_format": request.min_format,
+            "min_bit_depth": request.min_bit_depth,
+            "max_tracks_per_album": max_tracks_per_album,
+            "max_tracks_per_artist": max_tracks_per_artist
+        }
         playlist = await db.create_playlist(
             artist_id=", ".join(request.genres),  # Using genres as artist_id for now
             playlist_name=playlist_name,
@@ -669,7 +695,9 @@ async def create_genre_playlist(
             description=description,
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=request.playlist_length,
-            library_ids=request.library_ids
+            library_ids=request.library_ids,
+            curation_settings=curation_settings,
+            playlist_type="genre_mix"
         )
 
         # Handle scheduling if not "none" or "never"
@@ -845,6 +873,11 @@ async def create_rediscover_playlist_v2(
         scheduler_logger.info(f"📊 Storing {len(track_titles)} track titles in database")
 
         # Store playlist in local database (using a synthetic artist_id for rediscover playlists)
+        curation_settings = {
+            "playlist_length": len(tracks),
+            "library_ids": request.library_ids,
+            "refresh_frequency": request.refresh_frequency
+        }
         playlist_record = await db.create_playlist(
             artist_id="rediscover_v2",
             playlist_name=playlist_name,
@@ -852,7 +885,9 @@ async def create_rediscover_playlist_v2(
             description=ai_description,
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=len(tracks),
-            library_ids=request.library_ids
+            library_ids=request.library_ids,
+            curation_settings=curation_settings,
+            playlist_type="rediscover_weekly_v2"
         )
         scheduler_logger.info(f"💾 Database playlist created: {playlist_record}")
 
@@ -959,13 +994,20 @@ async def create_rediscover_playlist(
 
         # Store playlist in local database (using a synthetic artist_id for rediscover playlists)
         scheduler_logger.info("💾 Creating playlist in database...")
+        curation_settings = {
+            "playlist_length": request.playlist_length,
+            "library_ids": request.library_ids,
+            "refresh_frequency": request.refresh_frequency
+        }
         playlist = await db.create_playlist(
             artist_id="rediscover",
             playlist_name=playlist_name,
             songs=track_titles,
             description=ai_description if ai_curated else "Algorithmic selection",
             navidrome_playlist_id=navidrome_playlist_id,
-            playlist_length=request.playlist_length
+            playlist_length=request.playlist_length,
+            curation_settings=curation_settings,
+            playlist_type="rediscover"
         )
         scheduler_logger.info(f"✅ Database playlist created: {playlist}")
         
@@ -1117,8 +1159,12 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager):
             scheduler_logger.error(f"❌ Could not find original playlist data for {scheduled_playlist.navidrome_playlist_id}")
             return
         
+        # Prefer saved curation settings; fall back to legacy fields for old playlists
+        settings = original_playlist.get("curation_settings") or {}
+        library_ids = settings.get("library_ids") or []
+        
         # Get original playlist length (MUST respect user's choice)
-        original_length = original_playlist.get("playlist_length", 20)
+        original_length = settings.get("playlist_length") or original_playlist.get("playlist_length", 20)
         scheduler_logger.info(f"🎯 Using original playlist length: {original_length}")
         
         # Get previous playlist songs for variety context
@@ -1135,8 +1181,8 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager):
         # Create ReDiscoverV2Processor instance (improved fallback handling)
         processor = ReDiscoverV2Processor(nav_client, ai_client, db)
 
-        # Prepare library IDs for v2.0 processor
-        library_ids = [scheduled_playlist.library_id] if hasattr(scheduled_playlist, 'library_id') and scheduled_playlist.library_id else None
+        # Prepare library IDs for v2.0 processor (from saved settings)
+        library_ids = library_ids if library_ids else None
 
         # Log refresh context for debugging
         scheduler_logger.info(f"🔄 Re-Discover v2.0 refresh context - Previous tracks: {len(previous_songs)}, Library IDs: {library_ids}")
@@ -1227,9 +1273,10 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
             scheduler_logger.error(f"❌ Could not find original playlist data for {scheduled_playlist.navidrome_playlist_id}")
             return
         
-        # Get artist IDs from the original playlist (we'll need to store this better in future)
-        # For now, we'll use the artist_id field, but this limits us to single artists for refresh
-        artist_id = original_playlist["artist_id"]
+        # Prefer saved curation settings; fall back to legacy fields for old playlists
+        settings = original_playlist.get("curation_settings") or {}
+        artist_id = settings.get("artist_id") or original_playlist["artist_id"]
+        library_ids = settings.get("library_ids") or []
         
         # Get all artists to find the name
         all_artists = await nav_client.get_artists()
@@ -1242,13 +1289,13 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
         artist_name = artist["name"]
         
         # FRESH DATA: Re-fetch ALL tracks for the artist (gets latest play counts, dates)
-        tracks = await nav_client.get_tracks_by_artist(artist_id)
+        tracks = await nav_client.get_tracks_by_artist(artist_id, library_ids)
         
         if tracks:
             scheduler_logger.info(f"🎵 Found {len(tracks)} tracks for artist: {artist_name} (fresh data)")
             
             # ENFORCE original playlist length (MUST respect user's choice)
-            original_length = original_playlist.get("playlist_length", 25)
+            original_length = settings.get("playlist_length") or original_playlist.get("playlist_length", 25)
             scheduler_logger.info(f"🎯 ENFORCING original playlist length: {original_length}")
             
             # Check if we have enough tracks
@@ -1292,11 +1339,15 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
                 
                 scheduler_logger.info(f"🎯 Final track count: {len(curated_track_ids)} (requested: {original_length})")
                 
-                # Update the existing playlist in Navidrome with new description
+                refresh_description = resolve_refresh_description(
+                    existing_description=original_playlist.get("description"),
+                    generated_description=description,
+                    metadata_overrides={"description": bool(original_playlist.get("description"))},
+                )
                 await nav_client.update_playlist(
                     playlist_id=scheduled_playlist.navidrome_playlist_id,
                     track_ids=curated_track_ids,
-                    comment=description if description else None
+                    comment=refresh_description
                 )
                 
                 # Update the local database with new songs and description
@@ -1309,7 +1360,7 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
                 await db.update_playlist_content(
                     navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
                     songs=track_titles,
-                    description=description
+                    description=refresh_description
                 )
                 
                 # Calculate next refresh time
@@ -1384,6 +1435,273 @@ async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete playlist: {str(e)}")
+
+class _RefreshTarget:
+    """Lightweight stand-in for a ScheduledPlaylist used by manual refresh dispatch."""
+    def __init__(self, navidrome_playlist_id: str, refresh_frequency: str, playlist_type: str, scheduled_id: int = 0):
+        self.navidrome_playlist_id = navidrome_playlist_id
+        self.refresh_frequency = refresh_frequency
+        self.playlist_type = playlist_type
+        self.id = scheduled_id
+
+@app.get("/api/playlists/{playlist_id}")
+async def get_playlist_detail(playlist_id: int, db: DatabaseManager = Depends(get_db)):
+    """Get a single playlist with its scheduling info and saved curation settings"""
+    try:
+        playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+        if not playlist:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+        return playlist
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch playlist: {str(e)}")
+
+class UpdatePlaylistSettingsRequest(BaseModel):
+    """Request schema for updating a playlist's saved curation settings and metadata"""
+    curation_settings: Dict[str, Any]
+    refresh_frequency: Optional[str] = None  # "none", "never", "daily", "weekly", "monthly"
+    playlist_name: Optional[str] = None
+    description: Optional[str] = None
+    is_public: Optional[bool] = None
+
+@app.put("/api/playlists/{playlist_id}/settings")
+async def update_playlist_settings(
+    playlist_id: int,
+    request: UpdatePlaylistSettingsRequest,
+    db: DatabaseManager = Depends(get_db)
+):
+    """Update a playlist's saved curation settings and reconcile its refresh schedule"""
+    try:
+        playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+        if not playlist:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        navidrome_playlist_id = playlist.get("navidrome_playlist_id")
+        if not navidrome_playlist_id:
+            raise HTTPException(status_code=400, detail="Playlist has no Navidrome ID")
+
+        nav_client = get_navidrome_client()
+
+        # Persist curation settings (and playlist length if present)
+        new_length = request.curation_settings.get("playlist_length")
+        await db.update_playlist_settings(
+            playlist_id=playlist_id,
+            curation_settings=request.curation_settings,
+            playlist_length=new_length if new_length is not None else None
+        )
+
+        if request.playlist_name is not None or request.description is not None or request.is_public is not None:
+            await db.update_playlist_metadata(
+                playlist_id=playlist_id,
+                playlist_name=request.playlist_name if request.playlist_name is not None else playlist.get("playlist_name"),
+                description=request.description if request.description is not None else playlist.get("description"),
+                is_public=request.is_public if request.is_public is not None else playlist.get("is_public"),
+            )
+
+            try:
+                if navidrome_playlist_id:
+                    await nav_client.update_playlist_metadata(
+                        playlist_id=navidrome_playlist_id,
+                        name=request.playlist_name if request.playlist_name is not None else None,
+                        comment=request.description if request.description is not None else None,
+                        is_public=request.is_public,
+                    )
+            except Exception as update_error:
+                scheduler_logger.warning(f"⚠️ Failed to sync playlist metadata to Navidrome: {update_error}")
+
+        # Reconcile the scheduled playlist row based on refresh_frequency
+        frequency = request.refresh_frequency if request.refresh_frequency is not None else playlist.get("refresh_frequency")
+        frequency = frequency or "none"
+        existing = await db.get_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
+
+        if frequency in ("none", "never"):
+            if existing:
+                await db.delete_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
+                scheduler_logger.info(f"🗓️ Removed schedule for playlist {navidrome_playlist_id}")
+        else:
+            next_refresh = calculate_next_refresh(frequency)
+            if existing:
+                await db.update_scheduled_playlist_frequency(existing.id, frequency, next_refresh)
+                scheduler_logger.info(f"🗓️ Updated schedule for {navidrome_playlist_id} -> {frequency}")
+            else:
+                await db.create_scheduled_playlist(
+                    playlist_type=playlist.get("playlist_type") or "this_is",
+                    navidrome_playlist_id=navidrome_playlist_id,
+                    refresh_frequency=frequency,
+                    next_refresh=next_refresh
+                )
+                schedule_playlist_refresh()
+                scheduler_logger.info(f"🗓️ Created schedule for {navidrome_playlist_id} -> {frequency}")
+
+        # Return the updated playlist
+        updated = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+        updated["track_count"] = len(updated.get("songs", []) or [])
+        return updated
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update playlist settings: {str(e)}")
+
+@app.post("/api/playlists/{playlist_id}/refresh")
+async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depends(get_db)):
+    """Manually regenerate a playlist from its saved curation settings"""
+    try:
+        playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+        if not playlist:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        navidrome_playlist_id = playlist.get("navidrome_playlist_id")
+        if not navidrome_playlist_id:
+            raise HTTPException(status_code=400, detail="Playlist has no Navidrome ID")
+
+        playlist_type = playlist.get("playlist_type") or "this_is"
+        frequency = playlist.get("refresh_frequency") or "none"
+
+        # Build a refresh target compatible with the existing refresh functions
+        scheduled = _RefreshTarget(
+            navidrome_playlist_id=navidrome_playlist_id,
+            refresh_frequency=frequency,
+            playlist_type=playlist_type
+        )
+
+        if playlist_type == "genre_mix":
+            await refresh_genre_playlist(playlist, db)
+        elif playlist_type in ("rediscover", "rediscover_weekly_v2"):
+            await refresh_rediscover_playlist(scheduled, db)
+        else:  # this_is (and any unknown -> treat as this_is)
+            await refresh_this_is_playlist(scheduled, db)
+
+        # Update last_refreshed timestamp
+        await db.update_playlist_last_refreshed(navidrome_playlist_id)
+
+        # Reschedule next refresh if a schedule exists
+        existing = await db.get_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
+        if existing and frequency not in ("none", "never"):
+            await db.update_scheduled_playlist_next_refresh(existing.id, calculate_next_refresh(frequency))
+
+        return {"message": "Playlist refreshed successfully", "playlist_id": navidrome_playlist_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to refresh playlist: {str(e)}")
+
+async def refresh_genre_playlist(playlist: Dict, db: DatabaseManager):
+    """Refresh a Genre Mix playlist using its saved curation settings"""
+    try:
+        scheduler_logger.info(f"🔄 Starting refresh for Genre Mix playlist ID: {playlist.get('navidrome_playlist_id')}")
+
+        nav_client = get_navidrome_client()
+        ai_client_instance = get_ai_client()
+
+        settings = playlist.get("curation_settings") or {}
+        genres = settings.get("genres") or [g.strip() for g in playlist.get("artist_id", "").split(",") if g.strip()]
+        if not genres:
+            scheduler_logger.error("❌ No genres found for Genre Mix refresh")
+            return
+
+        library_ids = settings.get("library_ids") or []
+        playlist_length = settings.get("playlist_length") or playlist.get("playlist_length") or 25
+        year_start = settings.get("year_start")
+        year_end = settings.get("year_end")
+        blacklisted_artists = settings.get("blacklisted_artists") or []
+        min_bitrate = settings.get("min_bitrate")
+        min_format = settings.get("min_format")
+        min_bit_depth = settings.get("min_bit_depth")
+        max_tracks_per_album = settings.get("max_tracks_per_album", 2)
+        max_tracks_per_artist = settings.get("max_tracks_per_artist", 3)
+
+        # Generate playlist name (keep existing name)
+        playlist_name = playlist.get("playlist_name")
+
+        # Get tracks for the genres
+        all_tracks = await nav_client.get_tracks_by_genres(genres, library_ids)
+        scheduler_logger.info(f"🎵 Found {len(all_tracks)} total tracks for genres '{', '.join(genres)}'")
+
+        if not all_tracks:
+            scheduler_logger.warning(f"⚠️ No tracks found for genres: {', '.join(genres)}")
+            return
+
+        # Apply smart filtering (mirrors create_genre_playlist)
+        library_stats = await nav_client.get_library_stats()
+        genre_recipe = recipe_manager.get_recipe("genre_mix")
+        diversity_config = genre_recipe.get("source_filtering", {})
+
+        ollama_max_tracks = None
+        if ai_client_instance.provider.provider_type == "ollama":
+            ollama_max_tracks = int(os.getenv("OLLAMA_MAX_TRACKS", "0")) or None
+
+        filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
+            source_tracks=all_tracks,
+            target_playlist_size=playlist_length,
+            library_stats=library_stats,
+            playlist_type="genre",
+            diversity_config=diversity_config,
+            ollama_max_tracks=ollama_max_tracks,
+            exploration_ratio=diversity_config.get("exploration_ratio", 0.0),
+            high_tier_ratio=diversity_config.get("high_tier_ratio", 0.4),
+            high_tier_multiplier=diversity_config.get("high_tier_multiplier", 3.0),
+            year_start=year_start,
+            year_end=year_end,
+            blacklisted_artists=blacklisted_artists,
+            min_bitrate=min_bitrate,
+            min_format=min_format,
+            min_bit_depth=min_bit_depth,
+            max_tracks_per_album=max_tracks_per_album,
+            max_tracks_per_artist=max_tracks_per_artist
+        )
+
+        tracks_for_llm = filtered_tracks
+
+        # Use AI to curate the playlist
+        curation_result = await ai_client_instance.curate_genre_mix(
+            genres=genres,
+            candidate_tracks=tracks_for_llm,
+            num_tracks=playlist_length,
+            include_description=True
+        )
+
+        if isinstance(curation_result, tuple):
+            curated_track_ids, description = curation_result
+        else:
+            curated_track_ids = curation_result
+            description = ""
+
+        if not curated_track_ids:
+            scheduler_logger.warning(f"⚠️ No curated tracks generated for Genre Mix {playlist.get('navidrome_playlist_id')}")
+            return
+
+        # Update the existing playlist in Navidrome
+        comment_to_use = resolve_refresh_description(
+            existing_description=playlist.get("description"),
+            generated_description=description,
+            metadata_overrides={"description": bool(playlist.get("description"))},
+        )
+        await nav_client.update_playlist(
+            playlist_id=playlist.get("navidrome_playlist_id"),
+            track_ids=curated_track_ids,
+            comment=comment_to_use
+        )
+
+        # Update the local database with new songs and description
+        track_titles = []
+        track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
+        for track_id in curated_track_ids:
+            if track_id in track_id_to_title:
+                track_titles.append(track_id_to_title[track_id])
+
+        await db.update_playlist_content(
+            navidrome_playlist_id=playlist.get("navidrome_playlist_id"),
+            songs=track_titles,
+            description=comment_to_use
+        )
+
+        scheduler_logger.info(f"✅ Successfully refreshed Genre Mix playlist {playlist.get('navidrome_playlist_id')}")
+
+    except Exception as e:
+        scheduler_logger.error(f"❌ Error refreshing Genre Mix playlist {playlist.get('navidrome_playlist_id')}: {e}")
 
 @app.get("/api/recipes")
 async def get_available_recipes():
