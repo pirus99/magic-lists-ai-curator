@@ -156,7 +156,7 @@ def ensure_album_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
 
     return new_playlist
 
-def space_id_track_list_by_artist_and_album(track_ids: list[int], candidate_tracks: list[dict], artist_spacing: int = 1, album_spacing: int = 0) -> list[dict]:
+def space_id_track_list_by_artist_and_album(track_ids: list[int], candidate_tracks: list[dict], artist_spacing: int = 0, album_spacing: int = 0) -> list[dict]:
     """
     Sorts a playlist of tracks based on artist and album spacing.
 
@@ -185,10 +185,22 @@ def space_id_track_list_by_artist_and_album(track_ids: list[int], candidate_trac
         print(f"⚠️ {duplicate_count} duplicate entries removed from output")
 
     # Ensure artist spacing
-    spaced_playlist = ensure_artist_spacing(filtered_tracks, spacing=artist_spacing)
+    spaced_playlist = filtered_tracks
 
     if album_spacing > 0:
         # Ensure album spacing
+        spaced_playlist = ensure_album_spacing(spaced_playlist, spacing=album_spacing)
+        reversed_spaced_playlist = ensure_album_spacing(spaced_playlist[::-1], spacing=album_spacing)
+        spaced_playlist = reversed_spaced_playlist[::-1]
+
+    if artist_spacing > 0:
+        #Ensure artist spacing
+        spaced_playlist = ensure_artist_spacing(spaced_playlist, spacing=artist_spacing)
+        reversed_spaced_playlist = ensure_artist_spacing(spaced_playlist[::-1], spacing=artist_spacing)
+        spaced_playlist = reversed_spaced_playlist[::-1]
+
+    if artist_spacing > 0 and album_spacing > 0:
+        # Respace for both again
         spaced_playlist = ensure_album_spacing(spaced_playlist, spacing=album_spacing)
         reversed_spaced_playlist = ensure_artist_spacing(spaced_playlist[::-1], spacing=artist_spacing)
         spaced_playlist = reversed_spaced_playlist[::-1]

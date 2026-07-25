@@ -288,6 +288,8 @@ class AIClient:
                 # Dedicated description prompt (genre_mix-style separate call)
                 description_instructions = final_recipe.get("description_instructions", "")
                 description_llm_config = final_recipe.get("description_llm_config", {"temperature": 0.7, "max_output_tokens": 500})
+                output_sorting_params = final_recipe.get("output_sorting", {})
+                album_spacing = output_sorting_params.get("space_between_same_album", 1)
                 
                 # Use model from environment (.env file), ignoring recipe model_name
                 model = self.model or "openai/gpt-3.5-turbo"
@@ -389,6 +391,8 @@ class AIClient:
 
                 # Final selection (limit to requested count)
                 final_selection = mapped_track_ids[:num_tracks]
+
+                final_selection = space_id_track_list_by_artist_and_album(mapped_track_ids, candidate_tracks, artist_spacing=0, album_spacing=album_spacing)
 
                 # Generate the description in a separate, dedicated AI request (if requested)
                 description = ""

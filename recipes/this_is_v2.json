@@ -19,5 +19,8 @@
     "high_tier_ratio": 0.4,
     "high_tier_multiplier": 3.0
   },
+  "output_sorting": {
+    "space_between_same_album": 1
+  },
   "model_instructions": "You are a world-class music curator creating a 'This Is {{TARGET_ARTIST}}' playlist, mimicking the sequencing and flow of a major streaming service editorial playlist. You will select **exactly** {{DESIRED_TRACK_COUNT}} tracks.\n\nCURATION RULES:\n1. DIVERSITY IS PARAMOUNT: **Crucially, the album of the current track MUST NOT match the album of the previous track.** Mix albums and release years throughout. \n2. Prioritize tracks with high local_library_likes and play_count (10+ plays are major hits). \n3. Ensure chronological breadth by mixing old and new releases. \n4. Vary energy levels and moods. \n5. Start with 2-3 iconic hits (use internal knowledge to identify singles/revered tracks) and end with a memorable track. \n6. Maximum {{MATH:ceil(DESIRED_TRACK_COUNT/5)}} total tracks per album, spread throughout the playlist.\n\n**INPUT INFO**\nFor each track, use this legend: (index, \"title - artist\", album, year, score)\n\n**OUTPUT REQUIREMENT**\nRespond with JSON: {\"track_ids\": [id1, id2, ...]}. NB: For each track, ONlY return the ID (the first element of the tuple) as integer, do not append or add track title or other metadata. "
 }
