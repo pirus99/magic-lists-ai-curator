@@ -201,19 +201,28 @@ Can't connect to Navidrome? The most common issue is an incorrect `NAVIDROME_URL
 
 **Still having issues?** Check the System Check page in the app after startup - it will test your connection and provide specific guidance.
 
-### Ai Response Issues
+### AI Response Issues
 
-If Ai is responding with its reasoning or gives empty responses:
-- Try another Model
-- Try selecting a shorter Playlist length
+If AI is responding with its reasoning or gives empty responses:
+- Try another model
+- Try selecting a shorter playlist length
 then try:
-1. To add a Volume Mount for recipes in Docker Container
+1. To add a volume mount for recipes in the Docker container
 ```bash
    volumes:
       - HOST_PATH_FOR_YOUR_RECIPES:/app/recipes
 ```
 2. Edit the maximum Tokens for the required Recipe, or vary with model temperature till you get good results.
 **More Info:** See [README](recipes/README.md) in recipes folder
+
+### Playlist Length Issues
+   - Ensure you have enough tracks for the requested artist/genre
+   - View your logs to ensure your filtering options are not dropping all tracks
+   - Adjust filtering to allow enough tracks to be sent to AI curation
+
+### Issues with Editing Playlists
+   - Make sure you have created the playlist with a version of MagicLists that allows playlist editing.
+   - Delete and recreate the playlist from scratch with a new version of MagicLists to enable editing features for the playlist.
 
 ## System Check Page 
 
