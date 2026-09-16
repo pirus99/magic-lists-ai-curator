@@ -1,4 +1,4 @@
-# MagicLists for Navidrome
+# MagicLists for Navidrome V2
 
 **AI-assisted playlists for your own music library.**
 
@@ -15,7 +15,8 @@ MagicLists adds the kind of curated, evolving playlists you’d expect from Spot
 Navidrome users already own their music. MagicLists brings modern curation tools into that world—so your playlists feel alive, not static, and your collection keeps surprising you.
 
 ## Who’s behind it
-I’m Ricky, a product designer with 20+ years in tech. I’m building MagicLists feature by feature, from UI and CSS to playlist logic, because I’m passionate about open-source, privacy-friendly music tools. This isn’t vaporware or a throwaway experiment—it’s genuine, ongoing research into how AI can enrich personal music libraries.
+This Repo is a fork from Ricky Synnots [magic-lists-for-navidrome](https://github.com/rsynnot/magic-lists-for-navidrome). 
+It is an Improved version with cleaner Code and many bugfixes.
 
 ## What’s next
 Upcoming experiments include:
@@ -44,7 +45,7 @@ _Caption: Creating a 'This is (Artist)' playlist_
        # ... your existing Navidrome config ...
      
      magiclists:
-       image: rickysynnot/magic-lists-for-navidrome:latest
+       image: pirus999/magic-lists-for-navidrome:latest
        container_name: magiclists
        ports:
          - "4545:8000"
@@ -87,7 +88,7 @@ Use your public Navidrome URL (e.g., https://music.yourdomain.com):
       -e AI_API_KEY=your_openrouter_api_key \
       -e AI_MODEL=meta-llama/llama-3.3-70b-instruct \
       -v ./magiclists-data:/app/data \
-      rickysynnot/magic-lists-for-navidrome:latest
+      pirus999/magic-lists-for-navidrome:latest
 ```
 
 **If Navidrome is on the same host machine:**
@@ -104,7 +105,7 @@ Use host.docker.internal to reach services on your host:
       -e AI_API_KEY=your_openrouter_api_key \
       -e AI_MODEL=meta-llama/llama-3.3-70b-instruct \
       -v ./magiclists-data:/app/data \
-      rickysynnot/magic-lists-for-navidrome:latest
+      pirus999/magic-lists-for-navidrome:latest
 ```
 **If Navidrome is on your local network:**
 Use the local IP address of the machine running Navidrome:
@@ -120,7 +121,7 @@ Use the local IP address of the machine running Navidrome:
       -e AI_API_KEY=your_openrouter_api_key \
       -e AI_MODEL=meta-llama/llama-3.3-70b-instruct \
       -v ./magiclists-data:/app/data \
-      rickysynnot/magic-lists-for-navidrome:latest
+      pirus999/magic-lists-for-navidrome:latest
 ```
 Access MagicLists at http://localhost:4545
 
@@ -129,7 +130,7 @@ Use this method if you prefer to run Python directly or want to contribute to de
 
 1. Clone the repository:
 ```bash
-   git clone https://github.com/rsynnot/magic-lists-for-navidrome.git
+   git clone https://github.com/pirus99/magic-lists-for-navidrome
    cd magic-lists-for-navidrome
 ```
 2. Install dependencies:
@@ -203,7 +204,7 @@ Can't connect to Navidrome? The most common issue is an incorrect `NAVIDROME_URL
 
 ### AI Response Issues
 
-If AI is responding with its reasoning or gives empty responses:
+If AI is responding with its reasoning/context or gives empty responses:
 - Try another model
 - Try selecting a shorter playlist length
 then try:
@@ -385,4 +386,4 @@ By using this software, you acknowledge and accept these terms.
 
 ---
 
-© 2025 Made by [Synnot Studio](https://synnotstudio.com) — Licensed under the MIT License.
+© 2026 Miles Pickull — Licensed under the MIT License.
