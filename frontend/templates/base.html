@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Magic Lists</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            plugins: [
+                function ({ addVariant }) {
+                    addVariant('hs-selected', ['&.selected', '.selected &']);
+                }
+            ]
+        };
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/preline@latest/dist/preline.min.js"></script>
+
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+            font-optical-sizing: auto;
+            font-style: normal;
+            -webkit-font-smoothing: antialiased;
+            font-size: 16px;
+        }
+        .app-container {
+            max-width: 1024;
+            margin: 0 auto;
+        }
+        .font-serif {
+            font-family: "IBM Plex Serif", serif;
+            font-weight: 400;
+            font-style: normal;
+        }
+        .blacklist-toggle {
+            color: #9ca3af;
+        }
+        .blacklist-toggle.has-value {
+            color: #111827;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="magic" class="flex flex-col min-h-screen md:max-w-[1024px] md:mx-auto relative">
+        {% include "partials/_header.html" %}
+
+        <div class="flex flex-1 relative">
+            {% include "partials/_toast.html" %}
+
+            {% include "partials/_sidebar.html" %}
+
+            <main class="flex-1 mt-3 md:mt-0 md:p-0 md:pr-4 md:py-0 md:pt-0">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+
+        <footer class="py-5 px-4 mt-auto">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="block w-full text-gray-500 text-center text-sm mb-2 md:mb-0">
+                    &copy; 2025 Made by <a href="https://synnotstudio.com" class="text-indigo-600 hover:text-indigo-800 transition-color border-b border-indigo-200">Synnot Studio</a> - <a href="#" data-page="terms" class="text-indigo-600 hover:text-indigo-800 transition-color border-b border-indigo-200">Terms</a> – Open Source (MIT)
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    {% include "modals/_edit_playlist_modal.html" %}
+
+    <script src="/static/utils.js"></script>
+    <script src="/static/api.js"></script>
+    <script src="/static/ui/selects.js"></script>
+    <script src="/static/ui/toasts.js"></script>
+    <script src="/static/ui/nav.js"></script>
+    <script src="/static/ui/modals.js"></script>
+    <script src="/static/playlists.js"></script>
+    <script src="/static/main.js"></script>
+    <script src="/static/app.js?v=1.1.0"></script>
+</body>
+</html>

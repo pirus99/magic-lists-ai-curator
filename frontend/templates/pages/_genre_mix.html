@@ -1,0 +1,171 @@
+<div id="genre-mix-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white md:border md:border-gray-200 md:rounded-lg">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900 mb-3">Genre Mix</h1>
+        <p class="text-gray-600">Create a curated mix playlist for specific genres from your library. Get a diverse selection of tracks that represent the best of these genres.</p>
+    </div>
+
+    <form id="genre-mix-form" class="space-y-6">
+        <div>
+            <label for="genre-select" class="block text-sm text-gray-900 font-bold mb-2">Choose a genre from your library</label>
+            <div class="relative">
+                <select id="genre-select" multiple data-hs-select='{
+                    "placeholder": "Search for a genre...",
+                    "mode": "tags",
+                    "toggleTag": "<button type=\"button\" aria-expanded=\"false\"><span class=\"capitalize text-foreground\" data-title></span></button>",
+                    "toggleClasses": "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative py-3 ps-4 pe-9 flex items-center gap-x-2 text-nowrap w-full cursor-pointer bg-layer border border-layer-line text-layer-foreground rounded-lg text-start text-sm hover:bg-layer-hover focus:outline-hidden focus:bg-layer-focus",
+                    "wrapperClasses": "relative ps-0.5 pe-9 min-h-11.5 flex items-center flex-wrap w-full bg-layer border border-layer-line hover:bg-layer-hover rounded-lg text-start text-sm focus:bg-layer-focus",
+                    "tagsItemTemplate": "<div class=\"flex flex-nowrap items-center text-nowrap relative z-10 bg-layer border border-layer-line rounded-full p-1 m-1\"><div class=\"whitespace-nowrap capitalize text-foreground ps-1\" data-title></div><div class=\"inline-flex shrink-0 justify-center items-center size-5 ms-2 rounded-full bg-surface text-surface-foreground hover:bg-surface-hover focus:outline-hidden focus:bg-surface-focus text-sm cursor-pointer\" data-remove><svg class=\"shrink-0 size-3\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></div></div>",
+                    "tagsInputClasses": "py-3 px-2 rounded-lg order-1 bg-transparent border-transparent text-foreground placeholder:text-muted-foreground-1 focus:ring-0 text-sm outline-hidden",
+                    "dropdownClasses": "mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-select border border-select-line rounded-lg shadow-xl overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-none [&::-webkit-scrollbar-track]:bg-scrollbar-track [&::-webkit-scrollbar-thumb]:bg-scrollbar-thumb",
+                    "optionClasses": "py-2 px-4 w-full text-sm text-select-item-foreground cursor-pointer hover:bg-select-item-hover rounded-lg focus:outline-hidden focus:bg-select-item-focus",
+                    "optionTemplate": "<div class=\"flex items-center\"><div class=\"text-sm capitalize text-foreground\" data-title></div><div class=\"text-xs text-muted-foreground-1\" data-description></div><div class=\"ms-auto\"><span class=\"hidden hs-selected:block\"><svg class=\"shrink-0 size-4 text-primary\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z\"/></svg></span></div></div>",
+                    "extraMarkup": "<div class=\"absolute top-1/2 end-3 -translate-y-1/2\"><svg class=\"shrink-0 size-3.5 text-muted-foreground-1\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m7 15 5 5 5-5\"/><path d=\"m7 9 5-5 5 5\"/></svg></div>",
+                    "multiple": true
+                }' class="hidden">
+                    <option value="">Choose a genre</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm text-gray-900 font-bold mb-2">Year Range</label>
+                <div class="flex items-center gap-2">
+                    <input type="number" id="genre-year-start" name="genre-year-start" min="1950" max="2026" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900" placeholder="Start">
+                    <span class="text-gray-400 text-sm">–</span>
+                    <input type="number" id="genre-year-end" name="genre-year-end" min="1950" max="2026" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900" placeholder="End">
+                </div>
+            </div>
+
+            <div>
+                <label for="genre-blacklist-select" class="block text-sm text-gray-900 font-bold mb-2">Exclude Artists</label>
+                <div class="relative">
+                    <select id="genre-blacklist-select" multiple data-hs-select='{
+                        "placeholder": "Search artists...",
+                        "toggleTag": "<button type=\"button\"></button>",
+                        "toggleClasses": "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative py-2 px-3 pe-9 flex text-nowrap w-full cursor-pointer bg-white border border-gray-200 rounded-lg text-start text-sm focus:outline focus:outline-2 focus:outline-gray-900 before:absolute before:inset-0 before:z-[1] blacklist-toggle",
+                        "dropdownClasses": "hs-select-dropdown mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-white border border-gray-200 rounded-lg overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300",
+                        "optionClasses": "py-2 px-3 w-full text-sm text-gray-800 cursor-pointer hover:bg-gray-100 rounded-lg focus:outline-none focus:bg-gray-100 hs-selected:bg-blue-50 hs-selected:text-blue-800",
+                        "optionTemplate": "<div class=\"flex justify-between items-center w-full\"><span data-title></span><span><svg class=\"hidden hs-selected:block size-3.5 text-blue-600\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg></span></div>",
+                        "hasSearch": true,
+                        "searchPlaceholder": "Search",
+                        "searchClasses": "block w-full text-sm border-gray-200 rounded-lg focus:border-blue-500 focus:ring-blue-500 before:absolute before:inset-0 before:z-[1] py-2 px-3",
+                        "searchWrapperClasses": "bg-white p-2 -mx-1 sticky top-0",
+                        "multiple": true
+                    }' class="hidden">
+                        <option value="">Click Refresh to load Artists for selected Genres</option>
+                    </select>
+                    <button id="genre-fetch-artists-btn" type="button" class="absolute top-1/2 end-2 -translate-y-1/2 z-[3] cursor-pointer">
+                        <svg id="genre-fetch-artists-icon" class="size-4 text-gray-400 hover:text-gray-600" xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M23 4v6h-6M1 19v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/>
+                        </svg>
+                    </button>
+                    <div id="genre-fetch-artists-spinner" class="hidden size-4 absolute top-1/2 end-2 -translate-y-1/2 z-[3]">
+                        <svg class="text-gray-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-900 font-bold mb-2">Minimum Quality</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="relative">
+                        <div id="genre-bitrate-wrap">
+                            <select id="genre-min-bitrate" name="genre-min-bitrate" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900">
+                                <option value="">Any bitrate</option>
+                                <option value="128">128 kbps</option>
+                                <option value="192">192 kbps</option>
+                                <option value="256">256 kbps</option>
+                                <option value="320">320 kbps</option>
+                            </select>
+                        </div>
+                        <div id="genre-bitdepth-wrap" class="hidden">
+                            <select id="genre-min-bitdepth" name="genre-min-bitdepth" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900">
+                                <option value="">Any depth</option>
+                                <option value="16">16-bit</option>
+                                <option value="24">24-bit</option>
+                            </select>
+                        </div>
+                    </div>
+                    <select id="genre-min-format" name="genre-min-format" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900">
+                        <option value="">Any format</option>
+                        <option value="mp3">MP3</option>
+                        <option value="flac">FLAC</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <label class="block text-sm text-gray-900 font-bold mb-3">Playlist Length</label>
+                <div class="space-y-3">
+                    <div class="flex items-center">
+                        <input type="radio" id="genre-length-25" name="genre-playlist-length" value="25" checked class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                        <label for="genre-length-25" class="text-sm text-gray-500 ms-2">25 tracks</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="radio" id="genre-length-50" name="genre-playlist-length" value="50" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                        <label for="genre-length-50" class="text-sm text-gray-500 ms-2">50 tracks</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="radio" id="genre-length-100" name="genre-playlist-length" value="100" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                        <label for="genre-length-100" class="text-sm text-gray-500 ms-2">100 tracks</label>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-900 font-bold mb-3">Artist &amp; Album Diversity</label>
+                <div class="space-y-3">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="genre-caps-enabled" checked class="shrink-0 mt-0.5 border-gray-200 rounded text-blue-600 focus:ring-blue-500">
+                        <label for="genre-caps-enabled" class="text-sm text-gray-500 ms-2">Use Limits</label>
+                    </div>
+                    <div id="genre-caps-inputs" class="space-y-3">
+                        <div>
+                            <label for="genre-max-tracks-per-album" class="block text-xs text-gray-500 mb-1">Tracks per album</label>
+                            <input type="number" id="genre-max-tracks-per-album" value="2" min="0" step="1" class="h-6 border border-gray-200 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 pl-0.5">
+                        </div>
+                        <div>
+                            <label for="genre-max-tracks-per-artist" class="block text-xs text-gray-500 mb-1">Tracks per artist</label>
+                            <input type="number" id="genre-max-tracks-per-artist" value="3" min="0" step="1" class="h-6 border border-gray-200 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 pl-0.5">
+                        </div>
+                        <p class="text-xs text-gray-400">Limits how many tracks come from the same album or artist.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rediscover-v1-only">
+                <label class="block text-sm text-gray-900 font-bold mb-3">Refresh Frequency</label>
+                <div class="space-y-3">
+                    <div class="flex items-center">
+                        <input type="radio" id="genre-freq-none" name="genre-refresh-frequency" value="none" checked class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                        <label for="genre-freq-none" class="text-sm text-gray-500 ms-2">Don't refresh</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="radio" id="genre-freq-daily" name="genre-refresh-frequency" value="daily" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                        <label for="genre-freq-daily" class="text-sm text-gray-500 ms-2">Daily <span class="text-xs text-gray-500">(1am)</span></label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="radio" id="genre-freq-weekly" name="genre-refresh-frequency" value="weekly" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                        <label for="genre-freq-weekly" class="text-sm text-gray-500 ms-2">Weekly <span class="text-xs text-gray-500">(Monday 1am)</span></label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="radio" id="genre-freq-monthly" name="genre-refresh-frequency" value="monthly" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                        <label for="genre-freq-monthly" class="text-sm text-gray-500 ms-2">Monthly <span class="text-xs text-gray-500">(1st of month 1am)</span></label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pt-4">
+            <button type="submit" id="create-genre-playlist-btn" class="w-full md:w-auto bg-gray-900 text-white font-bold py-2 px-4 md:px-6 rounded-lg hover:bg-gray-700 focus:ring-offset-2 transition-colors">
+                Create Genre Mix Playlist
+            </button>
+        </div>
+    </form>
+</div>
