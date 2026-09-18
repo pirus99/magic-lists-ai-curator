@@ -1,8 +1,7 @@
 import os
 import httpx
-import asyncio
 import aiosqlite
-from typing import Dict, List, Any
+from typing import Dict, Any
 from google import genai
 
 class HealthCheckService:
@@ -56,9 +55,6 @@ class HealthCheckService:
         library_check = await self._check_navidrome_library_config()
         checks.append(library_check)
         # Library config is informational only, don't fail on it
-            
-        # Track Umami events
-        await self._track_umami_events(all_passed, checks)
         
         return {
             "all_passed": all_passed,
@@ -636,23 +632,4 @@ class HealthCheckService:
                 "message": "Using automatic library detection",
                 "suggestion": "For multiple libraries: Set NAVIDROME_LIBRARY_ID in your .env file if you want to target a specific library"
             }
-    
-    async def _track_umami_events(self, all_passed: bool, checks: List[Dict[str, str]]):
-        """Track Umami events for system check results"""
-        # Note: Actual Umami tracking happens client-side in JavaScript
-        # This is just for logging the events that should be tracked
-        
-        if all_passed:
-            print("📊 Analytics event: system_check_all_passed")
-        else:
-            # Check for specific failures
-            for check in checks:
-                if check["status"] == "error":
-                    if "URL Reachable" in check["name"]:
-                        print("📊 Analytics event: system_check_failed_url")
-                    elif "Authentication" in check["name"]:
-                        print("📊 Analytics event: system_check_failed_auth") 
-                    elif "Artists API" in check["name"]:
-                        print("📊 Analytics event: system_check_failed_artists")
-                    elif "AI Provider" in check["name"]:
-                        print("📊 Analytics event: system_check_failed_ai")
+
