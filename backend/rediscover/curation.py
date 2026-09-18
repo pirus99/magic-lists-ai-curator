@@ -3,16 +3,12 @@
 Moved here from ``ai_client.py``. Reuses the shared parser / provider plumbing via
 the passed-in ``AIClient`` instance.
 """
-import httpx
 import json
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ..recipe_manager import recipe_manager
-from ..ai_client import (
-    clean_json_response,
-    parse_ai_track_response,
-    MAX_OVER_RETURN_FACTOR,
-)
+from ..ai_client import parse_ai_track_response
+
 
 
 async def curate_rediscover_weekly(

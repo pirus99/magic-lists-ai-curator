@@ -5,7 +5,7 @@ mapping them onto the v2 processor, preserving behaviour for existing rows while
 the legacy ``RediscoverWeekly`` class has been removed.
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from ..database import DatabaseManager
 from ..core.dependencies import get_navidrome_client, get_ai_client

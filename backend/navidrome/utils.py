@@ -1,5 +1,4 @@
-import os
-from typing import List, Dict, Any, Union, Optional
+from typing import List, Dict, Any
 
 def _get_quality_score(track: Dict[str, Any]) -> int:
     """Return a numeric quality score for a track based on format and bitrate.

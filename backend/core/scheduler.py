@@ -12,7 +12,6 @@ from typing import Dict, Callable, Awaitable, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from ..database import DatabaseManager
-from ..core.dependencies import get_navidrome_client, get_ai_client
 
 
 scheduler_logger = logging.getLogger("scheduler")

@@ -1,6 +1,5 @@
 import httpx
-import os
-from typing import List, Dict, Any, Union, Optional
+from typing import List
 
 
 class _PlaylistsMixin:

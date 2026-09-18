@@ -7,7 +7,6 @@ the rest of the type's logic. The shared parser / provider plumbing still lives 
 import httpx
 import json
 import random
-import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ..recipe_manager import recipe_manager

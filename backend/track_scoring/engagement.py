@@ -1,7 +1,6 @@
 """User-engagement scoring and threshold helpers for track filtering."""
-import random
 from datetime import datetime
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Tuple, Optional
 
 
 def score_tracks_by_user_engagement(tracks: List[Dict], library_stats: Dict) -> List[Tuple[float, Dict]]:

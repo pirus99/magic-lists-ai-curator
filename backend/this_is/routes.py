@@ -1,6 +1,5 @@
 """FastAPI routes for 'This Is' (single-artist) playlists."""
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Optional
 
 from ..schemas import CreatePlaylistRequest, Playlist
 from ..database import DatabaseManager, get_db

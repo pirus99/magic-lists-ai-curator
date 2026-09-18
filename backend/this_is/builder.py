@@ -5,8 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..database import DatabaseManager
 from ..core.dependencies import get_navidrome_client, get_ai_client
 from ..core.playlist_builder import PlaylistTypeConfig
-from ..track_scoring import filter_tracks_for_this_is_playlist
-from ..recipe_manager import recipe_manager
 from .curation import curate_this_is
 
 
