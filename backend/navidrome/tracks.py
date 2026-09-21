@@ -50,7 +50,8 @@ class _TracksMixin:
                 "bit_rate": song_data.get("bitRate", 0),
                 "bit_depth": song_data.get("bitDepth"),
                 "duration": song_data.get("duration"),
-                "track_number": song_data.get("track")
+                "track_number": song_data.get("track"),
+                "genre": song_data.get("genre")
             }
 
             print(f"✅ Fetched track: {track['title']} by {track['artist']}")

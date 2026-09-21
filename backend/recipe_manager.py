@@ -125,7 +125,13 @@ class RecipeManager:
         if "llm_config" in recipe:
             # New recipe format - use recursive replacement
             replacements = {}
-            
+
+            # General placeholder replacement for all recipe user_parameters keys.
+            # This is required for recipes like re_discover_phase1_v2 where the prompt
+            # contains placeholders such as {{tracks_found}} and {{available_genres}}.
+            for key, value in inputs.items():
+                replacements[f"{{{{{key}}}}}"] = str(value)
+
             # Map common inputs to new placeholder format
             if "artists" in inputs:
                 replacements["{{TARGET_ARTIST}}"] = str(inputs["artists"])
@@ -133,33 +139,36 @@ class RecipeManager:
                 replacements["{{TARGET_GENRE}}"] = str(inputs["genres"])
             if "num_tracks" in inputs:
                 replacements["{{DESIRED_TRACK_COUNT}}"] = str(inputs["num_tracks"])
-            
+
             print(f"🔄 Processing recipe with {len(replacements)} placeholder replacements")
-            
+
             # Map re-discover specific inputs
             if "candidate_tracks" in inputs:
                 replacements["{{CANDIDATE_TRACKS_JSON}}"] = str(inputs["candidate_tracks_json"])
             if "analysis_summary" in inputs:
                 replacements["{{ANALYSIS_SUMMARY}}"] = str(inputs["analysis_summary"])
-            
-            
+
             # Pass 1: Evaluate math expressions first
             math_evaluated_recipe = self._evaluate_math_expressions(recipe, inputs)
-            
+
             # Pass 2: Apply recursive replacement to the entire recipe
             final_recipe = self._recursive_replace(math_evaluated_recipe, replacements)
-            
+
             # Verify critical replacements occurred
             model_instructions = final_recipe.get("model_instructions", "")
-            if "{{TARGET_ARTIST}}" in model_instructions or "{{DESIRED_TRACK_COUNT}}" in model_instructions:
-                print(f"⚠️  Placeholder replacement failed - check recipe template")
+            unresolved = [
+                token for token in ["{{TARGET_ARTIST}}", "{{DESIRED_TRACK_COUNT}}", "{{tracks_found}}", "{{top_genres}}", "{{top_artists}}", "{{top_decades}}", "{{avg_play_count}}", "{{available_genres}}"]
+                if token in model_instructions
+            ]
+            if unresolved:
+                print(f"⚠️  Placeholder replacement failed for: {unresolved}")
             else:
                 print(f"✅ Recipe processed successfully")
-            
+
             # Add tracks data to the final recipe for AI processing
             if "tracks_data" in inputs:
                 final_recipe["tracks_data"] = inputs["tracks_data"]
-            
+
             return final_recipe
         
         else:

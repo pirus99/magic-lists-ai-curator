@@ -1,5 +1,33 @@
+import json
+
 from backend.playlist_metadata import resolve_refresh_description
 from backend.database.playlists import _safe_json_loads
+from backend.recipe_manager import RecipeManager
+
+
+def test_re_discover_phase1_recipe_replaces_all_input_placeholders():
+    recipe_manager = RecipeManager(recipes_dir="recipes")
+    inputs = {
+        "tracks_found": 42,
+        "top_genres": json.dumps({"Rock": 5, "Pop": 3}),
+        "top_artists": json.dumps({"Artist A": 6}),
+        "top_decades": json.dumps({"2000s": 10}),
+        "avg_play_count": 12.4,
+        "available_genres": json.dumps(["Rock", "Pop", "Jazz"]),
+    }
+
+    final_recipe = recipe_manager.apply_recipe("re_discover_phase1_v2", inputs)
+    instructions = final_recipe["model_instructions"]
+
+    assert "{{tracks_found}}" not in instructions
+    assert "{{top_genres}}" not in instructions
+    assert "{{top_artists}}" not in instructions
+    assert "{{top_decades}}" not in instructions
+    assert "{{avg_play_count}}" not in instructions
+    assert "{{available_genres}}" not in instructions
+    assert "42" in instructions
+    assert "Rock" in instructions
+    assert "2000s" in instructions
 
 
 def test_manual_description_is_preserved_during_refresh():
