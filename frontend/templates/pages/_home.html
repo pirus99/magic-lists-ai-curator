@@ -1,8 +1,11 @@
 <div id="database-error-alert" class="hidden bg-red-50 border-s-4 border-red-500 p-4 mb-4" role="alert">
     <div class="flex">
         <div class="shrink-0">
-            <span class="inline-flex justify-center items-center size-8 rounded-full border-4 border-red-100 bg-red-200 text-red-800">
-                <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <span
+                class="inline-flex justify-center items-center size-8 rounded-full border-4 border-red-100 bg-red-200 text-red-800">
+                <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
                     <path d="M18 6 6 18"></path>
                     <path d="m6 6 12 12"></path>
                 </svg>
@@ -15,53 +18,84 @@
                 Please check your DATABASE_PATH environment variable configuration.
             </p>
             <p class="text-sm text-blue-600 mt-2">
-                <a href="#" data-page="system-check" class="underline">Run System Check</a> for detailed configuration help.
+                <a href="#" data-page="system-check" class="underline">Run System Check</a> for detailed configuration
+                help.
             </p>
         </div>
     </div>
 </div>
 
-<div id="welcome-content" style="display: none;" class="bg-white md:border md:border-gray-200 p-4 pb-10 md:pt-10 md:pl-10 md:pr-14 md:pb-12 md:rounded-lg">
-    <h1 class="text-2xl md:text-3xl font-semibold text-gray-900 mb-4 md:mb-6" style="font-stretch: normal; font-optical-sizing: auto;">Create playlists from your Navidrome&nbsp;library</h1>
-    <p class="text-gray-500 mb-6">Generate, refresh and manage playlists locally. Fast, private, and under your control.</p>
+<div id="welcome-content" style="display: none;"
+    class="bg-white md:border md:border-gray-200 p-4 pb-10 md:pt-10 md:pl-10 md:pr-14 md:pb-12 md:rounded-lg">
+    <h1 class="text-2xl md:text-3xl font-semibold text-gray-900 mb-4 md:mb-6"
+        style="font-stretch: normal; font-optical-sizing: auto;">Create playlists from your Navidrome&nbsp;library</h1>
+    <p class="text-gray-500 mb-6">Generate, refresh and manage playlists locally. Fast, private, and under your control.
+    </p>
 
     <h2 class="text-xl font-semibold text-gray-900 mb-2">Quick Start</h2>
     <ol class="list-decimal list-outside ml-5 space-y-2 mb-1 text-gray-500">
-        <li><strong>Choose a tool</strong>: <a href="#" data-page="this-is-artist" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">This Is</a>, <a href="#" data-page="re-discover" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Re-Discover</a> or <a href="#" data-page="genre-mix" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Genre Mix</a></li>
-        <li><strong>Configure your playlist</strong>: Set the track count and how often it should auto-refresh (daily, weekly, monthly or never).</li>
+        <li><strong>Choose a tool</strong>: <a href="#" data-page="this-is-artist"
+                class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">This
+                Is</a>, <a href="#" data-page="re-discover"
+                class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Re-Discover</a>
+            or <a href="#" data-page="genre-mix"
+                class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Genre
+                Mix</a></li>
+        <li><strong>Configure your playlist</strong>: Set the track count and how often it should auto-refresh (daily,
+            weekly, monthly or never).</li>
         <li><strong>Let it run</strong>: Magic Lists works in the background to keep your playlists fresh.</li>
     </ol>
 
     <h2 class="text-xl font-semibold text-gray-900 mt-7 mb-2">What it does</h2>
-    <p class="text-gray-600 mb-6">Magic Lists reads your local library metadata, then uses a versioned recipe to compose thoughtful playlists. Recipes can run locally or via your configured AI provider; the playlists and description are sent to your Navidrome library.</p>
-
+    <p class="text-gray-600 mb-6">Magic Lists reads your local library files and uses their metadata to curate
+        huge lists according to your listening patterns. These huge lists are then given to a local or API AI model for
+        fine selection, those fine grained selections are then composed into a playlist stored in your Navidrome Instance.</p>
     <h2 class="text-xl font-semibold text-gray-900 mt-7 mb-2">Key features</h2>
     <div class="space-y-4 mb-2">
         <div>
-            <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="this-is-artist" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">This Is</a></h3>
-            <p class="text-gray-600">A definitive, single-artist mix. Includes primary and featured appearances, de-duplicates repeated versions, and balances hits and deep cuts.</p>
+            <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="this-is-artist"
+                    class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">This
+                    Is</a></h3>
+            <p class="text-gray-600">A definitive, single-artist mix. Includes primary and featured appearances,
+                de-duplicates repeated versions, and balances hits and deep cuts.</p>
         </div>
         <div>
-            <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="re-discover" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Re-Discover</a></h3>
-            <p class="text-gray-600">Surfaces tracks you haven't played recently so you can re-find forgotten favourites. Set it to refresh daily, weekly or monthly.</p>
+            <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="re-discover"
+                    class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Re-Discover</a>
+            </h3>
+            <p class="text-gray-600">Surfaces tracks you haven't played recently so you can re-find forgotten
+                favourites. Set it to refresh daily, weekly or monthly.</p>
         </div>
         <div>
-            <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="genre-mix" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Genre Mix</a></h3>
-            <p class="text-gray-600">A curated mix of specific genres selected by a weighted percentage of relevant and forgotten tracks for an AI‑driven curation, finely tuned by the chosen filters.</p>
+            <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="genre-mix"
+                    class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Genre
+                    Mix</a></h3>
+            <p class="text-gray-600">A curated mix of specific genres selected by a weighted percentage of relevant and
+                forgotten tracks for an AI‑driven curation, finely tuned by the chosen filters.</p>
         </div>
         <div>
             <h3 class="text-base font-bold text-gray-500 mb-0">Auto-Refresh</h3>
-            <p class="text-gray-600">Schedule playlists to refresh automatically on your machine so lists stay current without manual effort.</p>
+            <p class="text-gray-600">Schedule playlists to refresh automatically on your machine so lists stay current
+                without manual effort.</p>
         </div>
     </div>
 
     <h2 class="text-xl font-semibold text-gray-900 mt-7 mb-2">Privacy & control</h2>
-    <p class="text-gray-600 mb-4">Your music and metadata remain yours. No music files are uploaded — you choose whether AI runs locally or via a remote API key.</p>
+    <p class="text-gray-600 mb-4">Your music data remains yours. No music files are uploaded, only metadata like title -
+        album - artist are used for curation — you choose whether
+        AI runs locally or via a remote API key.</p>
 
     <h2 class="text-xl font-semibold text-gray-900 mt-7 mb-2">About this project</h2>
-    <p class="text-gray-600 mb-4">MagicLists is an open-source experiment in AI-assisted music discovery for people who run their own Navidrome server. Instead of "renting" playlists from Apple or Spotify, you keep full control of your library and still enjoy smart, personalised mixes.</p>
-    <p class="text-gray-600 mb-4">This is an ongoing research project led by a product designer with 20+ years in tech, built with and for the Navidrome community. Together we're proving that AI-powered curation can be free, transparent and privacy-respecting.</p>
-
+    <p class="text-gray-600 mb-4">MagicLists is an open-source experiment in AI-assisted music discovery for people who
+        run their own Navidrome server. Instead of "renting" playlists from Apple or Spotify, you keep full control of
+        your library and still enjoy smart, personalised mixes.</p>
+    <p class="text-gray-600 mb-4">This is an ongoing research project founded by Ricky Synnot with 20+ years of
+        experience in tech,
+        built with and for the Navidrome community.
+        Now this project's fork is improved and maintained by Miles Pickull, who has over 15 years of experience in
+        tech,
+        we're proving that AI‑powered curation can be free,
+        transparent, and privacy‑respecting.</p>
     <h3 class="text-base font-semibold text-gray-500 mt-5 mb-2">Available Today</h3>
     <ul class="list-disc list-outside ml-5 space-y-1 text-gray-600 mb-2">
         <li>This Is: Create a curated mix for any artist.</li>
@@ -72,10 +106,16 @@
     <h3 class="text-base font-semibold text-gray-500 mt-5 mb-2">Coming Soon</h3>
     <ul class="list-disc list-outside ml-5 space-y-1 text-gray-600 mb-4">
         <li>True Artist Radio (multi-artist blends)</li>
-        <li>Fresh discovery tools</li>
-        <li>Library embeddings for richer, similarity-based mixes</li>
+        <li>Listenbrainz integration</li>
+        <li>Jellyfin integration</li>
     </ul>
 
     <h2 class="text-xl font-semibold text-gray-900 mt-7 mb-2">Get in Touch</h2>
-    <p class="text-gray-600">Questions or feedback? Reach out at <a href="mailto:magiclists@synnotstudio.com" class="text-indigo-600 hover:text-indigo-800 transition-color border-b border-indigo-200">magiclists@synnotstudio.com</a></p>
+    <p class="text-gray-600">Having Questions, Feature Requests or an Issue ? Just open an
+        <a href="https://github.com/pirus99/magic-lists-for-navidrome/issues"
+            class="ml-1 text-indigo-600 hover:text-indigo-800 transition-color border-b border-indigo-200">
+            Issue
+        </a>
+        on GitHub.
+    </p>
 </div>
