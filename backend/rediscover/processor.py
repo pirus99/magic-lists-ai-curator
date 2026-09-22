@@ -65,9 +65,6 @@ class ReDiscoverV2Processor:
             library_size = await self._get_library_size_cached(server_id)
             print(f"📊 Library size: {library_size} tracks")
 
-            genres = await self._get_genres_cached(server_id)
-            print(f"📊 Found {len(genres)} unique genres")
-
             print("🔍 Phase 1: Analyzing listening patterns...")
 
             # Use smart-playlist target discovery if enabled
@@ -102,10 +99,10 @@ class ReDiscoverV2Processor:
                 return await self._trigger_fallback(user_id, server_id, library_ids)
 
             analysis = self._analyze_target_period(target_tracks)
-            theme_strategy = await self._llm_phase1_theme_detection(analysis, genres)
+            theme_strategy = await self._llm_phase1_theme_detection(analysis)
 
             search_results = await self._execute_searches(theme_strategy, library_ids)
-            candidates = self._filter_and_enrich_candidates(search_results, target_tracks)
+            candidates = self._filter_and_enrich_candidates(search_results)
             final_tracks = await self._llm_phase2_sequencing(candidates, theme_strategy)
 
             playlist_data = await self._create_playlist_data(final_tracks, theme_strategy, user_id, server_id, used_smart_playlist)
@@ -353,7 +350,7 @@ class ReDiscoverV2Processor:
             },
         }
 
-    async def _llm_phase1_theme_detection(self, analysis: Dict[str, Any], available_genres: List[str]) -> Dict[str, Any]:
+    async def _llm_phase1_theme_detection(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Phase 1 AI: Analyze listening patterns and select curation strategy."""
         recipe_inputs = {
             "tracks_found": analysis["tracks_found"],
@@ -497,12 +494,11 @@ class ReDiscoverV2Processor:
             print(f"❌ Year range search failed: {e}")
             return []
 
-    def _filter_and_enrich_candidates(self, search_results: List[Dict[str, Any]], target_tracks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _filter_and_enrich_candidates(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Filter search results and calculate rediscovery scores."""
         candidates = []
         now = datetime.now(timezone.utc)
         exclude_before = now - timedelta(days=self.config["exclude_played_within_days"])
-        target_track_ids = {t["id"] for t in target_tracks if isinstance(t, dict) and t.get("id")}
 
         for track in search_results:
             if not isinstance(track, dict):
@@ -516,13 +512,20 @@ class ReDiscoverV2Processor:
             if played and played > exclude_before:
                 continue
 
-            play_count = track.get("play_count", 0)
+            play_count = track.get("play_count", track.get("playCount", 0))
+            if isinstance(play_count, str):
+                try:
+                    play_count = int(play_count)
+                except ValueError:
+                    play_count = 0
+
             days_since_play = self._calculate_days_since_played(played_value, default_days=30, now=now)
 
             rediscovery_score = play_count * (1 + days_since_play ** 0.5) * random.uniform(0.8, 1.2)
 
             candidate = {
                 **track,
+                "play_count": play_count,
                 "rediscovery_score": rediscovery_score,
                 "days_since_last_play": days_since_play,
             }
@@ -557,12 +560,6 @@ class ReDiscoverV2Processor:
                 "year": track.get("year", 2000),
                 "rediscovery_score": round(track.get("rediscovery_score", 0), 2),
             })
-
-        recipe_inputs = {
-            "theme_strategy": json.dumps(theme_strategy),
-            "candidate_tracks": json.dumps(ai_candidates),
-            "num_tracks": self.config["track_count"],
-        }
 
         try:
             ai_result = await curate_rediscover_weekly(

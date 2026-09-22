@@ -62,7 +62,6 @@ from .schemas import (
     CreatePlaylistRequest,
     CreateGenrePlaylistRequest,
     Playlist,
-    RediscoverWeeklyResponse,
     RediscoverWeeklyV2Response,
     CreateRediscoverPlaylistRequest,
     PlaylistWithScheduleInfo,

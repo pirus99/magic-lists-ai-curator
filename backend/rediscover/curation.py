@@ -4,7 +4,7 @@ Moved here from ``ai_client.py``. Reuses the shared parser / provider plumbing v
 the passed-in ``AIClient`` instance.
 """
 import json
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 from ..recipe_manager import recipe_manager
 from ..ai_client import parse_ai_track_response

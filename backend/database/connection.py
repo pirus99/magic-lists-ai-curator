@@ -185,7 +185,7 @@ class _ConnectionMixin:
         Priority:
           1. Copy from a matching scheduled_playlists row (most reliable).
           2. Infer from curation_settings.genres (genre_mix).
-          3. Infer from the synthetic artist_id used for rediscover playlists.
+          3. Infer from the synthetic artist_id used for rediscover v2 playlists.
           4. Fall back to 'this_is'.
         """
         try:
@@ -220,8 +220,8 @@ class _ConnectionMixin:
 
                     if curation_settings.get("genres"):
                         inferred = "genre_mix"
-                    elif artist_id in ("rediscover", "rediscover_v2"):
-                        inferred = "rediscover_weekly_v2" if artist_id == "rediscover_v2" else "rediscover"
+                    elif artist_id == "rediscover_v2":
+                        inferred = "rediscover_weekly_v2"
                     else:
                         inferred = "this_is"
 
