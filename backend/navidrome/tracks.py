@@ -1,6 +1,8 @@
 import httpx
 from typing import List, Dict, Any, Union, Optional
 
+from .utils import _normalize_genres
+
 
 class _TracksMixin:
     async def get_track_by_id(self, track_id: str) -> Optional[Dict[str, Any]]:
@@ -37,6 +39,8 @@ class _TracksMixin:
                 print(f"⚠️ No song found for ID: {track_id}")
                 return None
 
+            raw_genres = song_data.get("genres", song_data.get("genre"))
+            normalized_genres = _normalize_genres(raw_genres)
             track = {
                 "id": song_data.get("id"),
                 "title": song_data.get("title"),
@@ -51,7 +55,8 @@ class _TracksMixin:
                 "bit_depth": song_data.get("bitDepth"),
                 "duration": song_data.get("duration"),
                 "track_number": song_data.get("track"),
-                "genre": song_data.get("genre")
+                "genre": song_data.get("genre"),
+                "genres": normalized_genres,
             }
 
             print(f"✅ Fetched track: {track['title']} by {track['artist']}")
@@ -126,6 +131,8 @@ class _TracksMixin:
                 if album_subsonic.get("status") == "ok":
                     album_info = album_subsonic.get("album", {})
                     for song in album_info.get("song", []):
+                        raw_genres = song.get("genres", song.get("genre"))
+                        normalized_genres = _normalize_genres(raw_genres)
                         tracks_list.append({
                             "id": song.get("id"),
                             "title": song.get("title"),
@@ -137,7 +144,9 @@ class _TracksMixin:
                             "rating": song.get("userRating", 0),
                             "format": song.get("suffix"),
                             "bit_rate": song.get("bitRate", 0),
-                            "bit_depth": song.get("bitDepth")
+                            "bit_depth": song.get("bitDepth"),
+                            "genre": song.get("genre"),
+                            "genres": normalized_genres,
                         })
         
             return self._deduplicate_tracks(tracks_list)
@@ -216,6 +225,10 @@ class _TracksMixin:
 
                     # Convert songs to our track format
                     for song in songs:
+                        if not isinstance(song, dict):
+                            continue
+                        raw_genres = song.get("genres", song.get("genre"))
+                        normalized_genres = _normalize_genres(raw_genres)
                         track = {
                             "id": song.get("id"),
                             "title": song.get("title"),
@@ -223,6 +236,7 @@ class _TracksMixin:
                             "album": song.get("album"),
                             "year": song.get("year"),
                             "genre": song.get("genre"),
+                            "genres": normalized_genres,
                             "play_count": song.get("playCount", 0),
                             "starred": song.get("starred") is not None,
                             "rating": song.get("userRating", 0),
@@ -323,6 +337,10 @@ class _TracksMixin:
 
                 # Convert songs to our track format
                 for song in songs:
+                    if not isinstance(song, dict):
+                        continue
+                    raw_genres = song.get("genres", song.get("genre"))
+                    normalized_genres = _normalize_genres(raw_genres)
                     track = {
                         "id": song.get("id"),
                         "title": song.get("title"),
@@ -330,6 +348,7 @@ class _TracksMixin:
                         "album": song.get("album"),
                         "year": song.get("year"),
                         "genre": song.get("genre"),
+                        "genres": normalized_genres,
                         "play_count": song.get("playCount", 0),
                         "starred": song.get("starred") is not None,
                         "rating": song.get("userRating", 0),
@@ -407,8 +426,12 @@ class _TracksMixin:
 
             tracks_list = []
             for song in songs:
+                if not isinstance(song, dict):
+                    continue
+                raw_genres = song.get("genres", song.get("genre"))
+                normalized_genres = _normalize_genres(raw_genres)
                 # Filter songs that match the genre exactly
-                if song.get("genre") == genre:
+                if song.get("genre") == genre or genre in normalized_genres:
                     track = {
                         "id": song.get("id"),
                         "title": song.get("title"),
@@ -416,6 +439,7 @@ class _TracksMixin:
                         "album": song.get("album"),
                         "year": song.get("year"),
                         "genre": song.get("genre"),
+                        "genres": normalized_genres,
                         "play_count": song.get("playCount", 0),
                         "starred": song.get("starred") is not None,
                         "rating": song.get("userRating", 0),
@@ -479,12 +503,17 @@ class _TracksMixin:
             # Convert to consistent format
             tracks = []
             for song in songs:
+                if not isinstance(song, dict):
+                    continue
+                raw_genres = song.get("genres", song.get("genre"))
+                normalized_genres = _normalize_genres(raw_genres)
                 tracks.append({
                     "id": song.get("id"),
                     "title": song.get("title"),
                     "artist": song.get("artist"),
                     "album": song.get("album"),
                     "genre": song.get("genre"),
+                    "genres": normalized_genres,
                     "year": song.get("year"),
                     "duration": song.get("duration"),
                     "play_count": song.get("playCount", 0),
@@ -494,7 +523,6 @@ class _TracksMixin:
                     "format": song.get("suffix"),
                     "bit_rate": song.get("bitRate", 0),
                     "bit_depth": song.get("bitDepth"),
-                    "genres": song.get("genres", []),
                     "path": song.get("path")
                 })
 

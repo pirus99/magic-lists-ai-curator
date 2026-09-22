@@ -17,7 +17,6 @@ async def curate_rediscover_weekly(
     analysis_summary: str,
     num_tracks: int = 20,
     include_description: bool = True,
-    variety_context: Optional[str] = None,
 ) -> Union[List[str], Tuple[List[str], str]]:
     """Curate a Re-Discover Weekly playlist using AI."""
     if not ai_client.api_key and ai_client.provider.provider_type == "openrouter":
@@ -35,13 +34,13 @@ async def curate_rediscover_weekly(
     track_id_map = []
     for index, track in enumerate(candidate_tracks):
         track_id_map.append(track["id"])
-        indexed_track = {
-            "index": index,
-            "track_name": track.get("title", "Unknown"),
-            "artist": track.get("artist", "Unknown"),
-            "genre": track.get("genre", "Unknown"),
-            "rediscovery_score": round(track.get("rediscovery_score", 0), 1),
-        }
+        indexed_track = (
+                index,
+                f"{track.get('title', 'NA')} - {track.get('artist', 'NA')}",
+                track.get("year", "NA"),
+                track.get("genres", "NA"),
+                track.get("rediscovery_score", "0",)
+        )
         indexed_tracks.append(indexed_track)
 
     try:

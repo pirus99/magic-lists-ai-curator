@@ -1,4 +1,38 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Iterable
+
+def _normalize_genres(value: Any) -> List[str]:
+    """Normalize Subsonic genre payloads into a stable list of strings.
+
+    Supports strings like "Rock, Pop", "Hip Hop / Electronic", list-of-strings,
+    and list-of-dicts such as [{"name": "Techno"}, {"name": "House"}].
+    """
+    if value is None:
+        return []
+
+    if isinstance(value, str):
+        return _parse_genre_string(value)
+
+    if isinstance(value, dict):
+        genre_name = value.get("name") or value.get("value")
+        if genre_name:
+            return _parse_genre_string(str(genre_name))
+        return []
+
+    if isinstance(value, Iterable) and not isinstance(value, (bytes, bytearray)):
+        result: List[str] = []
+        for item in value:
+            normalized = _normalize_genres(item)
+            for genre in normalized:
+                if genre and genre not in result:
+                    result.append(genre)
+        return result
+
+    if value is not None:
+        normalized = str(value).strip()
+        return _parse_genre_string(normalized) if normalized else []
+
+    return []
+
 
 def _get_quality_score(track: Dict[str, Any]) -> int:
     """Return a numeric quality score for a track based on format and bitrate.
@@ -94,21 +128,26 @@ def _deduplicate_tracks(tracks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _parse_genre_string(genre_str: str) -> List[str]:
-    """Parse genre strings that may contain multiple genres separated by delimiters"""
+    """Parse genre strings that may contain multiple genres separated by delimiters."""
     if not genre_str:
         return []
 
-    # Common separators: comma, slash, bullet, tab, pipe
-    separators = [",", "/", "•", "\t", "|", ";", "&"]
+    text = str(genre_str).strip()
+    if not text:
+        return []
 
-    # Try each separator
+    separators = [",", "/", "•", "\t", "|", ";", "&", "\\"]
     for sep in separators:
-        if sep in genre_str:
-            parts = [part.strip() for part in genre_str.split(sep) if part.strip()]
+        if sep in text:
+            parts = [part.strip() for part in text.split(sep) if part.strip()]
             if len(parts) > 1:
-                return parts
+                result: List[str] = []
+                for part in parts:
+                    for nested in _parse_genre_string(part):
+                        if nested and nested not in result:
+                            result.append(nested)
+                return result
 
-    # No separators found, return as single genre
-    return [genre_str.strip()]
+    return [text]
 
 

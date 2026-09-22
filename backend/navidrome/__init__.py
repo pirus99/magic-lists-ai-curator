@@ -10,7 +10,7 @@ from .artists import _ArtistsMixin
 from .tracks import _TracksMixin
 from .genres import _GenresMixin
 from .playlists import _PlaylistsMixin
-from .utils import _get_quality_score, _deduplicate_tracks, _parse_genre_string
+from .utils import _get_quality_score, _deduplicate_tracks, _parse_genre_string, _normalize_genres
 
 
 class NavidromeClient(
@@ -31,6 +31,7 @@ class NavidromeClient(
     deduplicate_tracks = staticmethod(_deduplicate_tracks)
     _deduplicate_tracks = staticmethod(_deduplicate_tracks)
     parse_genre_string = staticmethod(_parse_genre_string)
+    normalize_genres = staticmethod(_normalize_genres)
 
 
 __all__ = ["NavidromeClient"]

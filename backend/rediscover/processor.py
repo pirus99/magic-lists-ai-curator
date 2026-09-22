@@ -29,6 +29,9 @@ class ReDiscoverV2Processor:
             "min_target_period_tracks": 10,
             "genre_cache_hours": 24,
             "enable_fallback": True,
+            "sample_size_percentage": 0.10,
+            "sample_size_min": 500,
+            "sample_size_max": 2000,
             # Smart-playlist target discovery settings
             "use_smart_playlist_target": True,
             "target_playlist_name": "magiclists-rediscover-targets",
@@ -144,11 +147,98 @@ class ReDiscoverV2Processor:
 
         try:
             genres = await self.navidrome_client.get_genres()
-            genre_names = [g.get("value", g.get("name", "")) for g in genres if g.get("value", g.get("name", ""))]
-            await self.db.set_cache(cache_key, json.dumps(genre_names), 86400)
-            return genre_names
+            normalized = []
+            for genre in genres or []:
+                if isinstance(genre, dict):
+                    value = genre.get("value") or genre.get("name")
+                else:
+                    value = genre
+
+                if isinstance(value, str):
+                    cleaned = value.strip()
+                    if cleaned:
+                        normalized.extend([item.strip() for item in re.split(r"[,/|&]+", cleaned) if item.strip()])
+            unique = []
+            for item in normalized:
+                if item and item not in unique:
+                    unique.append(item)
+            await self.db.set_cache(cache_key, json.dumps(unique), 86400)
+            return unique
         except Exception:
             return ["Rock", "Pop", "Electronic", "Jazz", "Classical"]
+
+    def _parse_subsonic_datetime(self, value: Any) -> Optional[datetime]:
+        """Parse the actual Subsonic ISO-8601 timestamps returned by Navidrome."""
+        if value is None or value == "":
+            return None
+
+        if isinstance(value, datetime):
+            dt = value
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+
+        if isinstance(value, (int, float)):
+            try:
+                return datetime.fromtimestamp(float(value), tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return None
+
+        if not isinstance(value, str):
+            return None
+
+        text = value.strip()
+        if not text:
+            return None
+
+        if text.isdigit() or (text.startswith("-") and text[1:].isdigit()):
+            try:
+                return datetime.fromtimestamp(int(text), tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return None
+
+        normalized = text
+        if normalized.endswith(("Z", "z")):
+            normalized = normalized[:-1] + "+00:00"
+
+        # Some API sources return a space instead of T; handle that without breaking ISO parsing.
+        if " " in normalized and "T" not in normalized:
+            normalized = normalized.replace(" ", "T", 1)
+
+        # Handle offsets without a colon, e.g. +0000 or -0500.
+        match = re.match(r"^(.*[0-9])([+-]\d{2})(\d{2})$", normalized)
+        if match:
+            normalized = f"{match.group(1)}{match.group(2)}:{match.group(3)}"
+
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    parsed = datetime.strptime(normalized, fmt)
+                    break
+                except ValueError:
+                    parsed = None
+            else:
+                return None
+
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def _calculate_days_since_played(self, played_value: Any, default_days: int = 30, now: Optional[datetime] = None) -> int:
+        """Calculate days since a track was last played from the API timestamp, with a sane default."""
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        parsed = self._parse_subsonic_datetime(played_value)
+        if parsed is None:
+            return default_days
+
+        try:
+            return max(0, (now - parsed).days)
+        except TypeError:
+            return default_days
 
     def _calculate_sample_size(self, library_size: int) -> int:
         """Calculate optimal sample size based on library size."""
@@ -186,14 +276,14 @@ class ReDiscoverV2Processor:
         print(f"🔍 Filtering {len(tracks)} tracks for target period ({self.config['target_period_days_end']}-{self.config['target_period_days_start']} days ago)...")
 
         for track in tracks:
-            played_str = track.get("played")
-            if not played_str:
+            played_value = track.get("played")
+            if not played_value:
                 continue
             tracks_with_timestamps += 1
             try:
-                if played_str.endswith("Z"):
-                    played_str = played_str[:-1] + "+00:00"
-                played = datetime.fromisoformat(played_str)
+                played = self._parse_subsonic_datetime(played_value)
+                if played is None:
+                    raise ValueError(f"Could not parse timestamp: {played_value}")
                 days_ago = (now - played).days
                 if tracks_in_range < 3:
                     print(f"🔍 Track '{track.get('title', 'Unknown')}' played {days_ago} days ago")
@@ -203,7 +293,7 @@ class ReDiscoverV2Processor:
                     target_tracks.append(track)
                     tracks_in_range += 1
             except (ValueError, TypeError) as e:
-                print(f"⚠️ Failed to parse timestamp '{played_str}' for track '{track.get('title', 'Unknown')}': {e}")
+                print(f"⚠️ Failed to parse timestamp '{played_value}' for track '{track.get('title', 'Unknown')}': {e}")
                 continue
 
         print(f"🔍 Summary: {tracks_with_timestamps} tracks had timestamps, {tracks_in_range} in target range")
@@ -236,18 +326,12 @@ class ReDiscoverV2Processor:
                 decade = (year // 10) * 10
                 decades[decade] = decades.get(decade, 0) + 1
 
-        play_counts = [track.get("playCount", 0) for track in target_tracks]
+        play_count = [track.get("play_count", 0) for track in target_tracks]
         played_datetimes = []
         for track in target_tracks:
             played = track.get("played_datetime")
             if played is None and track.get("played"):
-                played_str = track["played"]
-                if played_str.endswith("Z"):
-                    played_str = played_str[:-1] + "+00:00"
-                try:
-                    played = datetime.fromisoformat(played_str)
-                except (TypeError, ValueError):
-                    continue
+                played = self._parse_subsonic_datetime(track["played"])
             if isinstance(played, datetime):
                 played_datetimes.append(played)
 
@@ -262,7 +346,7 @@ class ReDiscoverV2Processor:
             "top_decades": dict(
                 sorted(decades.items(), key=lambda item: item[1], reverse=True)[:3]
             ),
-            "avg_play_count": sum(play_counts) / len(play_counts) if play_counts else 0,
+            "avg_play_count": sum(play_count) / len(play_count) if play_count else 0,
             "date_range": {
                 "oldest": min(played_datetimes, default=None),
                 "newest": max(played_datetimes, default=None),
@@ -352,8 +436,13 @@ class ReDiscoverV2Processor:
 
     async def _execute_searches(self, theme_strategy: Dict[str, Any], library_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Execute targeted searches based on AI strategy."""
+        if not isinstance(theme_strategy, dict):
+            return []
+
         search_results = []
         strategy = theme_strategy.get("search_strategy", {})
+        if not isinstance(strategy, dict):
+            strategy = {}
 
         include_genres = strategy.get("include_genres", [])
         for genre in include_genres[:3]:
@@ -413,42 +502,29 @@ class ReDiscoverV2Processor:
         candidates = []
         now = datetime.now(timezone.utc)
         exclude_before = now - timedelta(days=self.config["exclude_played_within_days"])
-        target_track_ids = {t["id"] for t in target_tracks}
+        target_track_ids = {t["id"] for t in target_tracks if isinstance(t, dict) and t.get("id")}
 
         for track in search_results:
+            if not isinstance(track, dict):
+                continue
             track_id = track.get("id")
             if not track_id:
                 continue
-            played_str = track.get("played")
-            if played_str:
-                try:
-                    if played_str.endswith("Z"):
-                        played_str = played_str[:-1] + "+00:00"
-                    played = datetime.fromisoformat(played_str)
-                    if played > exclude_before:
-                        continue
-                except Exception:
-                    pass
 
-            play_count = track.get("playCount", 0)
-            days_since_play = 30
-            if played_str:
-                try:
-                    if played_str.endswith("Z"):
-                        played_str = played_str[:-1] + "+00:00"
-                    played = datetime.fromisoformat(played_str)
-                    days_since_play = (now - played).days
-                except Exception:
-                    pass
+            played_value = track.get("played")
+            played = self._parse_subsonic_datetime(played_value)
+            if played and played > exclude_before:
+                continue
+
+            play_count = track.get("play_count", 0)
+            days_since_play = self._calculate_days_since_played(played_value, default_days=30, now=now)
 
             rediscovery_score = play_count * (1 + days_since_play ** 0.5) * random.uniform(0.8, 1.2)
-            was_in_target_period = track_id in target_track_ids
 
             candidate = {
                 **track,
                 "rediscovery_score": rediscovery_score,
                 "days_since_last_play": days_since_play,
-                "was_in_target_period": was_in_target_period,
             }
             candidates.append(candidate)
 
@@ -458,18 +534,28 @@ class ReDiscoverV2Processor:
     async def _llm_phase2_sequencing(self, candidates: List[Dict[str, Any]], theme_strategy: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Phase 2 AI: Sequence exactly 25 tracks for optimal playlist flow."""
         ai_candidates = []
-        for track in candidates[:80]:
+        for track in candidates[:120]:
+            raw_genres = track.get("genres", [])
+            if isinstance(raw_genres, list):
+                normalized_genres = []
+                for genre in raw_genres:
+                    if isinstance(genre, dict):
+                        name = genre.get("name") or genre.get("value")
+                    else:
+                        name = genre
+                    if isinstance(name, str) and name.strip():
+                        normalized_genres.append(name.strip())
+                genres_value = normalized_genres or None
+            else:
+                genres_value = None
+
             ai_candidates.append({
                 "id": track["id"],
                 "title": track.get("title", ""),
                 "artist": track.get("artist", ""),
-                "album": track.get("album", ""),
-                "genres": [g.get("name", "") for g in track.get("genres", [])] if isinstance(track.get("genres"), list) else [],
+                "genres": genres_value,
                 "year": track.get("year", 2000),
-                "play_count": track.get("playCount", 0),
-                "days_since_last_play": track.get("days_since_last_play", 30),
                 "rediscovery_score": round(track.get("rediscovery_score", 0), 2),
-                "was_in_target_period": track.get("was_in_target_period", False),
             })
 
         recipe_inputs = {
@@ -482,10 +568,9 @@ class ReDiscoverV2Processor:
             ai_result = await curate_rediscover_weekly(
                 ai_client=self.ai_client,
                 candidate_tracks=ai_candidates,
-                analysis_summary="",
+                analysis_summary=json.dumps(theme_strategy.get("description")),
                 num_tracks=self.config["track_count"],
-                include_description=True,
-                variety_context=json.dumps(theme_strategy) if theme_strategy else None,
+                include_description=True
             )
 
             if isinstance(ai_result, tuple):
@@ -580,13 +665,11 @@ class ReDiscoverV2Processor:
                 exclude_before = now - timedelta(days=self.config["exclude_played_within_days"])
                 valid_starred = []
                 for track in starred_tracks[:50]:
-                    played_str = track.get("played")
-                    if played_str:
+                    played_value = track.get("played")
+                    if played_value:
                         try:
-                            if played_str.endswith("Z"):
-                                played_str = played_str[:-1] + "+00:00"
-                            played = datetime.fromisoformat(played_str)
-                            if played < exclude_before:
+                            played = self._parse_subsonic_datetime(played_value)
+                            if played is not None and played < exclude_before:
                                 valid_starred.append(track)
                         except Exception:
                             continue
@@ -615,7 +698,7 @@ class ReDiscoverV2Processor:
             print("🔄 Trying basic library fallback...")
             basic_tracks = await self._sample_library(min(100, self.config["track_count"] * 3), library_ids)
             if basic_tracks and len(basic_tracks) >= 10:
-                basic_tracks.sort(key=lambda x: x.get("playCount", 0), reverse=True)
+                basic_tracks.sort(key=lambda x: x.get("play_count", 0), reverse=True)
                 fallback_tracks = basic_tracks[: self.config["track_count"]]
                 return {
                     "name": "Re-Discover Weekly",
