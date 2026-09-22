@@ -1,18 +1,30 @@
+"""Application entry point for Magic Lists for Navidrome.
+
+This module is intentionally thin. It owns the FastAPI app lifecycle (static /
+template mounting, startup/shutdown, scheduler bootstrap, system checks) and the
+small set of generic, type-agnostic HTTP endpoints (artists, genres, playlists
+CRUD, scheduler status, recipes, health check, library analytics, SPA routing).
+
+All per-type playlist logic (creation, refresh, curation) lives in the type
+packages under ``backend/<type>/`` and is exposed through their ``APIRouter``
+instances, which are mounted below. The shared build/refresh orchestration lives
+in ``core.playlist_builder`` and ``core.scheduler``.
+"""
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi import Query
 import uvicorn
 import os
 import logging
 import logging.handlers
-from typing import List, Optional
-from datetime import datetime, timedelta
+from typing import List, Optional, Dict, Any
+
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import asyncio
+from pydantic import BaseModel
 
 # Load environment variables first
 load_dotenv()
@@ -27,106 +39,136 @@ logging.basicConfig(
     handlers=[
         logging.handlers.RotatingFileHandler(
             'scheduler.log',
-            maxBytes=5*1024*1024,  # 5MB per file
-            backupCount=2,         # Keep 2 old files (total ~10MB)
+            maxBytes=5*1024*1024,
+            backupCount=2,
             encoding='utf-8'
         ),
-        logging.StreamHandler()  # Also log to console
+        logging.StreamHandler()
     ]
 )
 
 # Create a specific logger for scheduler activities
 scheduler_logger = logging.getLogger('scheduler')
 
-# Reduce httpx logging verbosity to avoid cluttering scheduler.log
+# Reduce httpx logging verbosity
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 
-from .navidrome_client import NavidromeClient
-from .ai_client import AIClient
+# ---------------------------------------------------------------------------
+# Core / type package imports
+# ---------------------------------------------------------------------------
 from .database import DatabaseManager, get_db
-from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
-from .playlist_metadata import resolve_refresh_description
-from pydantic import BaseModel
-from typing import Any, Dict
+from .schemas import (
+    CreatePlaylistRequest,
+    CreateGenrePlaylistRequest,
+    Playlist,
+    RediscoverWeeklyV2Response,
+    CreateRediscoverPlaylistRequest,
+    PlaylistWithScheduleInfo,
+)
+from .core.dependencies import get_navidrome_client, get_ai_client
+import backend.core.scheduler as scheduler_module
+from .core.scheduler import (
+    schedule_playlist_refresh,
+    refresh_scheduled_playlists,
+    register_refresh_handler,
+)
+from .this_is.routes import router as this_is_router
+from .genre_mix.routes import router as genre_mix_router
+from .rediscover.routes import router as rediscover_router
+from .this_is.builder import refresh_this_is_playlist
+from .genre_mix.builder import refresh_genre_playlist
+from .rediscover.builder import refresh_rediscover_playlist
 from .recipe_manager import recipe_manager
-from .rediscover import RediscoverWeekly, ReDiscoverV2Processor
-from .track_scoring import filter_tracks_for_this_is_playlist
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
 
 app = FastAPI(title="MagicLists Navidrome MVP")
 
+# ---------------------------------------------------------------------------
+# App lifecycle
+# ---------------------------------------------------------------------------
+scheduler: AsyncIOScheduler = None
+
+# SYSTEM CHECK FEATURE - START
+system_check_passed = False
+system_check_results = None
+# SYSTEM CHECK FEATURE - END
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Initialize scheduler on app startup"""
+    """Initialize scheduler on app startup and register refresh handlers."""
     global scheduler, system_check_passed, system_check_results
     scheduler = AsyncIOScheduler()
+    scheduler_module.scheduler = scheduler
     scheduler.start()
-    scheduler_logger.info("✅ Scheduler started successfully")
-    # Auto-start the cron job
-    await start_scheduler_job()
-    scheduler_logger.info("✅ Cron job auto-started on application startup")
-    
+    scheduler_logger.info("Scheduler started successfully")
+
+    # Register per-type refresh handlers with the shared scheduler registry so
+    # refresh_scheduled_playlists can dispatch without importing the type packages.
+    register_refresh_handler("this_is", refresh_this_is_playlist)
+    register_refresh_handler("genre_mix", refresh_genre_playlist)
+    register_refresh_handler("rediscover", refresh_rediscover_playlist)
+    register_refresh_handler("rediscover_weekly_v2", refresh_rediscover_playlist)
+
+    schedule_playlist_refresh()
+    scheduler_logger.info("Cron job auto-started on application startup")
+
     # SYSTEM CHECK FEATURE - START
-    # Run system checks on startup
     try:
         health_service = HealthCheckService()
         system_check_results = await health_service.run_checks()
         system_check_passed = system_check_results.get("all_passed", False)
-        
+
         if system_check_passed:
-            scheduler_logger.info("✅ System health checks passed on startup")
+            scheduler_logger.info("System health checks passed on startup")
         else:
-            scheduler_logger.warning("⚠️ System health checks failed on startup - user will be redirected to system check page")
-            
-        # Log individual check results with enhanced AI provider logging
+            scheduler_logger.warning("System health checks failed on startup")
+
         for check in system_check_results.get("checks", []):
-            status_emoji = "✅" if check["status"] == "success" else "⚠️" if check["status"] == "warning" else "ℹ️" if check["status"] == "info" else "❌"
-            
-            # Enhanced logging for AI Provider checks
+            status_emoji = "OK" if check["status"] == "success" else "WARN" if check["status"] == "warning" else "INFO" if check["status"] == "info" else "ERR"
             if "AI Provider" in check["name"]:
                 ai_provider = os.getenv("AI_PROVIDER", "openrouter")
                 if check["status"] == "success":
-                    # Extract model from success message (e.g., "service reachable (model: llama3.2)")
                     if "model:" in check["message"]:
                         model_part = check["message"].split("model: ")[1].rstrip(")")
-                        scheduler_logger.info(f"🤖 AI Provider: {ai_provider.title()} with model '{model_part}' - Ready")
+                        scheduler_logger.info(f"AI Provider: {ai_provider.title()} with model '{model_part}' - Ready")
                     else:
-                        scheduler_logger.info(f"🤖 AI Provider: {ai_provider.title()} - Ready")
+                        scheduler_logger.info(f"AI Provider: {ai_provider.title()} - Ready")
                 elif check["status"] == "warning":
                     if "not set" in check["message"]:
-                        scheduler_logger.info(f"🤖 AI Provider: {ai_provider.title()} - No API key (using fallback algorithms)")
+                        scheduler_logger.info(f"AI Provider: {ai_provider.title()} - No API key (using fallback algorithms)")
                     else:
-                        scheduler_logger.warning(f"🤖 AI Provider: {ai_provider.title()} - {check['message']}")
+                        scheduler_logger.warning(f"AI Provider: {ai_provider.title()} - {check['message']}")
                 elif check["status"] == "error":
-                    scheduler_logger.error(f"🤖 AI Provider: {ai_provider.title()} - {check['message']}")
+                    scheduler_logger.error(f"AI Provider: {ai_provider.title()} - {check['message']}")
             else:
-                # Standard logging for other checks
                 scheduler_logger.info(f"{status_emoji} {check['name']}: {check['status']}")
-            
     except Exception as e:
-        scheduler_logger.error(f"❌ Failed to run system checks on startup: {e}")
+        scheduler_logger.error(f"Failed to run system checks on startup: {e}")
         system_check_passed = False
         system_check_results = {
             "all_passed": False,
             "checks": [{
                 "name": "System Check Service",
-                "status": "error", 
+                "status": "error",
                 "message": f"Failed to run health checks: {str(e)}",
                 "suggestion": "Check application logs and restart the service"
             }]
         }
     # SYSTEM CHECK FEATURE - END
 
-@app.on_event("shutdown") 
+
+@app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup scheduler on app shutdown"""
     global scheduler
     if scheduler:
         scheduler.shutdown()
-        scheduler_logger.info("🛑 Scheduler shutdown completed")
+        scheduler_logger.info("Scheduler shutdown completed")
+
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
@@ -134,42 +176,17 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="frontend/templates")
 
-# Initialize clients (lazy loading)
-navidrome_client = None
-ai_client = None
 
-# Initialize scheduler (will be started on app startup)
-scheduler = None
-
-# SYSTEM CHECK FEATURE - START
-# App state to track system check results
-system_check_passed = False
-system_check_results = None
-# SYSTEM CHECK FEATURE - END
-
-def get_navidrome_client():
-    global navidrome_client
-    if navidrome_client is None:
-        navidrome_client = NavidromeClient()
-    return navidrome_client
-
-def get_ai_client():
-    global ai_client
-    if ai_client is None:
-        ai_client = AIClient()
-    return ai_client
-
+# ---------------------------------------------------------------------------
+# Page routes
+# ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     """Serve the main HTML page"""
-    # SYSTEM CHECK FEATURE - START
-    # Redirect to system check if checks haven't passed
     if not system_check_passed:
-        from fastapi.responses import RedirectResponse
         return RedirectResponse(url="/system-check", status_code=302)
-    # SYSTEM CHECK FEATURE - END
-    
     return templates.TemplateResponse("index.html", {"request": request})
+
 
 # SYSTEM CHECK FEATURE - START
 @app.get("/system-check", response_class=HTMLResponse)
@@ -178,16 +195,18 @@ async def system_check_page(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 # SYSTEM CHECK FEATURE - END
 
+
+# ---------------------------------------------------------------------------
+# Generic Navidrome data endpoints
+# ---------------------------------------------------------------------------
 @app.get("/api/artists")
 async def get_artists(library_id: List[str] = Query(None)):
     """Get list of artists from Navidrome"""
     try:
         client = get_navidrome_client()
-        artists = await client.get_artists(library_id)
-        return artists
+        return await client.get_artists(library_id)
     except Exception as e:
         error_msg = str(e)
-        # Check if it's an authentication error and return appropriate status code
         if "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
             raise HTTPException(status_code=401, detail=error_msg)
         elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
@@ -195,16 +214,15 @@ async def get_artists(library_id: List[str] = Query(None)):
         else:
             raise HTTPException(status_code=500, detail=f"Failed to fetch artists: {error_msg}")
 
+
 @app.get("/api/genres")
 async def get_genres(library_id: List[str] = Query(None)):
     """Get list of genres from Navidrome"""
     try:
         client = get_navidrome_client()
-        genres = await client.get_genres(library_id)
-        return genres
+        return await client.get_genres(library_id)
     except Exception as e:
         error_msg = str(e)
-        # Check if it's an authentication error and return appropriate status code
         if "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
             raise HTTPException(status_code=401, detail=error_msg)
         elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
@@ -212,16 +230,15 @@ async def get_genres(library_id: List[str] = Query(None)):
         else:
             raise HTTPException(status_code=500, detail=f"Failed to fetch genres: {error_msg}")
 
+
 @app.get("/api/artists-by-genre")
 async def get_artists_by_genre(genres: List[str] = Query(...), library_id: List[str] = Query(None)):
     """Get list of artists that have tracks in the specified genres"""
     try:
         client = get_navidrome_client()
-        artists = await client.get_artists_by_genres(genres, library_id)
-        return artists
+        return await client.get_artists_by_genres(genres, library_id)
     except Exception as e:
         error_msg = str(e)
-        # Check if it's an authentication error and return appropriate status code
         if "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
             raise HTTPException(status_code=401, detail=error_msg)
         elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
@@ -229,16 +246,15 @@ async def get_artists_by_genre(genres: List[str] = Query(...), library_id: List[
         else:
             raise HTTPException(status_code=500, detail=f"Failed to fetch artists by genre: {error_msg}")
 
+
 @app.get("/api/music-folders")
 async def get_music_folders():
     """Get list of music folders/libraries from Navidrome"""
     try:
         client = get_navidrome_client()
-        folders = await client.get_music_folders()
-        return folders
+        return await client.get_music_folders()
     except Exception as e:
         error_msg = str(e)
-        # Check if it's an authentication error and return appropriate status code
         if "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
             raise HTTPException(status_code=401, detail=error_msg)
         elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
@@ -252,27 +268,19 @@ async def get_music_folders():
 async def get_health_check():
     """Get system health check results"""
     global system_check_passed, system_check_results
-    
     try:
-        # Run fresh health checks
         health_service = HealthCheckService()
         fresh_results = await health_service.run_checks()
-        
-        # Update app state with fresh results
         system_check_passed = fresh_results.get("all_passed", False)
         system_check_results = fresh_results
-        
-        # Log the result
         if system_check_passed:
-            scheduler_logger.info("✅ System health checks passed via API")
+            scheduler_logger.info("System health checks passed via API")
         else:
-            scheduler_logger.warning("⚠️ System health checks failed via API")
-        
+            scheduler_logger.warning("System health checks failed via API")
         return fresh_results
-        
     except Exception as e:
-        scheduler_logger.error(f"❌ Failed to run health checks via API: {e}")
-        error_results = {
+        scheduler_logger.error(f"Failed to run health checks via API: {e}")
+        return {
             "all_passed": False,
             "checks": [{
                 "name": "System Check Service",
@@ -281,1112 +289,17 @@ async def get_health_check():
                 "suggestion": "Check application logs and restart the service"
             }]
         }
-        return error_results
 # SYSTEM CHECK FEATURE - END
 
 
-@app.post("/api/create_playlist", response_model=Playlist)
-async def create_playlist(
-    request: CreatePlaylistRequest,
-    db: DatabaseManager = Depends(get_db)
-):
-    """Create an AI-curated 'This Is' playlist for a single artist"""
-    try:
-        # Get clients
-        nav_client = get_navidrome_client()
-        ai_client_instance = get_ai_client()
-        
-        # Get artist info
-        all_artists = await nav_client.get_artists()
-        selected_artists = [a for a in all_artists if a["id"] in request.artist_ids]
-        
-        if not selected_artists:
-            raise HTTPException(status_code=404, detail="Artists not found")
-        
-        # Limit to single artist only - use first artist from the request
-        if request.artist_ids:
-            first_artist_id = request.artist_ids[0]
-            selected_artists = [a for a in all_artists if a["id"] == first_artist_id]
-            artist_names = [a["name"] for a in selected_artists]
-        else:
-            raise HTTPException(status_code=400, detail="At least one artist must be selected")
-
-        # Generate playlist name if not provided - for single artist
-        playlist_name = request.playlist_name or f"This Is: {artist_names[0]}"
-        
-        # Get tracks for only the first artist
-        all_tracks = []
-        tracks = await nav_client.get_tracks_by_artist(first_artist_id, request.library_ids)
-        if tracks:
-            all_tracks.extend(tracks)
-        
-        if not all_tracks:
-            raise HTTPException(status_code=404, detail="No tracks found for the selected artists")
-        
-        # NEW: Apply smart filtering for "This Is" playlists to optimize LLM payload
-        library_stats = await nav_client.get_library_stats()
-        
-        # Check if Ollama provider is being used and get max tracks override
-        ollama_max_tracks = None
-        if ai_client_instance.provider.provider_type == "ollama":
-            ollama_max_tracks = int(os.getenv("OLLAMA_MAX_TRACKS", "0")) or None
-        
-        # Load diversified-selection config from the "this_is" recipe (opt-in, default off)
-        this_is_recipe = recipe_manager.get_recipe("this_is")
-        this_is_sf = this_is_recipe.get("source_filtering", {})
-        
-        filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
-            source_tracks=all_tracks,
-            target_playlist_size=request.playlist_length,
-            library_stats=library_stats,
-            playlist_type="artist",
-            ollama_max_tracks=ollama_max_tracks,
-            exploration_ratio=this_is_sf.get("exploration_ratio", 0.0),
-            high_tier_ratio=this_is_sf.get("high_tier_ratio", 0.4),
-            high_tier_multiplier=this_is_sf.get("high_tier_multiplier", 3.0)
-        )
-        
-        # Log filtering results for analytics/debugging
-        if filter_metadata['filtered']:
-            if ollama_max_tracks:
-                scheduler_logger.info(f"🎯 Smart filtering applied (Ollama max): {filter_metadata['source_count']} → {filter_metadata['sent_count']} tracks (limit: {ollama_max_tracks})")
-            else:
-                scheduler_logger.info(f"🎯 Smart filtering applied: {filter_metadata['source_count']} → {filter_metadata['sent_count']} tracks (multiplier: {filter_metadata['threshold_multiplier']}x)")
-            scheduler_logger.info(f"📊 Score range: {filter_metadata['score_range']['highest']:.1f} - {filter_metadata['score_range']['lowest']:.1f} (cutoff: {filter_metadata['score_range']['cutoff']:.1f})")
-            if filter_metadata.get('exploration_applied'):
-                sm = filter_metadata.get('selection_meta', {})
-                scheduler_logger.info(f"🎲 Diversified selection: core {sm.get('core_count', 0)} (from top {sm.get('high_tier_size', 0)}) + explore {sm.get('explore_count', 0)} (offset {sm.get('start_offset', 0)}){' [exhausted]' if sm.get('exhausted') else ''}")
-        else:
-            scheduler_logger.info(f"✅ No filtering needed: {filter_metadata['source_count']} tracks below threshold")
-        
-        # Use filtered tracks for LLM processing
-        tracks_for_llm = filtered_tracks
-        
-        # Use AI to curate the playlist (always include description for new recipe format)
-        curation_result = await ai_client_instance.curate_this_is(
-            artist_name=', '.join(artist_names),
-            candidate_tracks=tracks_for_llm,
-            num_tracks=request.playlist_length,
-            include_description=True
-        )
-        
-        # Handle both old and new return formats
-        if isinstance(curation_result, tuple):
-            curated_track_ids, description = curation_result
-        else:
-            curated_track_ids = curation_result
-            description = ""
-
-        # Check for validation failures or empty results
-        if not curated_track_ids:
-            if description and "Playlist generation failed" in description:
-                # This is a validation failure - don't create playlist
-                scheduler_logger.error(f"❌ Playlist creation aborted: {description}")
-                raise HTTPException(status_code=400, detail=f"Playlist generation failed: {description}")
-            else:
-                # This is an empty result without explanation
-                scheduler_logger.error(f"❌ AI curation returned no tracks for {', '.join(artist_names)}")
-                raise HTTPException(status_code=500, detail="AI curation failed to return any tracks")
-
-        # Log the AI description for debugging (truncated)
-        if description:
-            description_preview = description[:200] + "..." if len(description) > 200 else description
-            scheduler_logger.info(f"🎵 AI curation applied for {', '.join(artist_names)} (description length: {len(description)} chars): {description_preview}")
-        else:
-            scheduler_logger.info(f"⚠️ No AI description provided for {', '.join(artist_names)}")
-
-        # Create playlist in Navidrome with AI description as comment
-        comment_to_use = description if description else None
-        comment_preview = comment_to_use[:200] + "..." if comment_to_use and len(comment_to_use) > 200 else comment_to_use
-        scheduler_logger.info(f"💬 Creating playlist with comment (length: {len(comment_to_use) if comment_to_use else 0}): {comment_preview}")
-
-        navidrome_playlist_id = await nav_client.create_playlist(
-            name=playlist_name,
-            track_ids=curated_track_ids,
-            comment=comment_to_use
-        )
-        
-        # Get track titles for database storage - PRESERVE AI CURATION ORDER
-        # Note: Use all_tracks for mapping since AI might reference tracks from full set
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
-        for track_id in curated_track_ids:  # Iterate in AI-curated order
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
-        
-        
-        # Store playlist in local database (using the first artist_id for now)
-        curation_settings = {
-            "artist_id": request.artist_ids[0],
-            "artist_name": artist_names[0],
-            "playlist_length": request.playlist_length,
-            "library_ids": request.library_ids,
-            "refresh_frequency": request.refresh_frequency
-        }
-        playlist = await db.create_playlist(
-            artist_id=request.artist_ids[0],
-            playlist_name=playlist_name,
-            songs=track_titles,
-            description=description,
-            navidrome_playlist_id=navidrome_playlist_id,
-            playlist_length=request.playlist_length,
-            library_ids=request.library_ids,
-            curation_settings=curation_settings,
-            playlist_type="this_is"
-        )
-        
-        # Handle scheduling if not "none" or "never"
-        if request.refresh_frequency not in ["none", "never"]:
-            next_refresh = calculate_next_refresh(request.refresh_frequency)
-            
-            # Store the scheduled playlist
-            await db.create_scheduled_playlist(
-                playlist_type="this_is",
-                navidrome_playlist_id=navidrome_playlist_id,
-                refresh_frequency=request.refresh_frequency,
-                next_refresh=next_refresh
-            )
-            
-            # Schedule the refresh job
-            schedule_playlist_refresh()
-            scheduler_logger.info(f"📅 Scheduled {request.refresh_frequency} refresh for This Is playlist: {playlist_name}")
-        
-        # Add Navidrome playlist ID to response
-        playlist_dict = playlist.dict() if hasattr(playlist, 'dict') else playlist.__dict__
-        playlist_dict["navidrome_playlist_id"] = navidrome_playlist_id
-        playlist_dict["refresh_frequency"] = request.refresh_frequency
-        
-        if request.refresh_frequency != "none":
-            playlist_dict["next_refresh"] = calculate_next_refresh(request.refresh_frequency).isoformat()
-        
-        return playlist_dict
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create playlist: {str(e)}")
-
-@app.post("/api/create_playlist_with_description")
-async def create_playlist_with_description(
-    request: CreatePlaylistRequest,
-    db: DatabaseManager = Depends(get_db)
-):
-    """Create an AI-curated 'This Is' playlist with AI description explanation"""
-    try:
-        # Get clients
-        nav_client = get_navidrome_client()
-        ai_client_instance = get_ai_client()
-        
-        # Get artist info - use first artist from the array
-        artists = await nav_client.get_artists()
-        if not request.artist_ids or len(request.artist_ids) == 0:
-            raise HTTPException(status_code=400, detail="At least one artist must be selected")
-        first_artist_id = request.artist_ids[0]
-        artist = next((a for a in artists if a["id"] == first_artist_id), None)
-        
-        if not artist:
-            raise HTTPException(status_code=404, detail="Artist not found")
-        
-        artist_name = artist["name"]
-        
-        # Generate playlist name if not provided
-        playlist_name = getattr(request, 'playlist_name', None) or f"This Is: {artist_name}"
-        
-        # Get tracks for the artist
-        tracks = await nav_client.get_tracks_by_artist(first_artist_id)
-        
-        if not tracks:
-            raise HTTPException(status_code=404, detail="No tracks found for this artist")
-        
-        # Use AI to curate the playlist WITH description
-        curated_track_ids, description = await ai_client_instance.curate_this_is(
-            artist_name=artist_name,
-            candidate_tracks=tracks,
-            num_tracks=20,
-            include_description=True
-        )
-
-        # Create playlist in Navidrome with AI description as comment
-        navidrome_playlist_id = await nav_client.create_playlist(
-            name=playlist_name,
-            track_ids=curated_track_ids,
-            comment=description if description else None
-        )
-        
-        # Get track titles for database storage
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in tracks}
-        for track_id in curated_track_ids:
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
-        
-        # Store playlist in local database
-        playlist = await db.create_playlist(
-            artist_id=first_artist_id,
-            playlist_name=playlist_name,
-            songs=track_titles,
-            navidrome_playlist_id=navidrome_playlist_id
-        )
-        
-        # Add Navidrome playlist ID and AI description to response
-        playlist_dict = playlist.dict() if hasattr(playlist, 'dict') else playlist.__dict__
-        playlist_dict["navidrome_playlist_id"] = navidrome_playlist_id
-        playlist_dict["ai_description"] = description
-        
-        return playlist_dict
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create playlist with description: {str(e)}")
-
-@app.post("/api/create_genre_playlist", response_model=Playlist)
-async def create_genre_playlist(
-    request: CreateGenrePlaylistRequest,
-    db: DatabaseManager = Depends(get_db)
-):
-    """Create an AI-curated 'Genre Mix' playlist for multiple genres"""
-    try:
-        # Get clients
-        nav_client = get_navidrome_client()
-        ai_client_instance = get_ai_client()
-
-        # Generate playlist name if not provided
-        genre_names = ", ".join(request.genres)
-        playlist_name = request.playlist_name or f"Genre Mix: {genre_names}"
-
-        # Get tracks for the genres
-        all_tracks = await nav_client.get_tracks_by_genres(request.genres, request.library_ids)
-        scheduler_logger.info(f"🎵 Found {len(all_tracks)} total tracks for genres '{genre_names}'")
-
-        if not all_tracks:
-            raise HTTPException(status_code=404, detail=f"No tracks found for genres: {genre_names}")
-
-        # NEW: Apply smart filtering for "Genre Mix" playlists to optimize LLM payload
-        library_stats = await nav_client.get_library_stats()
-
-        # Load diversity config (exploration ratios etc.) from the genre_mix recipe.
-        # Per-album / per-artist caps now come from the frontend request, with these
-        # backend defaults applied when the client does not send them.
-        genre_recipe = recipe_manager.get_recipe("genre_mix")
-        diversity_config = genre_recipe.get("source_filtering", {})
-        DEFAULT_MAX_TRACKS_PER_ALBUM = 2
-        DEFAULT_MAX_TRACKS_PER_ARTIST = 3
-        max_tracks_per_album = request.max_tracks_per_album if request.max_tracks_per_album is not None else DEFAULT_MAX_TRACKS_PER_ALBUM
-        max_tracks_per_artist = request.max_tracks_per_artist if request.max_tracks_per_artist is not None else DEFAULT_MAX_TRACKS_PER_ARTIST
-
-        # Check if Ollama provider is being used and get max tracks override
-        ollama_max_tracks = None
-        if ai_client_instance.provider.provider_type == "ollama":
-            ollama_max_tracks = int(os.getenv("OLLAMA_MAX_TRACKS", "0")) or None
-
-        filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
-            source_tracks=all_tracks,
-            target_playlist_size=request.playlist_length,
-            library_stats=library_stats,
-            playlist_type="genre",
-            diversity_config=diversity_config,
-            ollama_max_tracks=ollama_max_tracks,
-            exploration_ratio=diversity_config.get("exploration_ratio", 0.0),
-            high_tier_ratio=diversity_config.get("high_tier_ratio", 0.4),
-            high_tier_multiplier=diversity_config.get("high_tier_multiplier", 3.0),
-            # Filter options
-            year_start=request.year_start,
-            year_end=request.year_end,
-            blacklisted_artists=request.blacklisted_artists,
-            min_bitrate=request.min_bitrate,
-            min_format=request.min_format,
-            min_bit_depth=request.min_bit_depth,
-            # Diversity caps (0 disables that cap)
-            max_tracks_per_album=max_tracks_per_album,
-            max_tracks_per_artist=max_tracks_per_artist
-        )
-
-        # Log filtering results for analytics/debugging
-        if filter_metadata['filtered']:
-            if ollama_max_tracks:
-                scheduler_logger.info(f"🎯 Smart filtering applied (Ollama max): {filter_metadata['source_count']} → {filter_metadata['pre_filtered_count']} (pre-filter) → {filter_metadata['sent_count']} tracks (limit: {ollama_max_tracks})")
-            else:
-                scheduler_logger.info(f"🎯 Smart filtering applied: {filter_metadata['source_count']} → {filter_metadata['pre_filtered_count']} (pre-filter) → {filter_metadata['sent_count']} tracks (multiplier: {filter_metadata['threshold_multiplier']}x)")
-            scheduler_logger.info(f"📊 Score range: {filter_metadata['score_range']['highest']:.1f} - {filter_metadata['score_range']['lowest']:.1f} (cutoff: {filter_metadata['score_range']['cutoff']:.1f})")
-            if filter_metadata.get('diversity_applied'):
-                scheduler_logger.info(f"🎭 Diversity caps applied: max {filter_metadata['max_tracks_per_album']} tracks per album / {filter_metadata['max_tracks_per_artist']} tracks per artist (dropped {filter_metadata['diversity_dropped']} tracks)")
-            # Log pre-filter stats
-            pre_stats = filter_metadata.get('pre_filter_stats', {})
-            if any(pre_stats.values()):
-                scheduler_logger.info(f"🔍 Pre-filters: year={pre_stats.get('year_filtered', 0)}, blacklist={pre_stats.get('artist_filtered', 0)}, quality={pre_stats.get('quality_filtered', 0)}")
-        else:
-            scheduler_logger.info(f"✅ No filtering needed: {filter_metadata['source_count']} tracks below threshold")
-
-        # Use filtered tracks for LLM processing
-        tracks_for_llm = filtered_tracks
-
-        # Use AI to curate the playlist (always include description for new recipe format)
-        curation_result = await ai_client_instance.curate_genre_mix(
-            genres=request.genres,
-            candidate_tracks=tracks_for_llm,
-            num_tracks=request.playlist_length,
-            include_description=True
-        )
-
-        # Handle both old and new return formats
-        if isinstance(curation_result, tuple):
-            curated_track_ids, description = curation_result
-        else:
-            curated_track_ids = curation_result
-            description = ""
-
-        # Check for validation failures or empty results
-        if not curated_track_ids:
-            if description and "Playlist generation failed" in description:
-                # This is a validation failure - don't create playlist
-                scheduler_logger.error(f"❌ Playlist creation aborted: {description}")
-                raise HTTPException(status_code=400, detail=f"Playlist generation failed: {description}")
-            else:
-                # This is an empty result without explanation
-                scheduler_logger.error(f"❌ AI curation returned no tracks for {genre_names}")
-                raise HTTPException(status_code=500, detail="AI curation failed to return any tracks")
-
-        # Log the AI description for debugging (truncated)
-        if description:
-            description_preview = description[:200] + "..." if len(description) > 200 else description
-            scheduler_logger.info(f"🎵 AI curation applied for {genre_names} (description length: {len(description)} chars): {description_preview}")
-        else:
-            scheduler_logger.info(f"⚠️ No AI description provided for {genre_names}")
-
-        # Create playlist in Navidrome with AI description as comment
-        comment_to_use = description if description else None
-        comment_preview = comment_to_use[:200] + "..." if comment_to_use and len(comment_to_use) > 200 else comment_to_use
-        scheduler_logger.info(f"💬 Creating playlist with comment (length: {len(comment_to_use) if comment_to_use else 0}): {comment_preview}")
-
-        navidrome_playlist_id = await nav_client.create_playlist(
-            name=playlist_name,
-            track_ids=curated_track_ids,
-            comment=comment_to_use
-        )
-
-        # Get track titles for database storage
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
-        for track_id in curated_track_ids:  # Iterate in AI-curated order
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
-
-
-        # Store playlist in local database (using genres as identifier)
-        curation_settings = {
-            "genres": request.genres,
-            "playlist_length": request.playlist_length,
-            "library_ids": request.library_ids,
-            "refresh_frequency": request.refresh_frequency,
-            "year_start": request.year_start,
-            "year_end": request.year_end,
-            "blacklisted_artists": request.blacklisted_artists,
-            "min_bitrate": request.min_bitrate,
-            "min_format": request.min_format,
-            "min_bit_depth": request.min_bit_depth,
-            "max_tracks_per_album": max_tracks_per_album,
-            "max_tracks_per_artist": max_tracks_per_artist
-        }
-        playlist = await db.create_playlist(
-            artist_id=", ".join(request.genres),  # Using genres as artist_id for now
-            playlist_name=playlist_name,
-            songs=track_titles,
-            description=description,
-            navidrome_playlist_id=navidrome_playlist_id,
-            playlist_length=request.playlist_length,
-            library_ids=request.library_ids,
-            curation_settings=curation_settings,
-            playlist_type="genre_mix"
-        )
-
-        # Handle scheduling if not "none" or "never"
-        if request.refresh_frequency not in ["none", "never"]:
-            next_refresh = calculate_next_refresh(request.refresh_frequency)
-
-            # Store the scheduled playlist
-            await db.create_scheduled_playlist(
-                playlist_type="genre_mix",
-                navidrome_playlist_id=navidrome_playlist_id,
-                refresh_frequency=request.refresh_frequency,
-                next_refresh=next_refresh
-            )
-
-        return playlist
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create genre playlist: {str(e)}")
-
-@app.get("/api/rediscover-weekly", response_model=RediscoverWeeklyResponse)
-async def get_rediscover_weekly():
-    """Generate Re-Discover Weekly playlist based on listening history"""
-    try:
-        # Get Navidrome client
-        nav_client = get_navidrome_client()
-        
-        # Create RediscoverWeekly instance
-        rediscover = RediscoverWeekly(nav_client)
-        
-        # Generate the playlist with AI curation
-        tracks = await rediscover.generate_rediscover_weekly(use_ai=True)
-        
-        # Extract AI curation info for response
-        ai_curated = tracks[0].get("ai_curated", False) if tracks else False
-        message = f"Generated Re-Discover Weekly with {len(tracks)} tracks"
-        if ai_curated:
-            message += " (AI curated)"
-        else:
-            message += " (algorithmic selection)"
-        
-        return RediscoverWeeklyResponse(
-            tracks=tracks,
-            total_tracks=len(tracks),
-            message=message
-        )
-        
-    except Exception as e:
-        error_msg = str(e)
-        if "No listening history found" in error_msg:
-            raise HTTPException(status_code=404, detail="No listening history found. Make sure you've played some music in Navidrome.")
-        elif "No tracks found for re-discovery" in error_msg:
-            raise HTTPException(status_code=404, detail="No tracks found for re-discovery. Try listening to more music first.")
-        elif "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
-            raise HTTPException(status_code=401, detail=error_msg)
-        elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
-            raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
-        else:
-            raise HTTPException(status_code=500, detail=f"Failed to generate Re-Discover Weekly: {error_msg}")
-
-@app.get("/api/rediscover-weekly-v2", response_model=RediscoverWeeklyV2Response)
-async def get_rediscover_weekly_v2(library_ids: Optional[List[str]] = Query(None), db: DatabaseManager = Depends(get_db)):
-    """Generate Re-Discover Weekly v2.0 playlist using temporal analysis and two-phase AI"""
-    try:
-        # Get clients
-        nav_client = get_navidrome_client()
-        ai_client = get_ai_client()
-
-        # Get user and server IDs
-        user_id = await db.get_or_create_user_id()
-        server_id = nav_client.base_url or "unknown_server"  # Use base URL as server identifier
-
-        # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
-
-        # Generate the playlist
-        result = await processor.generate_playlist(user_id, server_id, library_ids)
-
-        return RediscoverWeeklyV2Response(**result)
-
-    except Exception as e:
-        error_msg = str(e)
-        if "Insufficient listening history" in error_msg:
-            raise HTTPException(status_code=404, detail="Insufficient listening history. Star favorites and listen regularly. Check back in 2-3 weeks!")
-        elif "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
-            raise HTTPException(status_code=401, detail=error_msg)
-        elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
-            raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
-        else:
-            raise HTTPException(status_code=500, detail=f"Failed to generate Re-Discover Weekly v2.0: {error_msg}")
-
-@app.post("/api/create-rediscover-playlist-v2")
-async def create_rediscover_playlist_v2(
-    request: CreateRediscoverPlaylistRequest,
-    db: DatabaseManager = Depends(get_db)
-):
-    """Create a Re-Discover Weekly v2.0 playlist in Navidrome"""
-    try:
-        scheduler_logger.info(f"🎵 Starting Re-Discover v2.0 playlist creation with length {request.playlist_length}, library_ids: {request.library_ids}")
-
-        # Get clients
-        nav_client = get_navidrome_client()
-        ai_client = get_ai_client()
-
-        # Get user and server IDs
-        user_id = await db.get_or_create_user_id()
-        server_id = nav_client.base_url or "unknown_server"
-
-        # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
-
-        # Generate the playlist
-        playlist_data = await processor.generate_playlist(user_id, server_id, request.library_ids)
-        tracks = playlist_data.get("tracks", [])
-
-        if not tracks:
-            scheduler_logger.error("❌ No tracks generated for Re-Discover Weekly v2.0")
-            raise HTTPException(status_code=404, detail="No tracks found for Re-Discover Weekly v2.0")
-
-        scheduler_logger.info(f"✅ Generated {len(tracks)} tracks for Re-Discover Weekly v2.0")
-
-        # Extract AI description if available
-        ai_description = playlist_data.get("description", "")
-        ai_curated = any(track.get("ai_curated", False) for track in tracks)
-
-        # If AI curated, get description from the tracks instead of Phase 1
-        if ai_curated:
-            track_description = next((track.get("ai_description", "") for track in tracks if track.get("ai_curated", False) and track.get("ai_description")), "")
-            if track_description:
-                ai_description = track_description
-
-        scheduler_logger.info(f"🎵 AI curated: {ai_curated}, description length: {len(ai_description)}")
-
-        # Log the AI description for debugging (truncated)
-        if ai_description and ai_curated:
-            description_preview = ai_description[:200] + "..." if len(ai_description) > 200 else ai_description
-            scheduler_logger.info(f"🎵 AI curation applied for Re-Discover Weekly v2.0 (description length: {len(ai_description)} chars): {description_preview}")
-        else:
-            scheduler_logger.info(f"⚠️ Re-Discover Weekly v2.0 used fallback strategy")
-
-        # Create playlist name based on refresh frequency
-        frequency_names = {
-            "daily": "Re-Discover Daily ✨",
-            "weekly": "Re-Discover Weekly ✨",
-            "monthly": "Re-Discover Monthly ✨",
-            "never": "Re-Discover ✨"
-        }
-        playlist_name = frequency_names.get(request.refresh_frequency, "Re-Discover Weekly ✨")
-        if playlist_data.get("is_fallback"):
-            playlist_name += " (Fallback)"
-        scheduler_logger.info(f"📝 Creating playlist: {playlist_name}")
-
-        # Extract track IDs
-        track_ids = [track["id"] for track in tracks]
-        scheduler_logger.info(f"🎵 Track IDs: {track_ids[:5]}... (total: {len(track_ids)})")
-
-        # Create playlist in Navidrome with description as comment
-        comment_to_use = ai_description if ai_description else f"Theme: {playlist_data.get('theme', 'Mixed')}"
-        comment_preview = comment_to_use[:200] + "..." if len(comment_to_use) > 200 else comment_to_use
-        scheduler_logger.info(f"💬 Creating Re-Discover v2.0 playlist with comment (length: {len(comment_to_use)}): {comment_preview}")
-
-        scheduler_logger.info("🎵 Calling nav_client.create_playlist...")
-        navidrome_playlist_id = await nav_client.create_playlist(
-            name=playlist_name,
-            track_ids=track_ids,
-            comment=comment_to_use
-        )
-        scheduler_logger.info(f"✅ Navidrome playlist created: {navidrome_playlist_id}")
-
-        # Get track titles for database storage
-        track_titles = [track.get("title", "Unknown") for track in tracks]
-        scheduler_logger.info(f"📊 Storing {len(track_titles)} track titles in database")
-
-        # Store playlist in local database (using a synthetic artist_id for rediscover playlists)
-        curation_settings = {
-            "playlist_length": len(tracks),
-            "library_ids": request.library_ids,
-            "refresh_frequency": request.refresh_frequency
-        }
-        playlist_record = await db.create_playlist(
-            artist_id="rediscover_v2",
-            playlist_name=playlist_name,
-            songs=track_titles,
-            description=ai_description,
-            navidrome_playlist_id=navidrome_playlist_id,
-            playlist_length=len(tracks),
-            library_ids=request.library_ids,
-            curation_settings=curation_settings,
-            playlist_type="rediscover_weekly_v2"
-        )
-        scheduler_logger.info(f"💾 Database playlist created: {playlist_record}")
-
-        # Set up scheduling if requested
-        if request.refresh_frequency != "never":
-            scheduler_logger.info(f"⏰ Setting up {request.refresh_frequency} refresh schedule")
-            scheduled_playlist = await db.create_scheduled_playlist(
-                playlist_type="rediscover_weekly_v2",
-                navidrome_playlist_id=navidrome_playlist_id,
-                refresh_frequency=request.refresh_frequency,
-                next_refresh=calculate_next_refresh(request.refresh_frequency)
-            )
-            scheduler_logger.info(f"✅ Scheduled playlist created: {scheduled_playlist}")
-        else:
-            scheduler_logger.info("⏰ No scheduling requested (refresh_frequency='never')")
-
-        return {
-            "message": f"Re-Discover Weekly v2.0 playlist created successfully with {len(tracks)} tracks",
-            "playlist_id": navidrome_playlist_id,
-            "track_count": len(tracks),
-            "theme": playlist_data.get("theme", "Mixed"),
-            "mode": playlist_data.get("mode", "Unknown"),
-            "is_fallback": playlist_data.get("is_fallback", False)
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        scheduler_logger.error(f"❌ Failed to create Re-Discover Weekly v2.0 playlist: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create Re-Discover Weekly v2.0 playlist: {str(e)}")
-
-@app.post("/api/create-rediscover-playlist")
-async def create_rediscover_playlist(
-    request: CreateRediscoverPlaylistRequest,
-    db: DatabaseManager = Depends(get_db)
-):
-    """Create a Re-Discover Weekly playlist in Navidrome"""
-    try:
-        scheduler_logger.info(f"🎵 Starting Re-Discover playlist creation with length {request.playlist_length}, library_ids: {request.library_ids}")
-
-        # Get Navidrome client
-        nav_client = get_navidrome_client()
-
-        # Create RediscoverWeekly instance
-        rediscover = RediscoverWeekly(nav_client)
-
-        # Generate the playlist tracks with user-specified length and AI curation
-        scheduler_logger.info("🎵 Generating rediscover tracks...")
-        tracks = await rediscover.generate_rediscover_weekly(max_tracks=request.playlist_length, use_ai=True, library_id=request.library_ids[0] if request.library_ids else "", variety_context="")
-        scheduler_logger.info(f"🎵 Generated {len(tracks) if tracks else 0} tracks")
-        
-        if not tracks:
-            scheduler_logger.error("❌ No tracks generated for Re-Discover Weekly")
-            raise HTTPException(status_code=404, detail="No tracks found for Re-Discover Weekly")
-
-        scheduler_logger.info(f"✅ Generated {len(tracks)} tracks for Re-Discover Weekly")
-
-        # Extract AI description if available
-        ai_description = ""
-        ai_curated = False
-        if tracks:
-            first_track = tracks[0]
-            ai_description = first_track.get("ai_description", "")
-            ai_curated = first_track.get("ai_curated", False)
-            scheduler_logger.info(f"🎵 AI curated: {ai_curated}, description length: {len(ai_description)}")
-        
-        # Log the AI description for debugging (truncated)
-        if ai_description and ai_curated:
-            description_preview = ai_description[:200] + "..." if len(ai_description) > 200 else ai_description
-            scheduler_logger.info(f"🎵 AI curation applied for Re-Discover Weekly (description length: {len(ai_description)} chars): {description_preview}")
-        else:
-            scheduler_logger.info(f"⚠️ Re-Discover Weekly used algorithmic selection (no AI description)")
-        
-        # Create playlist name based on frequency
-        frequency_names = {
-            "daily": "Re-Discover Daily ✨",
-            "weekly": "Re-Discover Weekly ✨",
-            "monthly": "Re-Discover Monthly ✨",
-            "never": "Re-Discover ✨"
-        }
-        playlist_name = frequency_names.get(request.refresh_frequency, "Re-Discover Weekly ✨")
-        scheduler_logger.info(f"📝 Creating playlist: {playlist_name}")
-
-        # Extract track IDs
-        track_ids = [track["id"] for track in tracks]
-        scheduler_logger.info(f"🎵 Track IDs: {track_ids[:5]}... (total: {len(track_ids)})")
-
-        # Create playlist in Navidrome with AI description as comment if available
-        comment_to_use = ai_description if (ai_description and ai_curated) else None
-        comment_preview = comment_to_use[:200] + "..." if comment_to_use and len(comment_to_use) > 200 else comment_to_use
-        scheduler_logger.info(f"💬 Creating Re-Discover playlist with comment (length: {len(comment_to_use) if comment_to_use else 0}): {comment_preview}")
-
-        scheduler_logger.info("🎵 Calling nav_client.create_playlist...")
-        navidrome_playlist_id = await nav_client.create_playlist(
-            name=playlist_name,
-            track_ids=track_ids,
-            comment=comment_to_use
-        )
-        scheduler_logger.info(f"✅ Navidrome playlist created: {navidrome_playlist_id}")
-        
-        # Get track titles for database storage
-        track_titles = [track["title"] for track in tracks]
-        scheduler_logger.info(f"📊 Storing {len(track_titles)} track titles in database")
-
-        # Store playlist in local database (using a synthetic artist_id for rediscover playlists)
-        scheduler_logger.info("💾 Creating playlist in database...")
-        curation_settings = {
-            "playlist_length": request.playlist_length,
-            "library_ids": request.library_ids,
-            "refresh_frequency": request.refresh_frequency
-        }
-        playlist = await db.create_playlist(
-            artist_id="rediscover",
-            playlist_name=playlist_name,
-            songs=track_titles,
-            description=ai_description if ai_curated else "Algorithmic selection",
-            navidrome_playlist_id=navidrome_playlist_id,
-            playlist_length=request.playlist_length,
-            curation_settings=curation_settings,
-            playlist_type="rediscover"
-        )
-        scheduler_logger.info(f"✅ Database playlist created: {playlist}")
-        
-        # Handle scheduling if not "never"
-        if request.refresh_frequency != "never":
-            next_refresh = calculate_next_refresh(request.refresh_frequency)
-            
-            # Store the scheduled playlist
-            await db.create_scheduled_playlist(
-                playlist_type="rediscover",
-                navidrome_playlist_id=navidrome_playlist_id,
-                refresh_frequency=request.refresh_frequency,
-                next_refresh=next_refresh
-            )
-            
-            # Schedule the refresh job
-            schedule_playlist_refresh()
-            scheduler_logger.info(f"📅 Scheduled {request.refresh_frequency} refresh for playlist: {playlist_name}")
-        else:
-            scheduler_logger.info(f"📅 No scheduling for playlist: {playlist_name} (refresh frequency: never)")
-        
-        # Add Navidrome playlist ID to response
-        playlist_dict = playlist.dict() if hasattr(playlist, 'dict') else playlist.__dict__
-        playlist_dict["navidrome_playlist_id"] = navidrome_playlist_id
-        playlist_dict["tracks"] = tracks
-        playlist_dict["refresh_frequency"] = request.refresh_frequency
-        playlist_dict["next_refresh"] = calculate_next_refresh(request.refresh_frequency).isoformat()
-        
-        return playlist_dict
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create Re-Discover Weekly playlist: {str(e)}")
-
-def calculate_next_refresh(frequency: str) -> datetime:
-    """Calculate the next refresh time based on frequency"""
-    now = datetime.now()
-    if frequency == "daily":
-        # Next day at 1:00 AM
-        next_day = now + timedelta(days=1)
-        return next_day.replace(hour=1, minute=0, second=0, microsecond=0)
-    elif frequency == "weekly":
-        # Next Monday at 1:00 AM
-        days_until_monday = (7 - now.weekday()) % 7
-        if days_until_monday == 0 and now.hour >= 1:
-            days_until_monday = 7  # If it's Monday after 1 AM, go to next Monday
-        next_monday = now + timedelta(days=days_until_monday)
-        return next_monday.replace(hour=1, minute=0, second=0, microsecond=0)
-    elif frequency == "monthly":
-        # 1st of next month at 1:00 AM
-        if now.month == 12:
-            next_month = now.replace(year=now.year + 1, month=1, day=1, hour=1, minute=0, second=0, microsecond=0)
-        else:
-            next_month = now.replace(month=now.month + 1, day=1, hour=1, minute=0, second=0, microsecond=0)
-        return next_month
-    else:
-        return now  # Fallback
-
-def schedule_playlist_refresh():
-    """Schedule the playlist refresh job to run every 12 hours"""
-    if not scheduler.get_job('playlist_refresh'):
-        scheduler.add_job(
-            refresh_scheduled_playlists,
-            'cron',
-            hour='1,13',  # Run at 1 AM and 1 PM
-            minute=1,     # Run at 1 minute past (1:01 AM and 1:01 PM)
-            id='playlist_refresh',
-            replace_existing=True
-        )
-        scheduler_logger.info("🔄 Playlist refresh job scheduled to run every 12 hours (1:01 AM and 1:01 PM)")
-
-async def refresh_scheduled_playlists():
-    """Check for and refresh scheduled playlists that are due"""
-    try:
-        current_time = datetime.now()
-        
-        # Only log heartbeat in DEBUG mode, always log when tasks are found
-        if LOG_LEVEL == "DEBUG":
-            scheduler_logger.debug(f"🔄 Scheduler auto-run initiated at {current_time.strftime('%H:%M:%S')}")
-        
-        if LOG_LEVEL == "DEBUG":
-            scheduler_logger.debug("🔍 Checking for playlists due for refresh...")
-        else:
-            scheduler_logger.info("🔍 Checking for playlists due for refresh...")
-        
-        # Get database path from environment variable with smart defaults
-        # Docker: /app/data/magiclists.db (set in docker-compose.yml)
-        # Standalone: ./magiclists.db (current directory)
-        default_path = "/app/data/magiclists.db" if os.path.exists("/app/data") else "./magiclists.db"
-        db_path = os.getenv("DATABASE_PATH", default_path)
-        db = DatabaseManager(db_path)
-        current_time = datetime.now()
-        
-        # Get playlists due for refresh (including 7-day catch-up window)
-        scheduled_playlists = await db.get_scheduled_playlists_due(current_time, grace_hours=168)
-        
-        if not scheduled_playlists:
-            if LOG_LEVEL == "DEBUG":
-                scheduler_logger.debug("✅ No playlists due for refresh at this time")
-            return
-        
-        # Group by navidrome_playlist_id to prevent duplicate processing
-        # Only process the most recent overdue refresh for each playlist
-        unique_playlists = {}
-        for playlist in scheduled_playlists:
-            playlist_id = playlist.navidrome_playlist_id
-            if playlist_id not in unique_playlists:
-                unique_playlists[playlist_id] = playlist
-            else:
-                # Keep the more recent one (closer to current time)
-                existing = datetime.fromisoformat(unique_playlists[playlist_id].next_refresh)
-                current = datetime.fromisoformat(playlist.next_refresh)
-                if current > existing:
-                    unique_playlists[playlist_id] = playlist
-        
-        final_playlists = list(unique_playlists.values())
-        
-        scheduler_logger.info(f"📋 Found {len(final_playlists)} playlist(s) due for refresh (deduplicated from {len(scheduled_playlists)} total)")
-        
-        for scheduled_playlist in final_playlists:
-            # Check if this is a catch-up refresh
-            scheduled_time = datetime.fromisoformat(scheduled_playlist.next_refresh)
-            if scheduled_time < current_time:
-                overdue_hours = (current_time - scheduled_time).total_seconds() / 3600
-                scheduler_logger.info(f"🕐 Catching up on overdue playlist {scheduled_playlist.navidrome_playlist_id} (missed by {overdue_hours:.1f} hours)")
-            
-            if scheduled_playlist.playlist_type == "rediscover":
-                await refresh_rediscover_playlist(scheduled_playlist, db)
-            elif scheduled_playlist.playlist_type == "this_is":
-                await refresh_this_is_playlist(scheduled_playlist, db)
-                
-    except Exception as e:
-        scheduler_logger.error(f"❌ Error checking scheduled playlists: {e}")
-
-async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager):
-    """Refresh a specific Re-Discover Weekly playlist"""
-    try:
-        scheduler_logger.info(f"🔄 Starting refresh for playlist ID: {scheduled_playlist.navidrome_playlist_id} (frequency: {scheduled_playlist.refresh_frequency})")
-        
-        # Get clients
-        nav_client = get_navidrome_client()
-        
-        # Get original playlist to find user's preferred length
-        playlists = await db.get_all_playlists_with_schedule_info()
-        original_playlist = next((p for p in playlists if p.get("navidrome_playlist_id") == scheduled_playlist.navidrome_playlist_id), None)
-        
-        if not original_playlist:
-            scheduler_logger.error(f"❌ Could not find original playlist data for {scheduled_playlist.navidrome_playlist_id}")
-            return
-        
-        # Prefer saved curation settings; fall back to legacy fields for old playlists
-        settings = original_playlist.get("curation_settings") or {}
-        library_ids = settings.get("library_ids") or []
-        
-        # Get original playlist length (MUST respect user's choice)
-        original_length = settings.get("playlist_length") or original_playlist.get("playlist_length", 20)
-        scheduler_logger.info(f"🎯 Using original playlist length: {original_length}")
-        
-        # Get previous playlist songs for variety context
-        previous_songs = original_playlist.get("songs", [])[:10]
-        variety_instruction = f"REFRESH CHALLENGE: The current playlist opens with these tracks in this order: {', '.join(previous_songs[:5])}. Your goal is to create a FRESH arrangement that tells a different musical story. You may include some of the same excellent tracks if they're rediscovery-worthy, but avoid replicating the same opening sequence or overall flow. Think creatively about re-ordering, substituting, or finding better transitions to ensure a genuinely refreshed listening experience." if previous_songs else ""
-        
-        # Get AI client for v2.0 processor
-        ai_client = get_ai_client()
-
-        # Get user and server IDs for v2.0 processor
-        user_id = await db.get_or_create_user_id()
-        server_id = nav_client.base_url or "unknown_server"
-
-        # Create ReDiscoverV2Processor instance (improved fallback handling)
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
-
-        # Prepare library IDs for v2.0 processor (from saved settings)
-        library_ids = library_ids if library_ids else None
-
-        # Log refresh context for debugging
-        scheduler_logger.info(f"🔄 Re-Discover v2.0 refresh context - Previous tracks: {len(previous_songs)}, Library IDs: {library_ids}")
-
-        # Generate new tracks using v2.0 processor with improved fallback handling
-        result = await processor.generate_playlist(user_id, server_id, library_ids)
-
-        # Extract tracks from v2.0 result format
-        tracks = result.get("tracks", [])
-
-        # Ensure tracks have the expected format for the rest of the refresh logic
-        # The v2.0 tracks should already have ai_curated and ai_description fields
-        
-        # The rediscover.generate_rediscover_weekly() method now uses the new recipe system internally
-        
-        if tracks:
-            scheduler_logger.info(f"🎵 Generated {len(tracks)} new tracks for refresh")
-            
-            # VALIDATE: Ensure we got the expected number of tracks
-            if len(tracks) != original_length:
-                scheduler_logger.warning(f"⚠️ Generated {len(tracks)} tracks but user requested {original_length}")
-            else:
-                scheduler_logger.info(f"✅ Generated exact number of requested tracks: {len(tracks)}")
-            
-            # Extract AI description if available
-            ai_description = ""
-            ai_curated = False
-            if tracks:
-                first_track = tracks[0]
-                ai_description = first_track.get("ai_description", "")
-                ai_curated = first_track.get("ai_curated", False)
-            
-            # Log the AI description for scheduled refresh (truncated)
-            if ai_description and ai_curated:
-                description_preview = ai_description[:200] + "..." if len(ai_description) > 200 else ai_description
-                scheduler_logger.info(f"🎵 AI curation applied for scheduled Re-Discover refresh (description length: {len(ai_description)} chars): {description_preview}")
-            else:
-                scheduler_logger.info(f"⚠️ Scheduled Re-Discover refresh used algorithmic selection")
-            
-            # Update the existing playlist in Navidrome with description
-            track_ids = [track["id"] for track in tracks]
-            comment_to_use = ai_description if (ai_description and ai_curated) else "Re-Discover Weekly v2.0 - Automatically refreshed"
-            await nav_client.update_playlist(
-                playlist_id=scheduled_playlist.navidrome_playlist_id,
-                track_ids=track_ids,
-                comment=comment_to_use
-            )
-            
-            # Update the local database with new songs and description
-            track_titles = [track["title"] for track in tracks]
-            description_to_store = ai_description if ai_curated else "Algorithmic selection"
-            await db.update_playlist_content(
-                navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
-                songs=track_titles,
-                description=description_to_store
-            )
-            
-            # Calculate next refresh time
-            next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
-            
-            # Update the scheduled playlist record
-            await db.update_scheduled_playlist_next_refresh(
-                scheduled_playlist.id, 
-                next_refresh
-            )
-            
-            scheduler_logger.info(f"✅ Successfully refreshed playlist {scheduled_playlist.navidrome_playlist_id}. Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
-        else:
-            scheduler_logger.warning(f"⚠️ No tracks generated for playlist {scheduled_playlist.navidrome_playlist_id}")
-        
-    except Exception as e:
-        scheduler_logger.error(f"❌ Error refreshing playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
-
-async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
-    """Refresh a specific This Is playlist"""
-    try:
-        scheduler_logger.info(f"🔄 Starting refresh for This Is playlist ID: {scheduled_playlist.navidrome_playlist_id} (frequency: {scheduled_playlist.refresh_frequency})")
-        
-        # Get clients
-        nav_client = get_navidrome_client()
-        ai_client_instance = get_ai_client()
-        
-        # Find the original playlist to get artist info
-        playlists = await db.get_all_playlists_with_schedule_info()
-        original_playlist = next((p for p in playlists if p.get("navidrome_playlist_id") == scheduled_playlist.navidrome_playlist_id), None)
-        
-        if not original_playlist:
-            scheduler_logger.error(f"❌ Could not find original playlist data for {scheduled_playlist.navidrome_playlist_id}")
-            return
-        
-        # Prefer saved curation settings; fall back to legacy fields for old playlists
-        settings = original_playlist.get("curation_settings") or {}
-        artist_id = settings.get("artist_id") or original_playlist["artist_id"]
-        library_ids = settings.get("library_ids") or []
-        
-        # Get all artists to find the name
-        all_artists = await nav_client.get_artists()
-        artist = next((a for a in all_artists if a["id"] == artist_id), None)
-        
-        if not artist:
-            scheduler_logger.error(f"❌ Could not find artist data for ID: {artist_id}")
-            return
-        
-        artist_name = artist["name"]
-        
-        # FRESH DATA: Re-fetch ALL tracks for the artist (gets latest play counts, dates)
-        tracks = await nav_client.get_tracks_by_artist(artist_id, library_ids)
-        
-        if tracks:
-            scheduler_logger.info(f"🎵 Found {len(tracks)} tracks for artist: {artist_name} (fresh data)")
-            
-            # ENFORCE original playlist length (MUST respect user's choice)
-            original_length = settings.get("playlist_length") or original_playlist.get("playlist_length", 25)
-            scheduler_logger.info(f"🎯 ENFORCING original playlist length: {original_length}")
-            
-            # Check if we have enough tracks
-            if len(tracks) < original_length:
-                scheduler_logger.warning(f"⚠️ Artist only has {len(tracks)} tracks, but user requested {original_length}. Using all available tracks.")
-                original_length = len(tracks)
-            
-            # Get previous playlist songs for STRONG variety enforcement
-            previous_songs = original_playlist.get("songs", [])
-            variety_instruction = f"REFRESH CONSTRAINT: This is a REFRESH, not a copy. Previous playlist had these tracks: {', '.join(previous_songs[:10])}. Create a completely different track selection and arrangement. Prioritize tracks NOT in the previous list. Tell a fresh musical story. Avoid identical opening sequences." if previous_songs else "Create a fresh, engaging playlist arrangement."
-            
-            # Prepare tracks with variety instruction - use a more direct approach
-            tracks_for_ai = tracks.copy()
-            
-            # Use AI to curate a FRESH playlist with STRONG variety enforcement
-            curation_result = await ai_client_instance.curate_this_is(
-                artist_name=artist_name,
-                candidate_tracks=tracks_for_ai,
-                num_tracks=original_length,
-                include_description=True,
-                variety_context=variety_instruction
-            )
-            
-            # Handle both old and new return formats
-            if isinstance(curation_result, tuple):
-                curated_track_ids, description = curation_result
-            else:
-                curated_track_ids = curation_result
-                description = ""
-            
-            if curated_track_ids:
-                # VALIDATE: Ensure we got the right number of tracks
-                if len(curated_track_ids) < original_length and len(tracks) >= original_length:
-                    scheduler_logger.warning(f"⚠️ AI returned only {len(curated_track_ids)} tracks but user requested {original_length}. Using fallback to fill gap.")
-                    # Fill the gap with remaining tracks
-                    used_ids = set(curated_track_ids)
-                    remaining_tracks = [t for t in tracks if t["id"] not in used_ids]
-                    additional_needed = original_length - len(curated_track_ids)
-                    additional_tracks = remaining_tracks[:additional_needed]
-                    curated_track_ids.extend([t["id"] for t in additional_tracks])
-                
-                scheduler_logger.info(f"🎯 Final track count: {len(curated_track_ids)} (requested: {original_length})")
-                
-                refresh_description = resolve_refresh_description(
-                    existing_description=original_playlist.get("description"),
-                    generated_description=description,
-                    metadata_overrides={"description": bool(original_playlist.get("description"))},
-                )
-                await nav_client.update_playlist(
-                    playlist_id=scheduled_playlist.navidrome_playlist_id,
-                    track_ids=curated_track_ids,
-                    comment=refresh_description
-                )
-                
-                # Update the local database with new songs and description
-                track_titles = []
-                track_id_to_title = {track["id"]: track["title"] for track in tracks}
-                for track_id in curated_track_ids:
-                    if track_id in track_id_to_title:
-                        track_titles.append(track_id_to_title[track_id])
-                
-                await db.update_playlist_content(
-                    navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
-                    songs=track_titles,
-                    description=refresh_description
-                )
-                
-                # Calculate next refresh time
-                next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
-                
-                # Update the scheduled playlist record
-                await db.update_scheduled_playlist_next_refresh(
-                    scheduled_playlist.id, 
-                    next_refresh
-                )
-                
-                scheduler_logger.info(f"✅ Successfully refreshed This Is playlist {scheduled_playlist.navidrome_playlist_id}. Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
-            else:
-                scheduler_logger.warning(f"⚠️ No curated tracks generated for This Is playlist {scheduled_playlist.navidrome_playlist_id}")
-        else:
-            scheduler_logger.warning(f"⚠️ No tracks found for artist {artist_name} in playlist {scheduled_playlist.navidrome_playlist_id}")
-        
-    except Exception as e:
-        scheduler_logger.error(f"❌ Error refreshing This Is playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
-
+# ---------------------------------------------------------------------------
+# Playlist CRUD + scheduling endpoints (type-agnostic)
+# ---------------------------------------------------------------------------
 @app.get("/api/playlists")
 async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
     """Get all playlists with scheduling information"""
     try:
         playlists = await db.get_all_playlists_with_schedule_info()
-        # Add track count to each playlist
         for playlist in playlists:
             songs = playlist.get("songs", [])
             playlist["track_count"] = len(songs) if isinstance(songs, list) else 0
@@ -1394,55 +307,6 @@ async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlists: {str(e)}")
 
-@app.delete("/api/playlists/{playlist_id}")
-async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
-    """Delete a playlist from both local database and Navidrome"""
-    try:
-        # First, get the specific playlist to find the Navidrome playlist ID
-        # Use a direct query instead of fetching all playlists
-        playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
-        
-        if not playlist:
-            raise HTTPException(status_code=404, detail="Playlist not found")
-        
-        # Delete from Navidrome if we have a playlist ID
-        navidrome_playlist_id = playlist.get("navidrome_playlist_id")
-        if navidrome_playlist_id:
-            nav_client = get_navidrome_client()
-            try:
-                print(f"🗑️ Deleting playlist {playlist_id} from Navidrome (Navidrome ID: {navidrome_playlist_id})")
-                deletion_result = await nav_client.delete_playlist(navidrome_playlist_id)
-                print(f"✅ Navidrome deletion result: {deletion_result}")
-            except Exception as e:
-                print(f"❌ Warning: Failed to delete playlist from Navidrome: {e}")
-                # Continue with local deletion even if Navidrome deletion fails
-        else:
-            print(f"⚠️ No Navidrome playlist ID found for local playlist {playlist_id}, skipping Navidrome deletion")
-        
-        # Delete from scheduled playlists if it exists
-        if navidrome_playlist_id:
-            await db.delete_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
-        
-        # Delete from local database
-        success = await db.delete_playlist(playlist_id)
-        
-        if not success:
-            raise HTTPException(status_code=404, detail="Playlist not found in database")
-        
-        return {"message": "Playlist deleted successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete playlist: {str(e)}")
-
-class _RefreshTarget:
-    """Lightweight stand-in for a ScheduledPlaylist used by manual refresh dispatch."""
-    def __init__(self, navidrome_playlist_id: str, refresh_frequency: str, playlist_type: str, scheduled_id: int = 0):
-        self.navidrome_playlist_id = navidrome_playlist_id
-        self.refresh_frequency = refresh_frequency
-        self.playlist_type = playlist_type
-        self.id = scheduled_id
 
 @app.get("/api/playlists/{playlist_id}")
 async def get_playlist_detail(playlist_id: int, db: DatabaseManager = Depends(get_db)):
@@ -1457,13 +321,43 @@ async def get_playlist_detail(playlist_id: int, db: DatabaseManager = Depends(ge
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlist: {str(e)}")
 
+
+@app.delete("/api/playlists/{playlist_id}")
+async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
+    """Delete a playlist from both local database and Navidrome"""
+    try:
+        playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+        if not playlist:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        navidrome_playlist_id = playlist.get("navidrome_playlist_id")
+        if navidrome_playlist_id:
+            nav_client = get_navidrome_client()
+            try:
+                scheduler_logger.info(f"Deleting playlist {playlist_id} from Navidrome (Navidrome ID: {navidrome_playlist_id})")
+                await nav_client.delete_playlist(navidrome_playlist_id)
+            except Exception as e:
+                scheduler_logger.warning(f"Warning: Failed to delete playlist from Navidrome: {e}")
+            await db.delete_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
+
+        success = await db.delete_playlist(playlist_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Playlist not found in database")
+        return {"message": "Playlist deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete playlist: {str(e)}")
+
+
 class UpdatePlaylistSettingsRequest(BaseModel):
     """Request schema for updating a playlist's saved curation settings and metadata"""
     curation_settings: Dict[str, Any]
-    refresh_frequency: Optional[str] = None  # "none", "never", "daily", "weekly", "monthly"
+    refresh_frequency: Optional[str] = None
     playlist_name: Optional[str] = None
     description: Optional[str] = None
     is_public: Optional[bool] = None
+
 
 @app.put("/api/playlists/{playlist_id}/settings")
 async def update_playlist_settings(
@@ -1483,7 +377,6 @@ async def update_playlist_settings(
 
         nav_client = get_navidrome_client()
 
-        # Persist curation settings (and playlist length if present)
         new_length = request.curation_settings.get("playlist_length")
         await db.update_playlist_settings(
             playlist_id=playlist_id,
@@ -1498,7 +391,6 @@ async def update_playlist_settings(
                 description=request.description if request.description is not None else playlist.get("description"),
                 is_public=request.is_public if request.is_public is not None else playlist.get("is_public"),
             )
-
             try:
                 if navidrome_playlist_id:
                     await nav_client.update_playlist_metadata(
@@ -1508,9 +400,8 @@ async def update_playlist_settings(
                         is_public=request.is_public,
                     )
             except Exception as update_error:
-                scheduler_logger.warning(f"⚠️ Failed to sync playlist metadata to Navidrome: {update_error}")
+                scheduler_logger.warning(f"Failed to sync playlist metadata to Navidrome: {update_error}")
 
-        # Reconcile the scheduled playlist row based on refresh_frequency
         frequency = request.refresh_frequency if request.refresh_frequency is not None else playlist.get("refresh_frequency")
         frequency = frequency or "none"
         existing = await db.get_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
@@ -1518,12 +409,13 @@ async def update_playlist_settings(
         if frequency in ("none", "never"):
             if existing:
                 await db.delete_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
-                scheduler_logger.info(f"🗓️ Removed schedule for playlist {navidrome_playlist_id}")
+                scheduler_logger.info(f"Removed schedule for playlist {navidrome_playlist_id}")
         else:
+            from .core.scheduler import calculate_next_refresh
             next_refresh = calculate_next_refresh(frequency)
             if existing:
                 await db.update_scheduled_playlist_frequency(existing.id, frequency, next_refresh)
-                scheduler_logger.info(f"🗓️ Updated schedule for {navidrome_playlist_id} -> {frequency}")
+                scheduler_logger.info(f"Updated schedule for {navidrome_playlist_id} -> {frequency}")
             else:
                 await db.create_scheduled_playlist(
                     playlist_type=playlist.get("playlist_type") or "this_is",
@@ -1532,17 +424,25 @@ async def update_playlist_settings(
                     next_refresh=next_refresh
                 )
                 schedule_playlist_refresh()
-                scheduler_logger.info(f"🗓️ Created schedule for {navidrome_playlist_id} -> {frequency}")
+                scheduler_logger.info(f"Created schedule for {navidrome_playlist_id} -> {frequency}")
 
-        # Return the updated playlist
         updated = await db.get_playlist_by_id_with_schedule_info(playlist_id)
         updated["track_count"] = len(updated.get("songs", []) or [])
         return updated
-
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update playlist settings: {str(e)}")
+
+
+class _RefreshTarget:
+    """Lightweight stand-in for a ScheduledPlaylist used by manual refresh dispatch."""
+    def __init__(self, navidrome_playlist_id: str, refresh_frequency: str, playlist_type: str, scheduled_id: int = 0):
+        self.navidrome_playlist_id = navidrome_playlist_id
+        self.refresh_frequency = refresh_frequency
+        self.playlist_type = playlist_type
+        self.id = scheduled_id
+
 
 @app.post("/api/playlists/{playlist_id}/refresh")
 async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depends(get_db)):
@@ -1559,7 +459,6 @@ async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depe
         playlist_type = playlist.get("playlist_type") or "this_is"
         frequency = playlist.get("refresh_frequency") or "none"
 
-        # Build a refresh target compatible with the existing refresh functions
         scheduled = _RefreshTarget(
             navidrome_playlist_id=navidrome_playlist_id,
             refresh_frequency=frequency,
@@ -1570,147 +469,34 @@ async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depe
             await refresh_genre_playlist(playlist, db)
         elif playlist_type in ("rediscover", "rediscover_weekly_v2"):
             await refresh_rediscover_playlist(scheduled, db)
-        else:  # this_is (and any unknown -> treat as this_is)
+        else:
             await refresh_this_is_playlist(scheduled, db)
 
-        # Update last_refreshed timestamp
         await db.update_playlist_last_refreshed(navidrome_playlist_id)
 
-        # Reschedule next refresh if a schedule exists
         existing = await db.get_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
         if existing and frequency not in ("none", "never"):
+            from .core.scheduler import calculate_next_refresh
             await db.update_scheduled_playlist_next_refresh(existing.id, calculate_next_refresh(frequency))
 
         return {"message": "Playlist refreshed successfully", "playlist_id": navidrome_playlist_id}
-
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to refresh playlist: {str(e)}")
 
-async def refresh_genre_playlist(playlist: Dict, db: DatabaseManager):
-    """Refresh a Genre Mix playlist using its saved curation settings"""
-    try:
-        scheduler_logger.info(f"🔄 Starting refresh for Genre Mix playlist ID: {playlist.get('navidrome_playlist_id')}")
 
-        nav_client = get_navidrome_client()
-        ai_client_instance = get_ai_client()
-
-        settings = playlist.get("curation_settings") or {}
-        genres = settings.get("genres") or [g.strip() for g in playlist.get("artist_id", "").split(",") if g.strip()]
-        if not genres:
-            scheduler_logger.error("❌ No genres found for Genre Mix refresh")
-            return
-
-        library_ids = settings.get("library_ids") or []
-        playlist_length = settings.get("playlist_length") or playlist.get("playlist_length") or 25
-        year_start = settings.get("year_start")
-        year_end = settings.get("year_end")
-        blacklisted_artists = settings.get("blacklisted_artists") or []
-        min_bitrate = settings.get("min_bitrate")
-        min_format = settings.get("min_format")
-        min_bit_depth = settings.get("min_bit_depth")
-        max_tracks_per_album = settings.get("max_tracks_per_album", 2)
-        max_tracks_per_artist = settings.get("max_tracks_per_artist", 3)
-
-        # Generate playlist name (keep existing name)
-        playlist_name = playlist.get("playlist_name")
-
-        # Get tracks for the genres
-        all_tracks = await nav_client.get_tracks_by_genres(genres, library_ids)
-        scheduler_logger.info(f"🎵 Found {len(all_tracks)} total tracks for genres '{', '.join(genres)}'")
-
-        if not all_tracks:
-            scheduler_logger.warning(f"⚠️ No tracks found for genres: {', '.join(genres)}")
-            return
-
-        # Apply smart filtering (mirrors create_genre_playlist)
-        library_stats = await nav_client.get_library_stats()
-        genre_recipe = recipe_manager.get_recipe("genre_mix")
-        diversity_config = genre_recipe.get("source_filtering", {})
-
-        ollama_max_tracks = None
-        if ai_client_instance.provider.provider_type == "ollama":
-            ollama_max_tracks = int(os.getenv("OLLAMA_MAX_TRACKS", "0")) or None
-
-        filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
-            source_tracks=all_tracks,
-            target_playlist_size=playlist_length,
-            library_stats=library_stats,
-            playlist_type="genre",
-            diversity_config=diversity_config,
-            ollama_max_tracks=ollama_max_tracks,
-            exploration_ratio=diversity_config.get("exploration_ratio", 0.0),
-            high_tier_ratio=diversity_config.get("high_tier_ratio", 0.4),
-            high_tier_multiplier=diversity_config.get("high_tier_multiplier", 3.0),
-            year_start=year_start,
-            year_end=year_end,
-            blacklisted_artists=blacklisted_artists,
-            min_bitrate=min_bitrate,
-            min_format=min_format,
-            min_bit_depth=min_bit_depth,
-            max_tracks_per_album=max_tracks_per_album,
-            max_tracks_per_artist=max_tracks_per_artist
-        )
-
-        tracks_for_llm = filtered_tracks
-
-        # Use AI to curate the playlist
-        curation_result = await ai_client_instance.curate_genre_mix(
-            genres=genres,
-            candidate_tracks=tracks_for_llm,
-            num_tracks=playlist_length,
-            include_description=True
-        )
-
-        if isinstance(curation_result, tuple):
-            curated_track_ids, description = curation_result
-        else:
-            curated_track_ids = curation_result
-            description = ""
-
-        if not curated_track_ids:
-            scheduler_logger.warning(f"⚠️ No curated tracks generated for Genre Mix {playlist.get('navidrome_playlist_id')}")
-            return
-
-        # Update the existing playlist in Navidrome
-        comment_to_use = resolve_refresh_description(
-            existing_description=playlist.get("description"),
-            generated_description=description,
-            metadata_overrides={"description": bool(playlist.get("description"))},
-        )
-        await nav_client.update_playlist(
-            playlist_id=playlist.get("navidrome_playlist_id"),
-            track_ids=curated_track_ids,
-            comment=comment_to_use
-        )
-
-        # Update the local database with new songs and description
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
-        for track_id in curated_track_ids:
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
-
-        await db.update_playlist_content(
-            navidrome_playlist_id=playlist.get("navidrome_playlist_id"),
-            songs=track_titles,
-            description=comment_to_use
-        )
-
-        scheduler_logger.info(f"✅ Successfully refreshed Genre Mix playlist {playlist.get('navidrome_playlist_id')}")
-
-    except Exception as e:
-        scheduler_logger.error(f"❌ Error refreshing Genre Mix playlist {playlist.get('navidrome_playlist_id')}: {e}")
-
+# ---------------------------------------------------------------------------
+# Recipes / scheduler / AI info / analytics endpoints
+# ---------------------------------------------------------------------------
 @app.get("/api/recipes")
 async def get_available_recipes():
     """Get information about available playlist generation recipes"""
     try:
-        recipes_info = recipe_manager.list_available_recipes()
-        return recipes_info
+        return recipe_manager.list_available_recipes()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load recipes: {str(e)}")
+
 
 @app.get("/api/recipes/validate")
 async def validate_recipes():
@@ -1718,7 +504,6 @@ async def validate_recipes():
     try:
         registry = recipe_manager._load_registry()
         validation_results = {}
-        
         for playlist_type, recipe_filename in registry.items():
             errors = recipe_manager.validate_recipe(recipe_filename)
             validation_results[playlist_type] = {
@@ -1726,16 +511,15 @@ async def validate_recipes():
                 "valid": len(errors) == 0,
                 "errors": errors
             }
-        
         return validation_results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to validate recipes: {str(e)}")
+
 
 @app.get("/api/scheduler/status")
 async def get_scheduler_status():
     """Get scheduler status and active jobs"""
     try:
-        global scheduler
         if scheduler:
             jobs = list(scheduler.get_jobs())
             job_info = []
@@ -1745,48 +529,45 @@ async def get_scheduler_status():
                     "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
                     "func": job.func.__name__ if hasattr(job, 'func') else str(job.func)
                 })
-            
             return {
                 "scheduler_running": scheduler.running,
                 "active_jobs": len(jobs),
                 "jobs": job_info,
                 "scheduler_state": str(scheduler.state)
             }
-        else:
-            return {
-                "scheduler_running": False,
-                "error": "Scheduler not initialized"
-            }
+        return {"scheduler_running": False, "error": "Scheduler not initialized"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get scheduler status: {str(e)}")
+
 
 @app.post("/api/scheduler/trigger")
 async def trigger_scheduler_check():
     """Manually trigger the scheduler to check for playlists due for refresh"""
     try:
-        scheduler_logger.info("🧪 Manual scheduler trigger requested via API")
+        scheduler_logger.info("Manual scheduler trigger requested via API")
         await refresh_scheduled_playlists()
         return {"message": "Scheduler check completed successfully"}
     except Exception as e:
-        scheduler_logger.error(f"❌ Error in manual scheduler trigger: {e}")
+        scheduler_logger.error(f"Error in manual scheduler trigger: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to trigger scheduler: {str(e)}")
+
 
 @app.post("/api/scheduler/start")
 async def start_scheduler_job():
     """Manually start the recurring scheduler job"""
     try:
         schedule_playlist_refresh()
-        global scheduler
         jobs = list(scheduler.get_jobs()) if scheduler else []
-        scheduler_logger.info(f"🔄 Scheduler job registration requested. Active jobs: {len(jobs)}")
+        scheduler_logger.info(f"Scheduler job registration requested. Active jobs: {len(jobs)}")
         return {
             "message": "Scheduler job started",
             "active_jobs": len(jobs),
             "jobs": [{"id": job.id, "next_run": job.next_run_time.isoformat() if job.next_run_time else None} for job in jobs]
         }
     except Exception as e:
-        scheduler_logger.error(f"❌ Error starting scheduler job: {e}")
+        scheduler_logger.error(f"Error starting scheduler job: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start scheduler job: {str(e)}")
+
 
 @app.get("/api/ai-model-info")
 async def get_ai_model_info():
@@ -1798,82 +579,73 @@ async def get_ai_model_info():
             "model": ai_client_instance.model or "unknown",
             "has_api_key": bool(ai_client_instance.api_key)
         }
-    except Exception as e:
-        return {
-            "provider": "unknown",
-            "model": "unknown", 
-            "has_api_key": False
-        }
+    except Exception:
+        return {"provider": "unknown", "model": "unknown", "has_api_key": False}
+
 
 @app.post("/api/track-library-size")
 async def track_library_size(db: DatabaseManager = Depends(get_db)):
     """Track library size for analytics (called post-launch)"""
     try:
-        # Check if we should track (90+ days since last tracking)
         should_track = await db.should_track_library_size()
         if not should_track:
             return {"message": "Library size tracking not needed yet", "tracked": False}
-        
-        # Get Navidrome client and query library size
+
         nav_client = get_navidrome_client()
         song_count = await nav_client.get_total_song_count()
-        
-        # Get or create user ID and record the data
         user_id = await db.get_or_create_user_id()
         await db.record_library_size(song_count)
-        
-        scheduler_logger.info(f"📊 Library size tracked: {song_count} songs for user {user_id}")
-        
+        scheduler_logger.info(f"Library size tracked: {song_count} songs for user {user_id}")
         return {
             "message": "Library size tracked successfully",
             "tracked": True,
             "song_count": song_count,
             "user_id": user_id
         }
-        
     except Exception as e:
-        scheduler_logger.error(f"❌ Error tracking library size: {e}")
+        scheduler_logger.error(f"Error tracking library size: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to track library size: {str(e)}")
 
-# SPA ROUTING - Smart catch-all for client-side routing (MUST be last route)
+
+# ---------------------------------------------------------------------------
+# Mount per-type routers (creation + type-specific endpoints)
+# ---------------------------------------------------------------------------
+app.include_router(this_is_router)
+app.include_router(genre_mix_router)
+app.include_router(rediscover_router)
+
+
+# ---------------------------------------------------------------------------
+# SPA routing (MUST be last route)
+# ---------------------------------------------------------------------------
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_router(request: Request, path: str):
     """Handle SPA routing - serve app for known paths, redirect unknown paths"""
-    # Known SPA paths - serve the app and let frontend handle routing
     spa_paths = ["this-is", "re-discover", "playlists", "terms"]
-    
     if path in spa_paths:
-        # Apply same system check logic as root
         if not system_check_passed:
-            from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/system-check", status_code=302)
         return templates.TemplateResponse("index.html", {"request": request})
-    
-    # Unknown paths - redirect to home
-    from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/", status_code=302)
 
+
 if __name__ == "__main__":
-    # Custom logging config to filter out Umami heartbeat requests
     import uvicorn.config
-    
+
     class FilteredUvicornFormatter(uvicorn.formatters.DefaultFormatter):
         def format(self, record):
-            # Filter out GET / requests (Umami heartbeats) from access logs
             if hasattr(record, 'args') and record.args:
-                # Look for GET / HTTP patterns in the log message
                 message = str(record.args[2]) if len(record.args) > 2 else ""
                 if 'GET / HTTP' in message:
-                    return ""  # Return empty string to suppress this log
+                    return ""
             return super().format(record)
-    
-    # Configure uvicorn with custom formatter
+
     log_config = uvicorn.config.LOGGING_CONFIG
     log_config["formatters"]["access"]["()"] = FilteredUvicornFormatter
-    
+
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
+        app,
+        host="0.0.0.0",
         port=8000,
         log_config=log_config
     )

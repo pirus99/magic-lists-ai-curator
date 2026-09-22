@@ -74,12 +74,6 @@ class RediscoverTrack(BaseModel):
     historical_plays: int
     days_since_last_play: str
 
-class RediscoverWeeklyResponse(BaseModel):
-    """Response schema for Re-Discover Weekly"""
-    tracks: List[RediscoverTrack]
-    total_tracks: int
-    message: str
-
 class RediscoverWeeklyV2Response(BaseModel):
     """Response schema for Re-Discover Weekly v2.0"""
     name: str
