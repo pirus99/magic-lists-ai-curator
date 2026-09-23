@@ -330,7 +330,7 @@ async function loadPlaylists() {
 
         if (playlists.length === 0) {
             containerDiv.innerHTML = `
-                <div class="text-center p-8 text-gray-500">
+                <div class="text-center p-8 text-gray-500 dark:text-gray-400">
                     <p class="text-lg mb-2">No playlists yet</p>
                     <p class="text-sm">Create your first playlist using the options in the sidebar!</p>
                 </div>
@@ -344,7 +344,7 @@ async function loadPlaylists() {
         console.error('Error loading playlists:', error);
         loadingDiv.classList.add('hidden');
         containerDiv.innerHTML = `
-            <div class="text-center p-8 text-red-600">
+            <div class="text-center p-8 text-red-600 dark:text-red-400">
                 <p class="text-lg mb-2">Error loading playlists</p>
                 <p class="text-sm">${error.message}</p>
             </div>
@@ -362,10 +362,10 @@ function renderPlaylists(playlists) {
 
     container.innerHTML = playlists.map(playlist => {
         return `
-            <div class="flex items-start justify-between p-4 border border-gray-200 rounded-lg mb-4">
+            <div class="flex items-start justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg mb-4">
                 <div class="flex-grow">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-1">${playlist.playlist_name}</h3>
-                    <div class="text-sm text-gray-600 mb-2 space-y-1">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">${playlist.playlist_name}</h3>
+                    <div class="text-sm text-gray-600 dark:text-gray-300 mb-2 space-y-1">
                         <p class="mb-0">
                             ${playlist.track_count || 0} tracks • 
                             Refreshes ${playlist.refresh_frequency || 'manually'} • 
@@ -376,14 +376,14 @@ function renderPlaylists(playlists) {
                             ${playlist.last_refreshed ? `Refreshed ${formatFriendlyDate(playlist.last_refreshed)}` : 'Not refreshed yet'}
                         </p>
                     </div>
-                    ${playlist.description ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${truncateText(playlist.description, 140)}</p>` : ''}
+                    ${playlist.description ? `<p class="text-sm text-gray-600 dark:text-gray-400 m-0 mt-2 italic">${truncateText(playlist.description, 140)}</p>` : ''}
                 </div>
                 <div class="flex-none flex flex-col items-end gap-1">
                     <div class="flex items-center gap-1">
                         <button
                             data-action="refresh"
                             data-playlist-id="${playlist.id}"
-                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 px-2 py-1"
+                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1"
                         >
                             <svg data-refresh-icon="${playlist.id}" class="size-3.5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 19v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/></svg>
                             <span data-refresh-label="${playlist.id}">Refresh</span>
@@ -392,7 +392,7 @@ function renderPlaylists(playlists) {
                         <button
                             data-action="edit"
                             data-playlist-id="${playlist.id}"
-                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 px-2 py-1"
+                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M12 20h9"/>
@@ -405,7 +405,7 @@ function renderPlaylists(playlists) {
                             data-action="delete"
                             data-playlist-id="${playlist.id}"
                             data-playlist-name="${playlist.playlist_name.replace(/"/g, '&quot;').replace(/'/g, "\\'")}"
-                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 px-2 py-1"
+                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 px-2 py-1"
                         >
                             <svg class="size-3.5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h6c1 0 2 1 2 2v2M8 10v10M12 10v10M16 10v10"/></svg>
                             <span>Delete</span>
