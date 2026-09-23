@@ -8,7 +8,7 @@
 
     const THEME_KEY = 'magiclists-theme';
     const VALID_THEMES = ['dark', 'light'];
-    const DEFAULT_THEME = 'dark';
+    const DEFAULT_THEME = 'light';
 
     // Get stored theme or default
     function getStoredTheme() {
