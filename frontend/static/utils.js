@@ -122,7 +122,7 @@ function displaySystemChecks(checks) {
                                 ${statusIcon}
                             </div>
                             <div class="ml-3">
-                                <h3 class="text-sm font-medium text-gray-900">${check.name}</h3>
+                                <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">${check.name}</h3>
                                 ${check.status !== 'success' ? `<p class="text-sm ${statusColor}">${getStatusText(check.status)}</p>` : ''}
                             </div>
                         </div>
@@ -136,9 +136,9 @@ function displaySystemChecks(checks) {
                     </div>
                 </div>
                 ${hasDetails ? `
-                    <div class="hidden px-4 pb-4 pt-4 border-t border-gray-100 bg-gray-50" id="details-${checkId}">
-                        ${check.message ? `<p class="text-sm text-gray-600 mb-2">${check.message}</p>` : ''}
-                        ${check.suggestion ? `<p class="text-sm text-blue-600 font-medium">${check.suggestion}</p>` : ''}
+                    <div class="hidden px-4 pb-4 pt-4 border-t border-gray-100 bg-gray-50 dark:bg-gray-700" id="details-${checkId}">
+                        ${check.message ? `<p class="text-sm text-gray-600 dark:text-gray-300 mb-2">${check.message}</p>` : ''}
+                        ${check.suggestion ? `<p class="text-sm text-blue-600 dark:text-blue-400 font-medium">${check.suggestion}</p>` : ''}
                     </div>
                 ` : ''}
             </div>
