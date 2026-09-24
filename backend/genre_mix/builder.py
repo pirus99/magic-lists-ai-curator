@@ -4,7 +4,8 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..database import DatabaseManager
-from ..core.dependencies import get_navidrome_client, get_ai_client
+from ..core.dependencies import get_ai_client
+from ..core.server_router import get_server_client
 from ..core.playlist_builder import PlaylistTypeConfig
 from ..track_scoring import filter_tracks_for_this_is_playlist
 from ..recipe_manager import recipe_manager
@@ -29,16 +30,16 @@ async def fetch_genre_mix_tracks(
     **kwargs,
 ) -> List[Dict[str, Any]]:
     """Fetch tracks for a Genre Mix playlist (creation or refresh)."""
-    nav_client = get_navidrome_client()
+    server_client = get_server_client()
     if playlist is not None:
         genres = (settings or {}).get("genres") or [g.strip() for g in playlist.get("artist_id", "").split(",") if g.strip()]
         if not genres:
             scheduler_logger.error("❌ No genres found for Genre Mix refresh")
             return []
-        return await nav_client.get_tracks_by_genres(genres, library_ids)
+        return await server_client.get_tracks_by_genres(genres, library_ids)
     if request is None or not getattr(request, "genres", None):
         return []
-    return await nav_client.get_tracks_by_genres(request.genres, library_ids)
+    return await server_client.get_tracks_by_genres(request.genres, library_ids)
 
 
 async def apply_genre_mix_filter(
@@ -181,7 +182,7 @@ async def refresh_genre_playlist(playlist: Dict[str, Any], db: DatabaseManager) 
     """Refresh a Genre Mix playlist using its saved curation settings."""
     try:
         scheduler_logger.info(f"🔄 Starting refresh for Genre Mix playlist ID: {playlist.get('navidrome_playlist_id')}")
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
         ai_client = get_ai_client()
 
         settings = playlist.get("curation_settings") or {}

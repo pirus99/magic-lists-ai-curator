@@ -1,7 +1,7 @@
-<div id="system-check-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
+<div id="system-check-content" data-server-type="jellyfin" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
     <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">System Check</h1>
-        <p class="text-gray-600 dark:text-gray-300">Verifying your MagicLists configuration...</p>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">System Check <span id="server-type-label" class="text-sm font-normal text-gray-500">(Navidrome)</span></h1>
+        <p class="text-gray-600 dark:text-gray-300">Verifying your MagicLists configuration for <span id="server-type-text">Navidrome</span>...</p>
     </div>
 
     <div id="system-checks-list" class="space-y-4 mb-6">
@@ -54,3 +54,22 @@
         </div>
     </div>
 </div>
+
+<script>
+    // Dynamic server type replacement for system check page
+    (function() {
+        const serverType = document.getElementById('system-check-content').getAttribute('data-server-type') || 'navidrome';
+        const displayName = serverType === 'jellyfin' ? 'Jellyfin' : 'Navidrome';
+        document.querySelectorAll('#server-type-label, #server-type-text').forEach(el => {
+            el.textContent = displayName;
+        });
+        // Replace all visible text occurrences of Navidrome with Jellyfin when applicable
+        if (serverType === 'jellyfin') {
+            document.querySelectorAll('#system-check-content, #system-check-content *').forEach(node => {
+                if (node.nodeType === 3 && node.textContent.includes('Navidrome')) {
+                    node.textContent = node.textContent.replace(/Navidrome/g, 'Jellyfin');
+                }
+            });
+        }
+    })();
+</script>

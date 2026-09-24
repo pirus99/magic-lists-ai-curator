@@ -3,7 +3,8 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..database import DatabaseManager
-from ..core.dependencies import get_navidrome_client, get_ai_client
+from ..core.dependencies import get_ai_client
+from ..core.server_router import get_server_client
 from ..core.playlist_builder import PlaylistTypeConfig
 from .curation import curate_this_is
 
@@ -23,18 +24,18 @@ async def fetch_this_is_tracks(
     **kwargs,
 ) -> List[Dict[str, Any]]:
     """Fetch tracks for a This Is playlist (creation or refresh)."""
-    nav_client = get_navidrome_client()
+    server_client = get_server_client()
 
     if playlist is not None:
         # Refresh path: re-fetch fresh data for the saved artist.
         artist_id = (settings or {}).get("artist_id") or playlist["artist_id"]
-        return await nav_client.get_tracks_by_artist(artist_id, library_ids)
+        return await server_client.get_tracks_by_artist(artist_id, library_ids)
 
     # Creation path.
     if not request or not getattr(request, "artist_ids", None):
         raise ValueError("At least one artist must be selected")
     first_artist_id = request.artist_ids[0]
-    tracks = await nav_client.get_tracks_by_artist(first_artist_id, library_ids)
+    tracks = await server_client.get_tracks_by_artist(first_artist_id, library_ids)
     return tracks or []
 
 
@@ -148,7 +149,7 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager) -> N
             f"🔄 Starting refresh for This Is playlist ID: {scheduled_playlist.navidrome_playlist_id} "
             f"(frequency: {scheduled_playlist.refresh_frequency})"
         )
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
         playlists = await db.get_all_playlists_with_schedule_info()
         original_playlist = next(
             (p for p in playlists if p.get("navidrome_playlist_id") == scheduled_playlist.navidrome_playlist_id),

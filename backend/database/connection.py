@@ -1,8 +1,28 @@
 import json
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
+import os
 
 import aiosqlite
+
+
+def get_database_path() -> str:
+    """Resolve the SQLite path while preserving legacy Navidrome storage."""
+    default_path = (
+        "/app/data/magiclists.db"
+        if os.path.exists("/app/data")
+        else "./magiclists.db"
+    )
+    base_path = os.getenv("DATABASE_PATH", default_path)
+    server_type = os.getenv("SERVER_TYPE", "navidrome").strip().lower()
+
+    # Navidrome must continue opening the exact database used by older versions.
+    if server_type == "navidrome":
+        return base_path
+
+    # Additional clients use an isolated sibling database.
+    name, extension = os.path.splitext(base_path)
+    return f"{name}_{server_type}{extension}"
 
 
 class _ConnectionMixin:
@@ -233,5 +253,5 @@ class _ConnectionMixin:
         except Exception:
             # Backfill is best-effort; never block startup on it
             pass
-    
+
 

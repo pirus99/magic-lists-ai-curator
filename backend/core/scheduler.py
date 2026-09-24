@@ -11,7 +11,7 @@ from typing import Dict, Callable, Awaitable, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from ..database import DatabaseManager
+from ..database import DatabaseManager, get_database_path
 
 
 scheduler_logger = logging.getLogger("scheduler")
@@ -80,10 +80,9 @@ async def refresh_scheduled_playlists() -> None:
         else:
             scheduler_logger.info("🔍 Checking for playlists due for refresh...")
 
-        # Get database path from environment variable with smart defaults
-        default_path = "/app/data/magiclists.db" if os.path.exists("/app/data") else "./magiclists.db"
-        db_path = os.getenv("DATABASE_PATH", default_path)
-        db = DatabaseManager(db_path)
+        # Use the same server-specific path as the API and preserve the
+        # existing Navidrome database filename.
+        db = DatabaseManager(get_database_path())
         current_time = datetime.now()
 
         # Get playlists due for refresh (including 7-day catch-up window)

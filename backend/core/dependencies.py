@@ -8,11 +8,13 @@ from typing import Optional
 
 from ..navidrome import NavidromeClient
 from ..ai_client import AIClient
+from ..jellyfin import JellyfinClient
 
 
 # Lazily-initialised singletons (mirrors the previous module-level globals).
 _navidrome_client: Optional[NavidromeClient] = None
 _ai_client: Optional[AIClient] = None
+_jellyfin_client: Optional[JellyfinClient] = None
 
 
 def get_navidrome_client() -> NavidromeClient:
@@ -29,3 +31,11 @@ def get_ai_client() -> AIClient:
     if _ai_client is None:
         _ai_client = AIClient()
     return _ai_client
+
+
+def get_jellyfin_client() -> JellyfinClient:
+    """Return the shared Jellyfin client, creating it on first use."""
+    global _jellyfin_client
+    if _jellyfin_client is None:
+        _jellyfin_client = JellyfinClient()
+    return _jellyfin_client

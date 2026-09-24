@@ -66,7 +66,8 @@ from .schemas import (
     CreateRediscoverPlaylistRequest,
     PlaylistWithScheduleInfo,
 )
-from .core.dependencies import get_navidrome_client, get_ai_client
+from .core.dependencies import get_ai_client
+from .core.server_router import get_server_client
 import backend.core.scheduler as scheduler_module
 from .core.scheduler import (
     schedule_playlist_refresh,
@@ -203,7 +204,7 @@ async def system_check_page(request: Request):
 async def get_artists(library_id: List[str] = Query(None)):
     """Get list of artists from Navidrome"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_artists(library_id)
     except Exception as e:
         error_msg = str(e)
@@ -219,7 +220,7 @@ async def get_artists(library_id: List[str] = Query(None)):
 async def get_genres(library_id: List[str] = Query(None)):
     """Get list of genres from Navidrome"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_genres(library_id)
     except Exception as e:
         error_msg = str(e)
@@ -235,7 +236,7 @@ async def get_genres(library_id: List[str] = Query(None)):
 async def get_artists_by_genre(genres: List[str] = Query(...), library_id: List[str] = Query(None)):
     """Get list of artists that have tracks in the specified genres"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_artists_by_genres(genres, library_id)
     except Exception as e:
         error_msg = str(e)
@@ -251,7 +252,7 @@ async def get_artists_by_genre(genres: List[str] = Query(...), library_id: List[
 async def get_music_folders():
     """Get list of music folders/libraries from Navidrome"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_music_folders()
     except Exception as e:
         error_msg = str(e)
@@ -324,7 +325,7 @@ async def get_playlist_detail(playlist_id: int, db: DatabaseManager = Depends(ge
 
 @app.delete("/api/playlists/{playlist_id}")
 async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
-    """Delete a playlist from both local database and Navidrome"""
+    """Delete a playlist from the configured server and the local database."""
     try:
         playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
         if not playlist:
@@ -332,12 +333,21 @@ async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db
 
         navidrome_playlist_id = playlist.get("navidrome_playlist_id")
         if navidrome_playlist_id:
-            nav_client = get_navidrome_client()
+            server_client = get_server_client()
+            scheduler_logger.info(
+                f"Deleting playlist {playlist_id} from media server "
+                f"(ID: {navidrome_playlist_id})"
+            )
             try:
-                scheduler_logger.info(f"Deleting playlist {playlist_id} from Navidrome (Navidrome ID: {navidrome_playlist_id})")
-                await nav_client.delete_playlist(navidrome_playlist_id)
-            except Exception as e:
-                scheduler_logger.warning(f"Warning: Failed to delete playlist from Navidrome: {e}")
+                await server_client.delete_playlist(navidrome_playlist_id)
+            except Exception as delete_error:
+                scheduler_logger.warning(
+                    f"Failed to delete playlist from media server: {delete_error}"
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to delete playlist from media server: {delete_error}",
+                ) from delete_error
             await db.delete_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
 
         success = await db.delete_playlist(playlist_id)
@@ -373,9 +383,33 @@ async def update_playlist_settings(
 
         navidrome_playlist_id = playlist.get("navidrome_playlist_id")
         if not navidrome_playlist_id:
-            raise HTTPException(status_code=400, detail="Playlist has no Navidrome ID")
+            raise HTTPException(status_code=400, detail="Playlist has no media server ID")
 
-        nav_client = get_navidrome_client()
+        server_client = get_server_client()
+
+        if request.playlist_name is not None or request.description is not None or request.is_public is not None:
+            try:
+                await server_client.update_playlist_metadata(
+                    playlist_id=navidrome_playlist_id,
+                    name=request.playlist_name,
+                    comment=request.description,
+                    is_public=request.is_public,
+                )
+            except Exception as update_error:
+                scheduler_logger.warning(
+                    f"Failed to sync playlist metadata to media server: {update_error}"
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to update playlist on media server: {update_error}",
+                ) from update_error
+
+            await db.update_playlist_metadata(
+                playlist_id=playlist_id,
+                playlist_name=request.playlist_name if request.playlist_name is not None else playlist.get("playlist_name"),
+                description=request.description if request.description is not None else playlist.get("description"),
+                is_public=request.is_public if request.is_public is not None else playlist.get("is_public"),
+            )
 
         new_length = request.curation_settings.get("playlist_length")
         await db.update_playlist_settings(
@@ -383,24 +417,6 @@ async def update_playlist_settings(
             curation_settings=request.curation_settings,
             playlist_length=new_length if new_length is not None else None
         )
-
-        if request.playlist_name is not None or request.description is not None or request.is_public is not None:
-            await db.update_playlist_metadata(
-                playlist_id=playlist_id,
-                playlist_name=request.playlist_name if request.playlist_name is not None else playlist.get("playlist_name"),
-                description=request.description if request.description is not None else playlist.get("description"),
-                is_public=request.is_public if request.is_public is not None else playlist.get("is_public"),
-            )
-            try:
-                if navidrome_playlist_id:
-                    await nav_client.update_playlist_metadata(
-                        playlist_id=navidrome_playlist_id,
-                        name=request.playlist_name if request.playlist_name is not None else None,
-                        comment=request.description if request.description is not None else None,
-                        is_public=request.is_public,
-                    )
-            except Exception as update_error:
-                scheduler_logger.warning(f"Failed to sync playlist metadata to Navidrome: {update_error}")
 
         frequency = request.refresh_frequency if request.refresh_frequency is not None else playlist.get("refresh_frequency")
         frequency = frequency or "none"
@@ -591,7 +607,7 @@ async def track_library_size(db: DatabaseManager = Depends(get_db)):
         if not should_track:
             return {"message": "Library size tracking not needed yet", "tracked": False}
 
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
         song_count = await nav_client.get_total_song_count()
         user_id = await db.get_or_create_user_id()
         await db.record_library_size(song_count)

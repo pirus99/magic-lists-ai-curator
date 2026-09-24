@@ -52,14 +52,14 @@ function createLibraryCheckboxes(container, libraries, selectedIds, idPrefix) {
     libraries.forEach(library => {
         const checkboxId = `${idPrefix}-lib-${library.id}`;
         const checkboxDiv = document.createElement('div');
-        checkboxDiv.className = 'flex items-center px-3 py-2 hover:bg-gray-50 rounded';
+        checkboxDiv.className = 'flex items-center px-3 py-2 hover:bg-gray-50 rounded dark:hover:bg-gray-700';
         checkboxDiv.innerHTML = `
             <input type="checkbox"
                    id="${checkboxId}"
                    value="${library.id}"
                    class="shrink-0 mt-0.5 border-gray-200 rounded text-blue-600 focus:ring-blue-500"
                    ${selectedIds.includes(library.id) ? 'checked' : ''}>
-            <label for="${checkboxId}" class="ml-2 text-sm text-gray-800 cursor-pointer">
+            <label for="${checkboxId}" class="ml-2 text-sm text-gray-800 cursor-pointer dark:text-gray-100">
                 ${library.name}
             </label>
         `;
@@ -143,10 +143,10 @@ async function loadGenres() {
                 "toggleTag": "<button type=\"button\" aria-expanded=\"false\"><span class=\"capitalize text-foreground\" data-title></span></button>",
                 "toggleClasses": "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative py-3 ps-4 pe-9 flex items-center gap-x-2 text-nowrap w-full cursor-pointer bg-layer border border-layer-line text-layer-foreground rounded-lg text-start text-sm hover:bg-layer-hover focus:outline-hidden focus:bg-layer-focus",
                 "wrapperClasses": "relative pe-9 min-h-11.5 flex items-center flex-wrap w-full bg-layer border border-layer-line hover:bg-layer-hover rounded-lg text-start text-sm focus:bg-layer-focus",
-                "tagsItemTemplate": "<div class=\"flex flex-nowrap items-center text-nowrap relative z-10 bg-layer border border-layer-line rounded-full p-1 m-1\"><div class=\"whitespace-nowrap capitalize text-foreground ps-1 dark:text-gray-100\" data-title></div><div class=\"inline-flex shrink-0 justify-between items-center size-5 ms-2 rounded-full bg-surface text-surface-foreground hover:bg-surface-hover focus:outline-hidden focus:bg-surface-focus text-sm cursor-pointer\" data-remove><svg class=\"shrink-0 size-3\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></div></div>",
+                "tagsItemTemplate": "<div class=\"flex flex-nowrap items-center text-nowrap relative z-10 bg-layer border border-layer-line rounded-full p-1 m-1\"><div class=\"whitespace-nowrap capitalize text-foreground ps-1 dark:text-gray-100\" data-title></div><div class=\"inline-flex shrink-0 justify-between items-center size-5 ms-2 rounded-full bg-surface text-surface-foreground hover:bg-surface-hover focus:outline-hidden focus:bg-surface-focus text-sm cursor-pointer\" data-remove><svg class=\"shrink-0 size-3 dark:text-gray-200\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></div></div>",
                 "tagsInputClasses": "py-3 px-4 rounded-lg order-1 bg-white dark:bg-gray-800 dark:text-gray-100 border-transparent text-foreground placeholder:text-black dark:placeholder:text-gray-100 focus:ring-0 text-sm outline-hidden dark:text-gray-200",
                 "dropdownClasses": "mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-white dark:bg-gray-800 dark:text-gray-100 border border-select-line rounded-lg shadow-xl overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-none [&::-webkit-scrollbar-track]:bg-scrollbar-track [&::-webkit-scrollbar-thumb]:bg-scrollbar-thumb",
-                "optionClasses": "py-2 px-4 w-full text-sm text-select-item-foreground cursor-pointer hover:bg-select-item-hover rounded-lg focus:outline-hidden focus:bg-select-item-focus hs-selected:bg-blue-50 hs-selected:text-blue-800 dark:hs-selected:text-gray-100",
+                "optionClasses": "py-2 px-4 w-full text-sm text-select-item-foreground cursor-pointer hover:bg-select-item-hover rounded-lg focus:outline-hidden focus:bg-select-item-focus hs-selected:bg-blue-50 hs-selected:text-blue-800 dark:hs-selected:text-gray-100 dark:hs-selected:bg-blue-500",
                 "optionTemplate": "<div class=\"flex items-center\"><div class=\"text-sm capitalize text-foreground\" data-title></div><div class=\"text-xs text-muted-foreground-1\" data-description></div><div class=\"ms-auto\"><span class=\"hidden hs-selected:block\"><svg class=\"shrink-0 size-4 text-primary\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z\"/></svg></span></div></div>",
                 "extraMarkup": "<div class=\"absolute top-1/2 end-3 -translate-y-1/2\"><svg class=\"shrink-0 size-3.5 text-muted-foreground-1\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m7 15 5 5 5-5\"/><path d=\"m7 9 5-5 5 5\"/></svg></div>",
             }));
@@ -540,20 +540,20 @@ function updateLibraryDisplayText() {
     if (selectedLibraryIds.length === 0) {
         if (desktopText) desktopText.textContent = 'Select library';
         if (mobileText) mobileText.textContent = 'Select library';
-        if (desktopText) desktopText.className = 'text-gray-500 truncate';
-        if (mobileText) mobileText.className = 'text-gray-500 truncate';
+        if (desktopText) desktopText.className = 'text-gray-500 truncate dark:text-gray-200';
+        if (mobileText) mobileText.className = 'text-gray-500 truncate dark:text-gray-200';
     } else if (selectedLibraryIds.length === 1) {
         const library = allLibraries.find(lib => lib.id === selectedLibraryIds[0]);
         const libraryName = library ? library.name : '1 library';
         if (desktopText) desktopText.textContent = libraryName;
         if (mobileText) mobileText.textContent = libraryName;
-        if (desktopText) desktopText.className = 'text-gray-900 truncate';
-        if (mobileText) mobileText.className = 'text-gray-900 truncate';
+        if (desktopText) desktopText.className = 'text-gray-900 truncate dark:text-gray-200';
+        if (mobileText) mobileText.className = 'text-gray-900 truncate dark:text-gray-200';
     } else {
         if (desktopText) desktopText.textContent = `${selectedLibraryIds.length} libraries`;
         if (mobileText) mobileText.textContent = `${selectedLibraryIds.length} libraries`;
-        if (desktopText) desktopText.className = 'text-gray-900 truncate';
-        if (mobileText) mobileText.className = 'text-gray-900 truncate';
+        if (desktopText) desktopText.className = 'text-gray-900 truncate dark:text-gray-200';
+        if (mobileText) mobileText.className = 'text-gray-900 truncate dark:text-gray-200';
     }
 }
 
