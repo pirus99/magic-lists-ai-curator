@@ -89,6 +89,29 @@ class _JellyfinBase:
             if not self._auth_token:
                 raise ValueError("No access token received from Jellyfin")
     
+    async def _resolve_user_id(self) -> Optional[str]:
+        """Resolve the Jellyfin user id for the current credentials.
+
+        When authenticating with a username/password pair, the user id is already
+        available from the login response. When authenticating with an API key,
+        the token carries no user, so the id must be fetched from ``/Users``.
+
+        Jellyfin 12.x requires a valid ``UserId`` for playlist creation/update
+        (the server derives the playlists folder from it), so this is essential
+        for API-key based auth.
+        """
+        if self._user_id:
+            return self._user_id
+        
+        headers = self._get_auth_headers()
+        response = await self.client.get(f"{self.base_url}/Users", headers=headers)
+        response.raise_for_status()
+        
+        users = response.json()
+        if users:
+            self._user_id = users[0].get("Id")
+        return self._user_id
+    
     def _items_params(self, **overrides: Any) -> Dict[str, Any]:
         """Build query parameters for `/Items` (and `/Artists`) requests.
 

@@ -182,7 +182,7 @@ async def refresh_genre_playlist(playlist: Dict[str, Any], db: DatabaseManager) 
     """Refresh a Genre Mix playlist using its saved curation settings."""
     try:
         scheduler_logger.info(f"🔄 Starting refresh for Genre Mix playlist ID: {playlist.get('navidrome_playlist_id')}")
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
         ai_client = get_ai_client()
 
         settings = playlist.get("curation_settings") or {}

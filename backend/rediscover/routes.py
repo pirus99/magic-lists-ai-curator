@@ -4,7 +4,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..core.dependencies import get_ai_client, get_navidrome_client
+from ..core.dependencies import get_ai_client
+from ..core.server_router import get_server_client
 from ..database import DatabaseManager, get_db
 from ..schemas import CreateRediscoverPlaylistRequest, RediscoverWeeklyV2Response
 from .builder import create_rediscover_playlist_v2
@@ -21,7 +22,7 @@ async def get_rediscover_weekly_v2(
 ):
     """Generate Re-Discover Weekly v2.0 playlist using temporal analysis and two-phase AI."""
     try:
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
         ai_client = get_ai_client()
         user_id = await db.get_or_create_user_id()
         server_id = nav_client.base_url or "unknown_server"

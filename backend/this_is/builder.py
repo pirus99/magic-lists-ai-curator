@@ -149,7 +149,7 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager) -> N
             f"🔄 Starting refresh for This Is playlist ID: {scheduled_playlist.navidrome_playlist_id} "
             f"(frequency: {scheduled_playlist.refresh_frequency})"
         )
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
         playlists = await db.get_all_playlists_with_schedule_info()
         original_playlist = next(
             (p for p in playlists if p.get("navidrome_playlist_id") == scheduled_playlist.navidrome_playlist_id),

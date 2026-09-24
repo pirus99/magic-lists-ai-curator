@@ -193,11 +193,19 @@ class _TracksMixin:
         elif "GenreIds" in jellyfin_track:
             # Might need separate API call to get genre names
             genres = []
-        
+
+        # Jellyfin returns Artists as a list of strings (e.g. ["Artist Name"]),
+        # unlike Emby which uses a list of dicts. Handle both shapes.
+        raw_artists = jellyfin_track.get("Artists") or []
+        if raw_artists and isinstance(raw_artists[0], dict):
+            artist_name = raw_artists[0].get("Name", "")
+        else:
+            artist_name = raw_artists[0] if raw_artists else ""
+
         return {
             "id": jellyfin_track.get("Id"),
             "title": jellyfin_track.get("Name"),
-            "artist": jellyfin_track.get("Artists", [{}])[0].get("Name") or jellyfin_track.get("ArtistName", ""),
+            "artist": artist_name or jellyfin_track.get("ArtistName", ""),
             "album": jellyfin_track.get("Album", ""),
             "year": jellyfin_track.get("ProductionYear", 0),
             "genres": genres,

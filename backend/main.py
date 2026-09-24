@@ -333,9 +333,9 @@ async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db
 
         navidrome_playlist_id = playlist.get("navidrome_playlist_id")
         if navidrome_playlist_id:
-            nav_client = get_navidrome_client()
+            nav_client = get_server_client()
             try:
-                scheduler_logger.info(f"Deleting playlist {playlist_id} from Navidrome (Navidrome ID: {navidrome_playlist_id})")
+                scheduler_logger.info(f"Deleting playlist {playlist_id} from server (ID: {navidrome_playlist_id})")
                 await nav_client.delete_playlist(navidrome_playlist_id)
             except Exception as e:
                 scheduler_logger.warning(f"Warning: Failed to delete playlist from Navidrome: {e}")
@@ -376,7 +376,7 @@ async def update_playlist_settings(
         if not navidrome_playlist_id:
             raise HTTPException(status_code=400, detail="Playlist has no Navidrome ID")
 
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
 
         new_length = request.curation_settings.get("playlist_length")
         await db.update_playlist_settings(
@@ -592,7 +592,7 @@ async def track_library_size(db: DatabaseManager = Depends(get_db)):
         if not should_track:
             return {"message": "Library size tracking not needed yet", "tracked": False}
 
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
         song_count = await nav_client.get_total_song_count()
         user_id = await db.get_or_create_user_id()
         await db.record_library_size(song_count)

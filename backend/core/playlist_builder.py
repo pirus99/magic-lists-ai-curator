@@ -68,7 +68,7 @@ async def build_playlist(
     and ``refresh_frequency``). ``artist_name`` is resolved by the API route before
     starting the asynchronous build pipeline.
     """
-    nav_client = get_navidrome_client()
+    nav_client = get_server_client()
     ai_client = get_ai_client()
 
     # 1. Fetch candidate tracks (type-specific).
@@ -178,7 +178,7 @@ async def refresh_playlist(
     db: DatabaseManager,
 ) -> None:
     """Refresh an existing playlist of the given type using its saved settings."""
-    nav_client = get_navidrome_client()
+    nav_client = get_server_client()
     ai_client = get_ai_client()
 
     settings = playlist.get("curation_settings") or {}
