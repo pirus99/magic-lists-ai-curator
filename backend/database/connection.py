@@ -7,12 +7,22 @@ import aiosqlite
 
 
 def get_database_path() -> str:
-    server_type = os.getenv("SERVER_TYPE", "navidrome").lower()
-    base_path = os.getenv("DATABASE_PATH", "magiclists.db")
-    if "." in base_path:
-        name, ext = base_path.rsplit(".", 1)
-        return f"{name}_{server_type}.{ext}"
-    return f"{base_path}_{server_type}"
+    """Resolve the SQLite path while preserving legacy Navidrome storage."""
+    default_path = (
+        "/app/data/magiclists.db"
+        if os.path.exists("/app/data")
+        else "./magiclists.db"
+    )
+    base_path = os.getenv("DATABASE_PATH", default_path)
+    server_type = os.getenv("SERVER_TYPE", "navidrome").strip().lower()
+
+    # Navidrome must continue opening the exact database used by older versions.
+    if server_type == "navidrome":
+        return base_path
+
+    # Additional clients use an isolated sibling database.
+    name, extension = os.path.splitext(base_path)
+    return f"{name}_{server_type}{extension}"
 
 
 class _ConnectionMixin:

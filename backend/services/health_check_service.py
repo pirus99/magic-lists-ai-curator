@@ -4,6 +4,9 @@ import aiosqlite
 from typing import Dict, Any
 from google import genai
 
+from ..database import get_database_path
+
+
 class HealthCheckService:
     """Service to perform startup system checks for MagicLists application"""
     
@@ -100,9 +103,7 @@ class HealthCheckService:
 
     async def _check_database_path(self) -> Dict[str, str]:
         """Check that DATABASE_PATH is configured and database is accessible"""
-        # Get database path using same logic as main.py
-        default_path = "/app/data/magiclists.db" if os.path.exists("/app/data") else "./magiclists.db"
-        db_path = os.getenv("DATABASE_PATH", default_path)
+        db_path = get_database_path()
 
         try:
             # Test database connectivity
