@@ -66,7 +66,8 @@ from .schemas import (
     CreateRediscoverPlaylistRequest,
     PlaylistWithScheduleInfo,
 )
-from .core.dependencies import get_navidrome_client, get_ai_client
+from .core.dependencies import get_ai_client
+from .core.server_router import get_server_client
 import backend.core.scheduler as scheduler_module
 from .core.scheduler import (
     schedule_playlist_refresh,
@@ -203,7 +204,7 @@ async def system_check_page(request: Request):
 async def get_artists(library_id: List[str] = Query(None)):
     """Get list of artists from Navidrome"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_artists(library_id)
     except Exception as e:
         error_msg = str(e)
@@ -219,7 +220,7 @@ async def get_artists(library_id: List[str] = Query(None)):
 async def get_genres(library_id: List[str] = Query(None)):
     """Get list of genres from Navidrome"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_genres(library_id)
     except Exception as e:
         error_msg = str(e)
@@ -235,7 +236,7 @@ async def get_genres(library_id: List[str] = Query(None)):
 async def get_artists_by_genre(genres: List[str] = Query(...), library_id: List[str] = Query(None)):
     """Get list of artists that have tracks in the specified genres"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_artists_by_genres(genres, library_id)
     except Exception as e:
         error_msg = str(e)
@@ -251,7 +252,7 @@ async def get_artists_by_genre(genres: List[str] = Query(...), library_id: List[
 async def get_music_folders():
     """Get list of music folders/libraries from Navidrome"""
     try:
-        client = get_navidrome_client()
+        client = get_server_client()
         return await client.get_music_folders()
     except Exception as e:
         error_msg = str(e)

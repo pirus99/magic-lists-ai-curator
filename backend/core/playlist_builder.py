@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable, Dict, List, Optional, Tuple
 
 from ..database import DatabaseManager
-from ..core.dependencies import get_navidrome_client, get_ai_client
+from ..core.dependencies import get_ai_client
+from ..core.server_router import get_server_client
 from ..playlist_metadata import resolve_refresh_description
 
 

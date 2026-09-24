@@ -31,17 +31,23 @@ class HealthCheckService:
         if db_check["status"] == "error":
             all_passed = False
 
-        url_check = await self._check_navidrome_url_reachable()
+        server_type = os.getenv("SERVER_TYPE", "navidrome").lower()
+        if server_type == "jellyfin":
+            url_check = await self._check_jellyfin_url_reachable()
+            auth_check = await self._check_jellyfin_authentication()
+            artists_check = await self._check_jellyfin_artists_api()
+        else:
+            url_check = await self._check_navidrome_url_reachable()
+            auth_check = await self._check_navidrome_authentication()
+            artists_check = await self._check_navidrome_artists_api()
         checks.append(url_check)
         if url_check["status"] == "error":
             all_passed = False
-            
-        auth_check = await self._check_navidrome_authentication()
+
         checks.append(auth_check)
         if auth_check["status"] == "error":
             all_passed = False
-            
-        artists_check = await self._check_navidrome_artists_api()
+
         checks.append(artists_check)
         if artists_check["status"] == "error":
             all_passed = False
@@ -62,26 +68,33 @@ class HealthCheckService:
         }
     
     async def _check_environment_variables(self) -> Dict[str, str]:
-        """Check that required environment variables are present"""
-        required_vars = ["NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"]
+        """Check that required environment variables are present based on SERVER_TYPE"""
+        server_type = os.getenv("SERVER_TYPE", "navidrome").lower()
+        if server_type == "jellyfin":
+            required_vars = ["JELLYFIN_URL"]
+            # Auth: either API key or username+password
+            has_api_key = bool(os.getenv("JELLYFIN_API_KEY"))
+            has_user_pass = bool(os.getenv("JELLYFIN_USERNAME") and os.getenv("JELLYFIN_PASSWORD"))
+            if not has_api_key and not has_user_pass:
+                required_vars.extend(["JELLYFIN_USERNAME", "JELLYFIN_PASSWORD"])
+        else:
+            required_vars = ["NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"]
         missing_vars = []
-        
         for var in required_vars:
             if not os.getenv(var):
                 missing_vars.append(var)
-        
         if missing_vars:
             return {
                 "name": "Environment Variables Present",
                 "status": "error",
-                "message": f"Missing required environment variables: {', '.join(missing_vars)}",
-                "suggestion": "Add the missing environment variables to your .env file"
+                "message": f"Missing required environment variables for {server_type}: {', '.join(missing_vars)}",
+                "suggestion": f"Add the missing variables to your .env file for {server_type}"
             }
         else:
             return {
                 "name": "Environment Variables Present",
                 "status": "success",
-                "message": "All required environment variables are present",
+                "message": f"All required environment variables present for {server_type}",
                 "suggestion": ""
             }
 
@@ -111,6 +124,149 @@ class HealthCheckService:
                 "status": "error",
                 "message": f"Cannot access database at {db_path}: {str(e)}",
                 "suggestion": "Check DATABASE_PATH environment variable. For Docker: set DATABASE_PATH=/app/data/magiclists.db. For standalone: set DATABASE_PATH=./magiclists.db or ensure the directory exists."
+            }
+
+    async def _check_jellyfin_url_reachable(self) -> Dict[str, str]:
+        """Check if Jellyfin URL is reachable"""
+        jellyfin_url = os.getenv("JELLYFIN_URL")
+        if not jellyfin_url:
+            return {
+                "name": "Jellyfin URL Reachable",
+                "status": "error",
+                "message": "JELLYFIN_URL environment variable not set",
+                "suggestion": "Set JELLYFIN_URL in your .env file"
+            }
+        verify_ssl = os.getenv("JELLYFIN_VERIFY_SSL", "true").lower() != "false"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, verify=verify_ssl) as client:
+                response = await client.get(jellyfin_url)
+                response.raise_for_status()
+            return {
+                "name": "Jellyfin URL Reachable",
+                "status": "success",
+                "message": f"Successfully connected to {jellyfin_url}",
+                "suggestion": ""
+            }
+        except Exception as e:
+            return {
+                "name": "Jellyfin URL Reachable",
+                "status": "error",
+                "message": f"Could not connect to {jellyfin_url}: {str(e)}",
+                "suggestion": "Check JELLYFIN_URL and ensure Jellyfin is running."
+            }
+
+    async def _check_jellyfin_authentication(self) -> Dict[str, str]:
+        """Check if Jellyfin authentication works"""
+        jellyfin_url = os.getenv("JELLYFIN_URL")
+        api_key = os.getenv("JELLYFIN_API_KEY")
+        username = os.getenv("JELLYFIN_USERNAME")
+        password = os.getenv("JELLYFIN_PASSWORD")
+        verify_ssl = os.getenv("JELLYFIN_VERIFY_SSL", "true").lower() != "false"
+        if not jellyfin_url:
+            return {
+                "name": "Jellyfin Authentication",
+                "status": "error",
+                "message": "JELLYFIN_URL not set",
+                "suggestion": "Set JELLYFIN_URL in your .env file"
+            }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=verify_ssl) as client:
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = (
+                        f'MediaBrowser Token="{api_key}", '
+                        f'Client="MagicLists", Device="health-check", '
+                        f'DeviceId="health-check", Version="1.0.0"'
+                    )
+                else:
+                    response = await client.post(
+                        f"{jellyfin_url}/Users/AuthenticateByName",
+                        json={"Username": username, "Pw": password},
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": (
+                                'MediaBrowser Client="MagicLists", '
+                                'Device="health-check", DeviceId="health-check", '
+                                'Version="1.0.0"'
+                            ),
+                        }
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    if data.get("AccessToken"):
+                        return {
+                            "name": "Jellyfin Authentication",
+                            "status": "success",
+                            "message": "Successfully authenticated with Jellyfin",
+                            "suggestion": ""
+                        }
+                    else:
+                        return {
+                            "name": "Jellyfin Authentication",
+                            "status": "error",
+                            "message": "No access token received",
+                            "suggestion": "Verify JELLYFIN_USERNAME and JELLYFIN_PASSWORD"
+                        }
+            return {
+                "name": "Jellyfin Authentication",
+                "status": "success",
+                "message": "API key authentication configured",
+                "suggestion": ""
+            }
+        except Exception as e:
+            return {
+                "name": "Jellyfin Authentication",
+                "status": "error",
+                "message": f"Authentication error: {str(e)}",
+                "suggestion": "Verify JELLYFIN_API_KEY or JELLYFIN_USERNAME/JELLYFIN_PASSWORD"
+            }
+
+    async def _check_jellyfin_artists_api(self) -> Dict[str, str]:
+        """Check if Jellyfin Artists API works"""
+        jellyfin_url = os.getenv("JELLYFIN_URL")
+        api_key = os.getenv("JELLYFIN_API_KEY")
+        verify_ssl = os.getenv("JELLYFIN_VERIFY_SSL", "true").lower() != "false"
+        if not jellyfin_url:
+            return {
+                "name": "Jellyfin Artists API",
+                "status": "error",
+                "message": "JELLYFIN_URL not set",
+                "suggestion": "Set JELLYFIN_URL in your .env file"
+            }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=verify_ssl) as client:
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = (
+                        f'MediaBrowser Token="{api_key}", '
+                        f'Client="MagicLists", Device="health-check", '
+                        f'DeviceId="health-check", Version="1.0.0"'
+                    )
+                # Use the dedicated Artists endpoint with Recursive=true.
+                # When not using an API key, userId is required; attempt to
+                # resolve it from the authenticated user if available.
+                # Note: we request a high limit to report the true artist count.
+                params = {"Limit": 5000, "Recursive": True}
+                response = await client.get(
+                    f"{jellyfin_url}/Artists",
+                    headers=headers,
+                    params=params
+                )
+                response.raise_for_status()
+                data = response.json()
+                items = data.get("Items", [])
+                return {
+                    "name": "Jellyfin Artists API",
+                    "status": "success",
+                    "message": f"Successfully fetched artists data ({len(items)} artists found)",
+                    "suggestion": ""
+                }
+        except Exception as e:
+            return {
+                "name": "Jellyfin Artists API",
+                "status": "error",
+                "message": f"Artists API error: {str(e)}",
+                "suggestion": "Check Jellyfin server and authentication."
             }
 
     async def _check_navidrome_url_reachable(self) -> Dict[str, str]:

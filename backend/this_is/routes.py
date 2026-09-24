@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..schemas import CreatePlaylistRequest, Playlist
 from ..database import DatabaseManager, get_db
 from ..core.playlist_builder import build_playlist
-from ..core.dependencies import get_navidrome_client
+from ..core.server_router import get_server_client
 from .builder import THIS_IS_CONFIG
 
 
@@ -23,7 +23,7 @@ async def create_playlist(
     endpoint is no longer needed.
     """
     try:
-        nav_client = get_navidrome_client()
+        nav_client = get_server_client()
 
         # Validate the requested artist exists.
         all_artists = await nav_client.get_artists()

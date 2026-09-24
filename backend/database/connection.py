@@ -1,8 +1,18 @@
 import json
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
+import os
 
 import aiosqlite
+
+
+def get_database_path() -> str:
+    server_type = os.getenv("SERVER_TYPE", "navidrome").lower()
+    base_path = os.getenv("DATABASE_PATH", "magiclists.db")
+    if "." in base_path:
+        name, ext = base_path.rsplit(".", 1)
+        return f"{name}_{server_type}.{ext}"
+    return f"{base_path}_{server_type}"
 
 
 class _ConnectionMixin:
@@ -233,5 +243,5 @@ class _ConnectionMixin:
         except Exception:
             # Backfill is best-effort; never block startup on it
             pass
-    
+
 

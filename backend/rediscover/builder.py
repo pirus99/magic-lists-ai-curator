@@ -8,7 +8,8 @@ import logging
 from typing import Any, Dict
 
 from ..database import DatabaseManager
-from ..core.dependencies import get_navidrome_client, get_ai_client
+from ..core.dependencies import get_ai_client
+from ..core.server_router import get_server_client
 from ..core.scheduler import calculate_next_refresh, schedule_playlist_refresh
 from .processor import ReDiscoverV2Processor
 
@@ -38,13 +39,13 @@ async def create_rediscover_playlist_v2(
         f"🎵 Starting Re-Discover v2.0 playlist creation with length {request.playlist_length}, "
         f"library_ids: {request.library_ids}"
     )
-    nav_client = get_navidrome_client()
+    server_client = get_server_client()
     ai_client = get_ai_client()
 
     user_id = await db.get_or_create_user_id()
-    server_id = nav_client.base_url or "unknown_server"
+    server_id = server_client.base_url or "unknown_server"
 
-    processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+    processor = ReDiscoverV2Processor(server_client, ai_client, db)
     playlist_data = await processor.generate_playlist(user_id, server_id, request.library_ids)
     tracks = playlist_data.get("tracks", [])
 
@@ -76,7 +77,7 @@ async def create_rediscover_playlist_v2(
     comment_to_use = ai_description if ai_description else f"Theme: {playlist_data.get('theme', 'Mixed')}"
     scheduler_logger.info(f"💬 Creating Re-Discover v2.0 playlist with comment (length: {len(comment_to_use)})")
 
-    navidrome_playlist_id = await nav_client.create_playlist(
+    navidrome_playlist_id = await server_client.create_playlist(
         name=playlist_name,
         track_ids=track_ids,
         comment=comment_to_use,
@@ -132,7 +133,7 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager) -
             f"🔄 Starting refresh for playlist ID: {scheduled_playlist.navidrome_playlist_id} "
             f"(frequency: {scheduled_playlist.refresh_frequency})"
         )
-        nav_client = get_navidrome_client()
+        server_client = get_server_client()
         ai_client = get_ai_client()
 
         playlists = await db.get_all_playlists_with_schedule_info()
@@ -153,9 +154,9 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager) -
         scheduler_logger.info(f"🔄 Re-Discover v2.0 refresh context - Previous tracks: {len(previous_songs)}, Library IDs: {library_ids}")
 
         user_id = await db.get_or_create_user_id()
-        server_id = nav_client.base_url or "unknown_server"
+        server_id = server_client.base_url or "unknown_server"
 
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+        processor = ReDiscoverV2Processor(server_client, ai_client, db)
         result = await processor.generate_playlist(user_id, server_id, library_ids if library_ids else None)
 
         tracks = result.get("tracks", [])
