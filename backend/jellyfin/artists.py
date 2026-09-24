@@ -56,7 +56,7 @@ class _ArtistsMixin:
         base_params: Dict[str, Any] = {
             "Limit": 5000,
             "Recursive": True,
-            "Fields": "ItemCounts",
+            "Fields": "ItemCounts,ProviderIds",
         }
         if self._user_id:
             base_params["userId"] = self._user_id
@@ -78,7 +78,8 @@ class _ArtistsMixin:
                         "id": item.get("Id"),
                         "name": item.get("Name"),
                         "album_count": item.get("AlbumCount", 0),
-                        "song_count": item.get("SongCount", 0)
+                        "song_count": item.get("SongCount", 0),
+                        "mbid": (item.get("ProviderIds") or {}).get("MusicBrainzArtist")
                     })
         else:
             # Query all libraries
@@ -94,7 +95,8 @@ class _ArtistsMixin:
                     "id": item.get("Id"),
                     "name": item.get("Name"),
                     "album_count": item.get("AlbumCount", 0),
-                    "song_count": item.get("SongCount", 0)
+                    "song_count": item.get("SongCount", 0),
+                    "mbid": (item.get("ProviderIds") or {}).get("MusicBrainzArtist")
                 })
         
         # Remove duplicates based on artist ID

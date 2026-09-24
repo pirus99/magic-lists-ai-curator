@@ -623,3 +623,55 @@ function toggleCheckDetails(checkId) {
         chevron.classList.add('rotate-90');
     }
 }
+
+let artistRadioRecommendations = [];
+
+async function loadArtistRadioArtists() {
+    const source = document.getElementById('artist-radio-source');
+    if (!source) return;
+    const params = selectedLibraryIds.map(id => `library_id=${encodeURIComponent(id)}`).join('&');
+    const response = await fetch(`/api/artists${params ? `?${params}` : ''}`);
+    if (!response.ok) throw new Error('Failed to fetch artists');
+    allArtists = await response.json();
+    source.innerHTML = '<option value="">Select an artist</option>';
+    allArtists.forEach(artist => {
+        const option = document.createElement('option');
+        option.value = artist.id;
+        option.dataset.mbid = artist.mbid || '';
+        option.textContent = artist.name;
+        source.appendChild(option);
+    });
+    reinitHSSelect(source);
+}
+
+function updateArtistRadioMbidVisibility() {
+    const source = document.getElementById('artist-radio-source');
+    const fallback = document.getElementById('artist-radio-mbid-fallback');
+    if (!source || !fallback) return;
+    const option = source.options[source.selectedIndex];
+    const hasMetadataMbid = Boolean(option && option.dataset.mbid);
+    fallback.classList.toggle('hidden', hasMetadataMbid);
+    if (hasMetadataMbid) document.getElementById('artist-radio-mbid').value = '';
+}
+
+function populateArtistRadioSelects(recommendations = []) {
+    artistRadioRecommendations = recommendations || [];
+    const selected = document.getElementById('artist-radio-source');
+    const sourceId = selected ? selected.value : '';
+    const recommended = document.getElementById('artist-radio-recommendations');
+    const manual = document.getElementById('artist-radio-manual');
+    if (!recommended || !manual) return;
+    recommended.innerHTML = '';
+    manual.innerHTML = '';
+    const blocked = new Set(artistRadioRecommendations.map(item => item.local_artist_id));
+    if (sourceId) blocked.add(sourceId);
+    artistRadioRecommendations.forEach(item => {
+        const option = new Option(`${item.local_artist_name} (${item.score})`, item.local_artist_id, true, true);
+        option.dataset.score = item.score;
+        recommended.appendChild(option);
+    });
+    allArtists.filter(artist => !blocked.has(artist.id)).forEach(artist => manual.appendChild(new Option(artist.name, artist.id)));
+    reinitHSSelect(recommended);
+    reinitHSSelect(manual);
+    document.getElementById('artist-radio-results').classList.remove('hidden');
+}

@@ -1,0 +1,192 @@
+<div id="artist-radio-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">Artist Radio</h1>
+        <p class="text-gray-600 dark:text-gray-300">Build a radio playlist around a source artist using ListenBrainz recommendations. Similar artists are matched against your selected libraries, and you control the final artist mix.</p>
+    </div>
+
+    <form id="artist-radio-form" class="space-y-6 min-w-0">
+        <div>
+            <label for="artist-radio-source" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Choose a source artist from your library</label>
+            <div class="relative">
+                <select id="artist-radio-source" data-hs-select='{
+                    "placeholder": "Search for an artist...",
+                    "toggleTag": "<button type=\"button\"></button>",
+                    "toggleClasses": "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative py-3 px-4 pe-9 flex text-nowrap w-full cursor-pointer bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-start text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 before:absolute before:inset-0 before:z-[1] dark:text-gray-200",
+                    "dropdownClasses": "hs-select-dropdown mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 dark:[&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-gray-300 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600",
+                    "optionClasses": "py-2 px-4 w-full text-sm text-gray-800 dark:text-gray-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700",
+                    "optionTemplate": "<div class=\"flex justify-between items-center w-full\"><span data-title></span><span><svg class=\"hidden hs-selected:block size-3.5 text-blue-600 dark:text-blue-400\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg></span></div>",
+                    "hasSearch": true,
+                    "searchPlaceholder": "Search...",
+                    "searchClasses": "block w-full text-sm border-gray-200 dark:border-gray-700 rounded-lg focus:border-blue-500 focus:ring-blue-500 before:absolute before:inset-0 before:z-[1] py-2 px-3",
+                    "searchWrapperClasses": "bg-white dark:bg-gray-800 p-2 -mx-1 sticky top-0"
+                }' class="hidden">
+                    <option value="">Choose an artist</option>
+                </select>
+            </div>
+            <div id="artist-radio-mbid-fallback" class="hidden mt-3">
+                <label for="artist-radio-mbid" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">MusicBrainz artist ID (required because this artist has no MusicBrainz ID in the library metadata)</label>
+                <input id="artist-radio-mbid" type="text" placeholder="00000000-0000-0000-0000-000000000000" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500">
+            </div>
+        </div>
+
+        <div class="flex items-center">
+            <input id="artist-radio-listenbrainz-enabled" type="checkbox" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+            <label for="artist-radio-listenbrainz-enabled" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use ListenBrainz similarity recommendations</label>
+        </div>
+
+        <div id="artist-radio-listenbrainz-controls" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label for="artist-radio-algorithm" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">ListenBrainz Algorithm</label>
+                <select id="artist-radio-algorithm" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                    <option>5Y Balanced</option>
+                    <option>20Y+</option>
+                    <option>25Y Deep</option>
+                    <option>3M Recent</option>
+                    <option>20Y Broad</option>
+                    <option>5Y Light</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="artist-radio-score" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Minimum Similarity Score</label>
+                <div class="flex items-center gap-3 h-[38px]">
+                    <input id="artist-radio-score" type="range" min="50" max="400" value="142" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <output for="artist-radio-score" id="artist-radio-score-value" class="min-w-12 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold text-gray-900 dark:text-gray-100">142</output>
+                </div>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Only artists with a score greater than this value are recommended.</p>
+            </div>
+        </div>
+
+        <div class="!mt-0">
+            <button id="artist-radio-fetch-btn" type="button" class="w-full md:w-auto bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-bold py-2 px-4 md:px-6 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors">
+                Find Similar Artists
+            </button>
+        </div>
+
+        <div id="artist-radio-results" class="space-y-6 min-w-0">
+            <div id="artist-radio-recommendation-field" class="relative min-w-0 w-full">
+                <label for="artist-radio-recommendations" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Similar Artists Available in Your Library</label>
+                <div class="relative min-w-0 w-full max-w-full">
+                    <select id="artist-radio-recommendations" multiple data-hs-select='{
+                    "placeholder": "Select similar artists...",
+                    "mode": "tags",
+                    "toggleTag": "<button type=\"button\" aria-expanded=\"false\"><span class=\"text-foreground\" data-title></span></button>",
+                    "toggleClasses": "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative py-3 ps-4 pe-9 flex items-center gap-x-2 text-nowrap w-full cursor-pointer bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-start text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 before:absolute before:inset-0 before:z-[1] dark:text-gray-200",
+                    "wrapperClasses": "relative ps-0.5 pe-9 min-h-11.5 flex items-center flex-wrap min-w-0 max-w-full w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg text-start text-sm focus:ring-blue-500",
+                    "tagsItemTemplate": "<div class=\"flex flex-nowrap items-center min-w-0 max-w-full relative z-10 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-full p-1 m-1\"><div class=\"min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-gray-800 dark:text-gray-200 ps-1\" data-title></div><div class=\"inline-flex shrink-0 justify-center items-center size-5 ms-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm cursor-pointer\" data-remove><svg class=\"shrink-0 size-3\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></div></div>",
+                    "tagsInputClasses": "py-3 px-2 rounded-lg order-1 min-w-16 max-w-full bg-transparent border-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-0 text-sm outline-hidden",
+                    "dropdownClasses": "hs-select-dropdown mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 dark:[&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-gray-300 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600",
+                    "optionClasses": "py-2 px-3 w-full text-sm text-gray-800 dark:text-gray-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700 hs-selected:bg-blue-50 dark:hs-selected:bg-blue-900/30 hs-selected:text-blue-800 dark:hs-selected:text-gray-100",
+                    "optionTemplate": "<div class=\"flex justify-between items-center w-full\"><span data-title></span><span><svg class=\"hidden hs-selected:block size-3.5 text-blue-600 dark:text-blue-400\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg></span></div>",
+                    "hasSearch": true,
+                    "searchPlaceholder": "Search similar artists",
+                    "searchClasses": "block w-full text-sm border-gray-200 dark:border-gray-700 rounded-lg focus:border-blue-500 focus:ring-blue-500 before:absolute before:inset-0 before:z-[1] py-2 px-3",
+                    "searchWrapperClasses": "bg-white dark:bg-gray-800 p-2 -mx-1 sticky top-0",
+                    "multiple": true
+                }' class="hidden w-full min-w-0 max-w-full"></select>
+                </div>
+            </div>
+
+            <div class="relative min-w-0 w-full">
+                <label for="artist-radio-manual" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Add Other Library Artists</label>
+                <div class="relative min-w-0 w-full max-w-full">
+                    <select id="artist-radio-manual" multiple data-hs-select='{
+                    "placeholder": "Search artists not shown above...",
+                    "mode": "tags",
+                    "toggleTag": "<button type=\"button\" aria-expanded=\"false\"><span class=\"text-foreground\" data-title></span></button>",
+                    "toggleClasses": "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative py-3 ps-4 pe-9 flex items-center gap-x-2 text-nowrap w-full cursor-pointer bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-start text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 before:absolute before:inset-0 before:z-[1] dark:text-gray-200",
+                    "wrapperClasses": "relative ps-0.5 pe-9 min-h-11.5 flex items-center flex-wrap min-w-0 max-w-full w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg text-start text-sm focus:ring-blue-500",
+                    "tagsItemTemplate": "<div class=\"flex flex-nowrap items-center min-w-0 max-w-full relative z-10 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-full p-1 m-1\"><div class=\"min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-gray-800 dark:text-gray-200 ps-1\" data-title></div><div class=\"inline-flex shrink-0 justify-center items-center size-5 ms-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm cursor-pointer\" data-remove><svg class=\"shrink-0 size-3\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></div></div>",
+                    "tagsInputClasses": "py-3 px-2 rounded-lg order-1 min-w-16 max-w-full bg-transparent border-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-0 text-sm outline-hidden",
+                    "dropdownClasses": "hs-select-dropdown mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 dark:[&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-gray-300 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600",
+                    "optionClasses": "py-2 px-3 w-full text-sm text-gray-800 dark:text-gray-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700 hs-selected:bg-blue-50 dark:hs-selected:bg-blue-900/30 hs-selected:text-blue-800 dark:hs-selected:text-gray-100",
+                    "optionTemplate": "<div class=\"flex justify-between items-center w-full\"><span data-title></span><span><svg class=\"hidden hs-selected:block size-3.5 text-blue-600 dark:text-blue-400\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg></span></div>",
+                    "hasSearch": true,
+                    "searchPlaceholder": "Search library artists",
+                    "searchClasses": "block w-full text-sm border-gray-200 dark:border-gray-700 rounded-lg focus:border-blue-500 focus:ring-blue-500 before:absolute before:inset-0 before:z-[1] py-2 px-3",
+                    "searchWrapperClasses": "bg-white dark:bg-gray-800 p-2 -mx-1 sticky top-0",
+                    "multiple": true
+                }' class="hidden w-full min-w-0 max-w-full"></select>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full min-w-0">
+            <div class="w-full min-w-0">
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Year Range</label>
+                <div class="flex items-center gap-2 w-full min-w-0">
+                    <input type="number" id="artist-radio-year-start" min="1950" max="2026" class="w-full min-w-0 flex-1 px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Start">
+                    <span class="shrink-0 text-gray-400 dark:text-gray-500 text-sm">–</span>
+                    <input type="number" id="artist-radio-year-end" min="1950" max="2026" class="w-full min-w-0 flex-1 px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="End">
+                </div>
+            </div>
+
+            <div class="w-full min-w-0">
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Minimum Quality</label>
+                <div class="grid grid-cols-2 gap-2 w-full min-w-0">
+                    <div id="artist-radio-bitrate-wrap">
+                        <select id="artist-radio-min-bitrate" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                            <option value="">Any bitrate</option><option value="128">128 kbps</option><option value="192">192 kbps</option><option value="256">256 kbps</option><option value="320">320 kbps</option>
+                        </select>
+                    </div>
+                    <div id="artist-radio-bitdepth-wrap" class="hidden">
+                        <select id="artist-radio-min-bitdepth" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                            <option value="">Any depth</option><option value="16">16-bit</option><option value="24">24-bit</option>
+                        </select>
+                    </div>
+                    <select id="artist-radio-min-format" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        <option value="">Any format</option><option value="mp3">MP3</option><option value="flac">FLAC</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Playlist Length</label>
+                <div class="space-y-3">
+                    <div class="flex items-center"><input type="radio" id="artist-radio-length-25" name="artist-radio-playlist-length" value="25" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="artist-radio-length-25" class="text-sm text-gray-500 dark:text-400 ms-2">25 tracks</label></div>
+                    <div class="flex items-center"><input type="radio" id="artist-radio-length-50" name="artist-radio-playlist-length" value="50" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="artist-radio-length-50" class="text-sm text-gray-500 dark:text-gray-400 ms-2">50 tracks</label></div>
+                    <div class="flex items-center"><input type="radio" id="artist-radio-length-100" name="artist-radio-playlist-length" value="100" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="artist-radio-length-100" class="text-sm text-gray-500 dark:text-gray-400 ms-2">100 tracks</label></div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Artist & Album Diversity</label>
+                <div class="space-y-3">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="artist-radio-diversity-enabled" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+                        <label for="artist-radio-diversity-enabled" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use Limits</label>
+                    </div>
+                    <div id="artist-radio-diversity-inputs" class="space-y-3">
+                        <div>
+                            <label for="artist-radio-album-cap" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per album</label>
+                            <input type="number" id="artist-radio-album-cap" value="4" min="0" step="1" class="h-6 w-16 border border-gray-200 dark:border-gray-700 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 pl-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        </div>
+                        <div>
+                            <label for="artist-radio-artist-cap" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per artist</label>
+                            <input type="number" id="artist-radio-artist-cap" value="8" min="0" step="1" class="h-6 w-16 border border-gray-200 dark:border-gray-700 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 pl-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        </div>
+                        <p class="text-xs text-gray-400 dark:text-gray-500">Limits how many tracks come from the same album or artist.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Refresh Frequency</label>
+                <div class="space-y-3">
+                    <div class="flex items-center"><input type="radio" id="artist-radio-freq-none" name="artist-radio-refresh-frequency" value="none" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="artist-radio-freq-none" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Don't refresh</label></div>
+                    <div class="flex items-center"><input type="radio" id="artist-radio-freq-daily" name="artist-radio-refresh-frequency" value="daily" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="artist-radio-freq-daily" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Daily <span class="text-xs text-gray-500 dark:text-gray-400">(1am)</span></label></div>
+                    <div class="flex items-center"><input type="radio" id="artist-radio-freq-weekly" name="artist-radio-refresh-frequency" value="weekly" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="artist-radio-freq-weekly" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Weekly <span class="text-xs text-gray-500 dark:text-gray-400">(Monday 1am)</span></label></div>
+                    <div class="flex items-center"><input type="radio" id="artist-radio-freq-monthly" name="artist-radio-refresh-frequency" value="monthly" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="artist-radio-freq-monthly" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Monthly <span class="text-xs text-gray-500 dark:text-gray-400">(1st of month 1am)</span></label></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pt-4">
+            <button type="submit" id="create-artist-radio-btn" class="w-full md:w-auto bg-gray-900 dark:bg-gray-900 text-white dark:text-gray-100 font-bold py-2 px-4 md:px-6 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-700 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors">
+                Create Artist Radio Playlist
+            </button>
+        </div>
+    </form>
+</div>

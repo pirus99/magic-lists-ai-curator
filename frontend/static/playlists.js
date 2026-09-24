@@ -527,3 +527,134 @@ async function savePlaylistSettings(regenerate) {
         refreshBtn.disabled = false;
     }
 }
+
+// Artist Radio page event handlers
+const artistRadioSource = document.getElementById('artist-radio-source');
+if (artistRadioSource) artistRadioSource.addEventListener('change', () => {
+    updateArtistRadioMbidVisibility();
+    if (!document.getElementById('artist-radio-listenbrainz-enabled')?.checked) populateArtistRadioSelects([]);
+});
+const artistRadioListenbrainzEnabled = document.getElementById('artist-radio-listenbrainz-enabled');
+if (artistRadioListenbrainzEnabled) {
+    artistRadioListenbrainzEnabled.addEventListener('change', () => {
+        const enabled = artistRadioListenbrainzEnabled.checked;
+        document.getElementById('artist-radio-listenbrainz-controls')?.classList.toggle('hidden', !enabled);
+        document.getElementById('artist-radio-fetch-btn')?.classList.toggle('hidden', !enabled);
+        document.getElementById('artist-radio-recommendation-field')?.classList.toggle('hidden', !enabled);
+        if (!enabled) populateArtistRadioSelects([]);
+    });
+}
+const artistRadioScore = document.getElementById('artist-radio-score');
+if (artistRadioScore) artistRadioScore.addEventListener('input', () => document.getElementById('artist-radio-score-value').textContent = artistRadioScore.value);
+const artistRadioFetch = document.getElementById('artist-radio-fetch-btn');
+if (artistRadioFetch) artistRadioFetch.addEventListener('click', fetchArtistRadioRecommendations);
+const artistRadioForm = document.getElementById('artist-radio-form');
+if (artistRadioForm) artistRadioForm.addEventListener('submit', createArtistRadioPlaylist);
+
+async function fetchArtistRadioRecommendations() {
+    const source = document.getElementById('artist-radio-source');
+    if (!source?.value || !checkLibrarySelection()) return;
+    const listenbrainzEnabled = document.getElementById('artist-radio-listenbrainz-enabled').checked;
+    if (!listenbrainzEnabled) {
+        populateArtistRadioSelects([]);
+        showToast('info', 'ListenBrainz is disabled. Choose artists manually below.');
+        return;
+    }
+    const sourceArtist = allArtists.find(artist => artist.id === source.value);
+    const mbid = sourceArtist?.mbid || document.getElementById('artist-radio-mbid').value.trim();
+    if (!mbid) return showToast('error', 'A MusicBrainz artist ID is required.');
+    showToast('loading', 'Fetching similar artists...', 0);
+    try {
+        const response = await fetch('/api/artist-radio/recommendations/local?' + selectedLibraryIds.map(id => `library_id=${encodeURIComponent(id)}`).join('&'), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                artist_id: source.value, source_mbid: mbid,
+                algorithm: document.getElementById('artist-radio-algorithm').value,
+                minimum_score: Number(document.getElementById('artist-radio-score').value), library_ids: selectedLibraryIds
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Failed to fetch recommendations');
+        populateArtistRadioSelects(data);
+        showToast('success', `Found ${data.length} similar artists in your library`);
+    } catch (error) { showToast('error', error.message); }
+}
+
+async function createArtistRadioPlaylist(event) {
+    if (event) event.preventDefault();
+    const submitBtn = document.getElementById('create-artist-radio-btn');
+    if (!checkLibrarySelection()) return;
+    const source = document.getElementById('artist-radio-source');
+    if (!source?.value) return showToast('error', 'Select a source artist.');
+    const sourceArtist = allArtists.find(artist => artist.id === source.value);
+    const listenbrainzEnabled = document.getElementById('artist-radio-listenbrainz-enabled').checked;
+    const sourceMbid = listenbrainzEnabled
+        ? (sourceArtist?.mbid || document.getElementById('artist-radio-mbid').value.trim())
+        : null;
+    if (listenbrainzEnabled && !sourceMbid) return showToast('error', 'A MusicBrainz artist ID is required.');
+
+    const selected = element => Array.from(element.selectedOptions).map(option => option.value);
+    const minFormat = document.getElementById('artist-radio-min-format').value;
+    const minBitrate = document.getElementById('artist-radio-min-bitrate').value;
+    const minBitDepth = document.getElementById('artist-radio-min-bitdepth').value;
+
+    showToast('loading', 'Creating your Artist Radio playlist...', 0);
+    submitBtn.disabled = true;
+    try {
+        const response = await fetch('/api/create_artist_radio', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                artist_id: source.value, artist_name: sourceArtist.name, source_mbid: sourceMbid,
+                algorithm: document.getElementById('artist-radio-algorithm').value,
+                listenbrainz_enabled: listenbrainzEnabled,
+                minimum_score: Number(document.getElementById('artist-radio-score').value),
+                recommendation_ids: selected(document.getElementById('artist-radio-recommendations')),
+                manual_artist_ids: selected(document.getElementById('artist-radio-manual')),
+                refetch_listenbrainz: false,
+                year_start: valueOrNull('artist-radio-year-start'), year_end: valueOrNull('artist-radio-year-end'),
+                diversity_enabled: document.getElementById('artist-radio-diversity-enabled').checked,
+                max_tracks_per_album: Number(document.getElementById('artist-radio-album-cap').value),
+                max_tracks_per_artist: Number(document.getElementById('artist-radio-artist-cap').value),
+                min_format: minFormat || null,
+                min_bitrate: minFormat === 'flac' ? null : (minBitrate ? Number(minBitrate) : null),
+                min_bit_depth: minFormat === 'flac' ? (minBitDepth ? Number(minBitDepth) : null) : null,
+                playlist_length: Number(document.querySelector('input[name="artist-radio-playlist-length"]:checked').value),
+                refresh_frequency: document.querySelector('input[name="artist-radio-refresh-frequency"]:checked').value,
+                library_ids: selectedLibraryIds
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Failed to create playlist');
+        showToast('success', `Artist Radio playlist created with ${data.songs ? data.songs.length : 0} tracks`);
+        updatePlaylistCount();
+    } catch (error) {
+        showToast('error', error.message);
+    } finally {
+        submitBtn.disabled = false;
+    }
+}
+
+function valueOrNull(id) { const value = document.getElementById(id).value; return value ? Number(value) : null; }
+
+const artistRadioDiversity = document.getElementById('artist-radio-diversity-enabled');
+if (artistRadioDiversity) {
+    const inputs = document.getElementById('artist-radio-diversity-inputs');
+    const sync = () => {
+        inputs.querySelectorAll('input').forEach(input => input.disabled = !artistRadioDiversity.checked);
+        inputs.style.opacity = artistRadioDiversity.checked ? '1' : '0.5';
+    };
+    artistRadioDiversity.addEventListener('change', sync);
+    sync();
+}
+const artistRadioFormat = document.getElementById('artist-radio-min-format');
+if (artistRadioFormat) {
+    const syncQuality = () => {
+        const isFlac = artistRadioFormat.value === 'flac';
+        document.getElementById('artist-radio-bitrate-wrap').classList.toggle('hidden', isFlac);
+        document.getElementById('artist-radio-bitdepth-wrap').classList.toggle('hidden', !isFlac);
+        document.getElementById('artist-radio-min-bitrate').disabled = isFlac;
+        document.getElementById('artist-radio-min-bitdepth').disabled = !isFlac;
+    };
+    artistRadioFormat.addEventListener('change', syncQuality);
+    syncQuality();
+}

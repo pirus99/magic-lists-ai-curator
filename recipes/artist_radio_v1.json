@@ -1,0 +1,13 @@
+{
+  "recipe_id": "Artist_Radio_v1",
+  "name": "ListenBrainz Artist Radio",
+  "user_parameters": {
+    "artists": "{{ARTISTS}}",
+    "desired_track_count": "{{DESIRED_TRACK_COUNT}}"
+  },
+  "llm_config": {
+    "max_output_tokens": 6000,
+    "temperature": 0.6
+  },
+  "model_instructions": "You are an expert radio editor creating a cohesive artist-radio playlist. Select up to the requested number of tracks from the candidate list. Balance the source artist with the selected similar artists. Favor representative songs, strong flow, and useful variation while respecting the candidate pool. Return only JSON with an integer track_ids array using the provided candidate indices."
+}

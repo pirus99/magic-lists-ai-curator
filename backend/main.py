@@ -77,9 +77,11 @@ from .core.scheduler import (
 from .this_is.routes import router as this_is_router
 from .genre_mix.routes import router as genre_mix_router
 from .rediscover.routes import router as rediscover_router
+from .artist_radio.routes import router as artist_radio_router
 from .this_is.builder import refresh_this_is_playlist
 from .genre_mix.builder import refresh_genre_playlist
 from .rediscover.builder import refresh_rediscover_playlist
+from .artist_radio.builder import refresh_artist_radio_playlist
 from .recipe_manager import recipe_manager
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
@@ -113,6 +115,7 @@ async def startup_event():
     register_refresh_handler("genre_mix", refresh_genre_playlist)
     register_refresh_handler("rediscover", refresh_rediscover_playlist)
     register_refresh_handler("rediscover_weekly_v2", refresh_rediscover_playlist)
+    register_refresh_handler("artist_radio", refresh_artist_radio_playlist)
 
     schedule_playlist_refresh()
     scheduler_logger.info("Cron job auto-started on application startup")
@@ -483,6 +486,8 @@ async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depe
 
         if playlist_type == "genre_mix":
             await refresh_genre_playlist(playlist, db)
+        elif playlist_type == "artist_radio":
+            await refresh_artist_radio_playlist(playlist, db)
         elif playlist_type in ("rediscover", "rediscover_weekly_v2"):
             await refresh_rediscover_playlist(scheduled, db)
         else:
@@ -629,6 +634,7 @@ async def track_library_size(db: DatabaseManager = Depends(get_db)):
 app.include_router(this_is_router)
 app.include_router(genre_mix_router)
 app.include_router(rediscover_router)
+app.include_router(artist_radio_router)
 
 
 # ---------------------------------------------------------------------------
@@ -637,7 +643,7 @@ app.include_router(rediscover_router)
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_router(request: Request, path: str):
     """Handle SPA routing - serve app for known paths, redirect unknown paths"""
-    spa_paths = ["this-is", "re-discover", "playlists", "terms"]
+    spa_paths = ["this-is", "artist-radio", "re-discover", "playlists", "terms"]
     if path in spa_paths:
         if not system_check_passed:
             return RedirectResponse(url="/system-check", status_code=302)

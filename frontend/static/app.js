@@ -198,6 +198,9 @@ function updateURL(page) {
         case 'this-is-artist':
             url = '/this-is';
             break;
+        case 'artist-radio':
+            url = '/artist-radio';
+            break;
         case 're-discover':
             url = '/re-discover';
             break;
@@ -241,6 +244,9 @@ function getPageFromURL(pathname) {
             break;
         case '/this-is':
             page = 'this-is-artist';
+            break;
+        case '/artist-radio':
+            page = 'artist-radio';
             break;
         case '/re-discover':
             page = 're-discover';

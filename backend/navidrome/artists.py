@@ -140,7 +140,8 @@ class _ArtistsMixin:
                 for artist in index_group.get("artist", []):
                     artists_list.append({
                         "id": artist.get("id"),
-                        "name": artist.get("name")
+                        "name": artist.get("name"),
+                        "mbid": artist.get("mbid") or artist.get("musicBrainzId"),
                     })
 
             print(f"✅ Successfully fetched {len(artists_list)} artists from Navidrome")
