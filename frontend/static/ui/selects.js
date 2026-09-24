@@ -52,14 +52,14 @@ function createLibraryCheckboxes(container, libraries, selectedIds, idPrefix) {
     libraries.forEach(library => {
         const checkboxId = `${idPrefix}-lib-${library.id}`;
         const checkboxDiv = document.createElement('div');
-        checkboxDiv.className = 'flex items-center px-3 py-2 hover:bg-gray-50 rounded';
+        checkboxDiv.className = 'flex items-center px-3 py-2 hover:bg-gray-50 rounded dark:hover:bg-gray-700';
         checkboxDiv.innerHTML = `
             <input type="checkbox"
                    id="${checkboxId}"
                    value="${library.id}"
                    class="shrink-0 mt-0.5 border-gray-200 rounded text-blue-600 focus:ring-blue-500"
                    ${selectedIds.includes(library.id) ? 'checked' : ''}>
-            <label for="${checkboxId}" class="ml-2 text-sm text-gray-800 cursor-pointer">
+            <label for="${checkboxId}" class="ml-2 text-sm text-gray-800 cursor-pointer dark:text-gray-100">
                 ${library.name}
             </label>
         `;
@@ -540,20 +540,20 @@ function updateLibraryDisplayText() {
     if (selectedLibraryIds.length === 0) {
         if (desktopText) desktopText.textContent = 'Select library';
         if (mobileText) mobileText.textContent = 'Select library';
-        if (desktopText) desktopText.className = 'text-gray-500 truncate';
-        if (mobileText) mobileText.className = 'text-gray-500 truncate';
+        if (desktopText) desktopText.className = 'text-gray-500 truncate dark:text-gray-200';
+        if (mobileText) mobileText.className = 'text-gray-500 truncate dark:text-gray-200';
     } else if (selectedLibraryIds.length === 1) {
         const library = allLibraries.find(lib => lib.id === selectedLibraryIds[0]);
         const libraryName = library ? library.name : '1 library';
         if (desktopText) desktopText.textContent = libraryName;
         if (mobileText) mobileText.textContent = libraryName;
-        if (desktopText) desktopText.className = 'text-gray-900 truncate';
-        if (mobileText) mobileText.className = 'text-gray-900 truncate';
+        if (desktopText) desktopText.className = 'text-gray-900 truncate dark:text-gray-200';
+        if (mobileText) mobileText.className = 'text-gray-900 truncate dark:text-gray-200';
     } else {
         if (desktopText) desktopText.textContent = `${selectedLibraryIds.length} libraries`;
         if (mobileText) mobileText.textContent = `${selectedLibraryIds.length} libraries`;
-        if (desktopText) desktopText.className = 'text-gray-900 truncate';
-        if (mobileText) mobileText.className = 'text-gray-900 truncate';
+        if (desktopText) desktopText.className = 'text-gray-900 truncate dark:text-gray-200';
+        if (mobileText) mobileText.className = 'text-gray-900 truncate dark:text-gray-200';
     }
 }
 
