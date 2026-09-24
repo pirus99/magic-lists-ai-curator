@@ -17,7 +17,8 @@ class _TracksMixin:
             
             headers = self._get_auth_headers()
             
-            # Get total track count from Jellyfin
+            # Ask Jellyfin for a single item so the response still includes
+            # TotalRecordCount without downloading the whole library.
             response = await self.client.get(
                 f"{self.base_url}/Items",
                 headers=headers,
@@ -27,19 +28,7 @@ class _TracksMixin:
                 )
             )
             response.raise_for_status()
-            
-            # Get total count by making a request with all items
-            total_response = await self.client.get(
-                f"{self.base_url}/Items",
-                headers=headers,
-                params=self._items_params(
-                    IncludeItemTypes="Audio",
-                    Limit=0  # No limit to get total count
-                )
-            )
-            total_response.raise_for_status()
-            
-            total_tracks = total_response.json().get("TotalRecordCount", 0)
+            total_tracks = response.json().get("TotalRecordCount", 0)
             
             # For max_play_count, we'll estimate based on total tracks
             # Assuming most popular tracks might have 10-20% of total plays
@@ -166,39 +155,74 @@ class _TracksMixin:
         library_ids: Union[List[str], None] = None,
         days_back: int = None
     ) -> List[Dict[str, Any]]:
-        """Fetch recently played tracks (Jellyfin alternative to smart playlists).
-        
-        Args:
-            limit: Maximum tracks to return (max 500)
-            library_ids: Optional library IDs to filter by
-            days_back: Optional filter by days back (not implemented yet)
-        
-        Returns:
-            List of tracks sorted by DateLastPlayed descending
-        """
+        """Fetch recently played tracks (Jellyfin alternative to smart playlists)."""
         await self._ensure_authenticated()
         
         headers = self._get_auth_headers()
         all_tracks = []
+        target_count = min(limit, 2000)
+        start_index = 0
+        page_size = min(500, target_count)
         
-        # Get all audio tracks sorted by last played
+        while len(all_tracks) < target_count:
+            response = await self.client.get(
+                f"{self.base_url}/Items",
+                headers=headers,
+                params=self._items_params(
+                    IncludeItemTypes="Audio",
+                    ParentId=library_ids[0] if library_ids else None,
+                    SortBy="DateLastPlayed",
+                    SortOrder="Descending",
+                    StartIndex=start_index,
+                    Limit=page_size,
+                    Fields="Genres,Path,DateLastPlayed,UserData"
+                )
+            )
+            response.raise_for_status()
+            data = response.json()
+            items = data.get("Items", [])
+            if not items:
+                break
+            
+            for track in items:
+                normalized = self._normalize_track(track)
+                normalized["played"] = track.get("DateLastPlayed")
+                all_tracks.append(normalized)
+            
+            start_index += len(items)
+            if len(items) < page_size:
+                break
+        
+        return all_tracks[:target_count]
+    
+    async def get_tracks_by_year_range(
+        self,
+        start_year: int,
+        end_year: int,
+        library_ids: Union[List[str], None] = None,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        """Fetch tracks whose production year is within an inclusive range."""
+        await self._ensure_authenticated()
+        
         response = await self.client.get(
             f"{self.base_url}/Items",
-            headers=headers,
+            headers=self._get_auth_headers(),
             params=self._items_params(
                 IncludeItemTypes="Audio",
-                SortBy="DateLastPlayed",
-                SortOrder="Descending",
+                ParentId=library_ids[0] if library_ids else None,
+                Years=list(range(start_year, end_year + 1)),
                 Limit=min(limit, 500),
-                Fields="ItemCounts,Path"
+                Fields="Genres,DateLastPlayed,UserData",
             )
         )
         response.raise_for_status()
-        
+        tracks = []
         for track in response.json().get("Items", []):
-            all_tracks.append(self._normalize_track(track))
-        
-        return all_tracks
+            normalized = self._normalize_track(track)
+            normalized["played"] = track.get("DateLastPlayed")
+            tracks.append(normalized)
+        return tracks
     
     async def get_starred(
         self, 
@@ -268,6 +292,7 @@ class _TracksMixin:
             "album": jellyfin_track.get("Album", ""),
             "year": jellyfin_track.get("ProductionYear", 0),
             "genres": genres,
+            "played": jellyfin_track.get("DateLastPlayed"),
             "play_count": jellyfin_track.get("UserData", {}).get("PlayCount", 0),
             "starred": jellyfin_track.get("UserData", {}).get("IsFavorite", False),
             "rating": jellyfin_track.get("CommunityRating", 0) * 10,  # Convert 0-10 to 0-100

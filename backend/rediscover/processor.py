@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import NAVIDROME_URL
 from ..recipe_manager import recipe_manager
+from ..jellyfin import JellyfinClient
 from .curation import curate_rediscover_weekly
 from ..navidrome.smart_playlist import SmartPlaylistAPI
 
@@ -67,24 +68,31 @@ class ReDiscoverV2Processor:
 
             print("🔍 Phase 1: Analyzing listening patterns...")
 
-            # Use smart-playlist target discovery if enabled
+            # Navidrome can use native smart playlists for an exact target
+            # period. Jellyfin has no equivalent private endpoint; use its
+            # common track client instead of sending Navidrome requests to it.
             target_tracks = []
             used_smart_playlist = False
+            is_jellyfin = isinstance(self.navidrome_client, JellyfinClient)
 
-            if self.config.get("use_smart_playlist_target", True):
+            if not is_jellyfin and self.config.get("use_smart_playlist_target", True):
                 print("🔍 Using Navidrome smart-playlist for exact 30-90 day target discovery...")
-                target_tracks = await self._get_target_tracks_smart_playlist(
-                    days_start=self.config["target_period_days_start"],
-                    days_end=self.config["target_period_days_end"],
-                    limit=self.config["target_playlist_limit"],
-                )
+                try:
+                    target_tracks = await self._get_target_tracks_smart_playlist(
+                        days_start=self.config["target_period_days_start"],
+                        days_end=self.config["target_period_days_end"],
+                        limit=self.config["target_playlist_limit"],
+                    )
+                except Exception as smart_playlist_error:
+                    print(f"⚠️ Navidrome smart-playlist discovery failed: {smart_playlist_error}")
                 if target_tracks:
                     used_smart_playlist = True
                     print(f"🔍 Found {len(target_tracks)} tracks in target period (30-90 days ago) via smart playlist")
 
-            # Fallback to random sampling if smart-playlist failed or returned too few
+            # Fall back to the active media server's common track API if native
+            # smart-playlist discovery failed or returned too few results.
             if not target_tracks or len(target_tracks) < self.config["min_target_period_tracks"]:
-                if self.config.get("use_smart_playlist_target", True):
+                if not is_jellyfin and self.config.get("use_smart_playlist_target", True):
                     print(f"⚠️ Smart-playlist returned {len(target_tracks)} tracks, falling back to random sampling...")
                 sample_size = self._calculate_sample_size(library_size)
                 print(f"📊 Calculated sample size: {sample_size} tracks")
@@ -102,7 +110,8 @@ class ReDiscoverV2Processor:
             theme_strategy = await self._llm_phase1_theme_detection(analysis)
 
             search_results = await self._execute_searches(theme_strategy, library_ids)
-            candidates = self._filter_and_enrich_candidates(search_results)
+            target_track_ids = [track.get("id") for track in target_tracks if track.get("id")]
+            candidates = self._filter_and_enrich_candidates(search_results, target_track_ids)
             final_tracks = await self._llm_phase2_sequencing(candidates, theme_strategy)
 
             playlist_data = await self._create_playlist_data(final_tracks, theme_strategy, user_id, server_id, used_smart_playlist)
@@ -121,15 +130,19 @@ class ReDiscoverV2Processor:
             return int(cached)
 
         try:
-            await self.navidrome_client._ensure_authenticated()
-            params = self.navidrome_client._get_subsonic_params()
-            response = await self.navidrome_client.client.get(
-                f"{self.navidrome_client.base_url}/rest/getScanStatus.view",
-                params=params,
-            )
-            response.raise_for_status()
-            data = response.json()
-            count = data.get("subsonic-response", {}).get("scanStatus", {}).get("count", 0)
+            if isinstance(self.navidrome_client, JellyfinClient):
+                stats = await self.navidrome_client.get_library_stats()
+                count = int(stats.get("total_tracks", 0))
+            else:
+                await self.navidrome_client._ensure_authenticated()
+                params = self.navidrome_client._get_subsonic_params()
+                response = await self.navidrome_client.client.get(
+                    f"{self.navidrome_client.base_url}/rest/getScanStatus.view",
+                    params=params,
+                )
+                response.raise_for_status()
+                data = response.json()
+                count = data.get("subsonic-response", {}).get("scanStatus", {}).get("count", 0)
             await self.db.set_cache(cache_key, str(count), 86400)
             return count
         except Exception:
@@ -243,8 +256,14 @@ class ReDiscoverV2Processor:
         return min(max(percentage_based, self.config["sample_size_min"]), self.config["sample_size_max"])
 
     async def _sample_library(self, sample_size: int, library_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Sample random tracks from the library using OpenSubsonic getRandomSongs."""
+        """Sample tracks from the active media server."""
         try:
+            if isinstance(self.navidrome_client, JellyfinClient):
+                return await self.navidrome_client.get_recent_tracks(
+                    limit=min(sample_size, 500),
+                    library_ids=library_ids,
+                )
+
             await self.navidrome_client._ensure_authenticated()
             params = self.navidrome_client._get_subsonic_params()
             params["size"] = str(sample_size)
@@ -474,6 +493,13 @@ class ReDiscoverV2Processor:
     async def _search_by_year_range(self, start_year: int, end_year: int, library_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Search for tracks in a specific year range."""
         try:
+            if isinstance(self.navidrome_client, JellyfinClient):
+                return await self.navidrome_client.get_tracks_by_year_range(
+                    start_year=start_year,
+                    end_year=end_year,
+                    library_ids=library_ids,
+                )
+
             await self.navidrome_client._ensure_authenticated()
             params = self.navidrome_client._get_subsonic_params()
             params["size"] = "200"
@@ -494,16 +520,23 @@ class ReDiscoverV2Processor:
             print(f"❌ Year range search failed: {e}")
             return []
 
-    def _filter_and_enrich_candidates(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _filter_and_enrich_candidates(
+        self,
+        search_results: List[Dict[str, Any]],
+        excluded_ids: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """Filter search results and calculate rediscovery scores."""
         candidates = []
         now = datetime.now(timezone.utc)
         exclude_before = now - timedelta(days=self.config["exclude_played_within_days"])
+        excluded = set(excluded_ids or [])
 
         for track in search_results:
             if not isinstance(track, dict):
                 continue
             track_id = track.get("id")
+            if track_id in excluded:
+                continue
             if not track_id:
                 continue
 
