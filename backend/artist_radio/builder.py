@@ -54,14 +54,18 @@ async def fetch_radio_tracks(
         top_settings["top_tracks_count"],
     )
     protected_track_ids = set()
+    tracks_by_id = {track.get("id"): track for track in tracks if track.get("id")}
     for track in top_tracks:
         track_id = track.get("id")
         if not track_id:
             continue
         protected_track_ids.add(track_id)
-        if track_id not in seen:
+        if track_id in tracks_by_id:
+            tracks_by_id[track_id]["is_top_track"] = True
+        else:
             seen.add(track_id)
             tracks.append(track)
+            tracks_by_id[track_id] = track
 
     if request is not None and not request.diversity_enabled:
         album_cap = artist_cap = 0

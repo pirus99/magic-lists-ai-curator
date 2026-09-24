@@ -16,6 +16,7 @@ from ..ai_client import (
     MAX_OVER_RETURN_FACTOR,
 )
 from ..output_sorting import space_id_track_list_by_artist_and_album
+from ..services.track_scoring_service import calculate_track_score
 
 
 async def curate_this_is(
@@ -82,15 +83,12 @@ async def curate_this_is(
             track_id_map = []
             for index, track in enumerate(shuffled_tracks):
                 track_id_map.append(track["id"])
-                track_score = round(track.get("play_count", 0)) * 1.5
-                if track.get("local_library_likes", False):
-                    track_score += 15
                 indexed_track = (
                     index,
                     f"{track.get('title', 'Unknown')} - {track.get('artist', 'Unknown')}",
                     track.get("album", "Unknown"),
                     track.get("year", "Unknown"),
-                    track_score,
+                    calculate_track_score(track),
                 )
                 indexed_tracks.append(indexed_track)
 

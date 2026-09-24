@@ -52,12 +52,16 @@ async def fetch_this_is_tracks(
         top_settings["top_tracks_count"],
     )
     combined = list(tracks)
-    seen = {track.get("id") for track in combined if track.get("id")}
+    tracks_by_id = {track.get("id"): track for track in combined if track.get("id")}
     for track in top_tracks:
         track_id = track.get("id")
-        if track_id and track_id not in seen:
-            seen.add(track_id)
+        if not track_id:
+            continue
+        if track_id in tracks_by_id:
+            tracks_by_id[track_id]["is_top_track"] = True
+        else:
             combined.append(track)
+            tracks_by_id[track_id] = track
     return combined
 
 

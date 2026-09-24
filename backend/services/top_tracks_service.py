@@ -42,7 +42,10 @@ async def fetch_top_tracks(
         artist_name = names_by_id.get(artist_id)
         if not artist_name:
             continue
-        tracks.extend(
-            await client.get_top_songs_by_artist(artist_name, count, library_ids) or []
-        )
+        artist_top_tracks = await client.get_top_songs_by_artist(
+            artist_name, count, library_ids
+        ) or []
+        for track in artist_top_tracks:
+            track["is_top_track"] = True
+        tracks.extend(artist_top_tracks)
     return tracks

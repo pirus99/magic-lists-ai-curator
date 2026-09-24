@@ -9,6 +9,12 @@ def anyio_backend():
 
 from backend.navidrome import NavidromeClient
 from backend.services import top_tracks_service
+from backend.services.track_scoring_service import calculate_track_score
+
+
+def test_top_track_receives_fixed_score_bonus():
+    assert calculate_track_score({"play_count": 10, "is_top_track": True}) == 165
+    assert calculate_track_score({"play_count": 10}) == 15
 
 
 @pytest.mark.anyio

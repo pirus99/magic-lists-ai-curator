@@ -4,7 +4,9 @@ import random
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..ai_client import MAX_OVER_RETURN_FACTOR, parse_ai_track_response
+from ..output_sorting import space_id_track_list_by_artist_and_album
 from ..recipe_manager import recipe_manager
+from ..services.track_scoring_service import calculate_track_score
 
 
 def filter_radio_tracks(
@@ -82,7 +84,7 @@ async def curate_radio(
             f"{track.get('title', 'Unknown')} - {track.get('artist', 'Unknown')}",
             track.get("album", "Unknown"),
             track.get("year", "Unknown"),
-            track.get("play_count", 0),
+            calculate_track_score(track),
         )
         for index, track in enumerate(shuffled)
     ]
@@ -91,6 +93,9 @@ async def curate_radio(
         {"artists": artist_name, "num_tracks": num_tracks},
         True,
     )
+    sorting_settings = recipe.get("output_sorting", {})
+    artist_spacing = int(sorting_settings.get("space_between_same_artist", 0))
+    album_spacing = int(sorting_settings.get("space_between_same_album", 0))
     try:
         if ai_client is not None and getattr(ai_client, "provider", None) is not None:
             content = await ai_client.provider.generate(
@@ -108,9 +113,22 @@ async def curate_radio(
                 raise ValueError("AI returned too many tracks")
             selected = [shuffled[index]["id"] for index in indices if 0 <= index < len(shuffled)]
             if selected:
-                return selected[:num_tracks], description or f"Artist Radio curated from {artist_name}."
+                sorted_selection = space_id_track_list_by_artist_and_album(
+                    selected,
+                    shuffled,
+                    artist_spacing=artist_spacing,
+                    album_spacing=album_spacing,
+                )
+                return sorted_selection[:num_tracks], description or f"Artist Radio curated from {artist_name}."
     except Exception:
         pass
 
-    ordered = sorted(candidate_tracks, key=lambda track: track.get("play_count", 0), reverse=True)
-    return [track["id"] for track in ordered[:num_tracks]], f"Artist Radio fallback selection based on local play counts."
+    ordered = sorted(
+        candidate_tracks,
+        key=lambda track: calculate_track_score(track),
+        reverse=True,
+    )
+    return (
+        [track["id"] for track in ordered[:num_tracks]],
+        "Artist Radio fallback selection based on local track scores.",
+    )

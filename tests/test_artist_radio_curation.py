@@ -1,4 +1,16 @@
-from backend.artist_radio.curation import filter_radio_tracks
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+from backend.artist_radio import curation
+from backend.artist_radio.curation import curate_radio, filter_radio_tracks
 
 
 def test_filter_radio_tracks_applies_minimum_quality():
@@ -48,3 +60,31 @@ def test_filter_radio_tracks_protects_top_tracks_from_caps():
     )
 
     assert [track["id"] for track in result] == ["normal", "top-1", "top-2"]
+
+
+@pytest.mark.anyio
+async def test_curate_radio_uses_recipe_output_sorting(monkeypatch):
+    recipe = {
+        "model_instructions": "Select tracks",
+        "llm_config": {"max_output_tokens": 100, "temperature": 0.6},
+        "output_sorting": {
+            "space_between_same_artist": 3,
+            "space_between_same_album": 2,
+        },
+    }
+    monkeypatch.setattr(curation.recipe_manager, "apply_recipe", lambda *args: recipe)
+    ai_client = SimpleNamespace(
+        provider=SimpleNamespace(generate=AsyncMock(return_value='{"track_ids": [0, 1, 2, 3]}'))
+    )
+    candidates = [
+        {"id": "a1", "title": "A1", "artist": "Artist A", "album": "Album A", "year": 2020, "play_count": 1},
+        {"id": "b1", "title": "B1", "artist": "Artist B", "album": "Album B", "year": 2021, "play_count": 1},
+        {"id": "a2", "title": "A2", "artist": "Artist A", "album": "Album C", "year": 2022, "play_count": 1},
+        {"id": "b2", "title": "B2", "artist": "Artist B", "album": "Album D", "year": 2023, "play_count": 1},
+    ]
+
+    track_ids, _ = await curate_radio(candidates, 4, ai_client=ai_client)
+
+    assert len(track_ids) == 4
+    assert len(set(track_ids)) == 4
+    assert track_ids[:2] == ["a1", "b1"]

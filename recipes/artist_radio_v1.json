@@ -6,8 +6,12 @@
     "desired_track_count": "{{DESIRED_TRACK_COUNT}}"
   },
   "llm_config": {
-    "max_output_tokens": 6000,
+    "max_output_tokens": 18000,
     "temperature": 0.6
   },
-  "model_instructions": "You are an expert radio editor creating a cohesive artist-radio playlist. Select up to the requested number of tracks from the candidate list. Balance the source artist with the selected similar artists. Favor representative songs, strong flow, and useful variation while respecting the candidate pool. Return only JSON with an integer track_ids array using the provided candidate indices."
+  "output_sorting": {
+    "space_between_same_artist": 3,
+    "space_between_same_album": 2
+  },
+  "model_instructions": "You are an expert radio editor creating a cohesive artist-radio playlist. Select up to the requested number of tracks from the candidate list. Balance the source artist with the selected similar artists. Prefer Tracks with a higher Score. Favor representative songs, strong flow, and useful variation while respecting the candidate pool. Return only JSON with an integer track_ids array using the provided candidate indices."
 }
