@@ -67,6 +67,7 @@ Upcoming features include:
        ports:
          - "4545:8000"
        environment:
+         - SERVER_TYPE=navidrome # or jellyfin
          - NAVIDROME_URL=http://navidrome:4533 # for Jellyfin use: JELLYFIN_URL=http://jellyfin:8096
          - NAVIDROME_USERNAME=your_username # for Jellyfin use: JELLYFIN_USERNAME or JELLYFIN_API_KEY
          - NAVIDROME_PASSWORD=your_password # for Jellyfin use: JELLYFIN_PASSWORD or JELLYFIN_API_KEY
