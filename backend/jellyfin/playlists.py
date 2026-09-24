@@ -61,29 +61,19 @@ class _PlaylistsMixin:
         track_ids: List[str], 
         comment: str = None
     ) -> bool:
-        """Replace all tracks in playlist."""
+        """Replace all tracks in a Jellyfin playlist."""
         await self._ensure_authenticated()
-        user_id = await self._resolve_user_id()
         
         headers = self._get_auth_headers()
-        
-        params = {}
-        if user_id:
-            params["userId"] = user_id
-        
-        # Update playlist with new tracks
         response = await self.client.post(
-            f"{self.base_url}/Playlists/{playlist_id}/Items",
+            f"{self.base_url}/Playlists/{playlist_id}",
             headers=headers,
-            params=params,
-            json={
-                "Ids": track_ids
-            }
+            json={"Ids": track_ids}
         )
         response.raise_for_status()
         
         # Update comment if provided
-        if comment:
+        if comment is not None:
             await self.update_playlist_metadata(playlist_id, comment=comment)
         
         return True
@@ -104,16 +94,12 @@ class _PlaylistsMixin:
         ``Overview`` field on ``BaseItemDto``.
         """
         await self._ensure_authenticated()
-        user_id = await self._resolve_user_id()
         
         headers = self._get_auth_headers()
-        params = {}
-        if user_id:
-            params["userId"] = user_id
         
         # Name / IsPublic go through the dedicated playlist update endpoint.
         playlist_update = {}
-        if name:
+        if name is not None:
             playlist_update["Name"] = name
         if is_public is not None:
             playlist_update["IsPublic"] = is_public
@@ -122,17 +108,15 @@ class _PlaylistsMixin:
             response = await self.client.post(
                 f"{self.base_url}/Playlists/{playlist_id}",
                 headers=headers,
-                params=params,
                 json=playlist_update
             )
             response.raise_for_status()
         
         # Comment/description is stored as the item Overview.
-        if comment:
+        if comment is not None:
             response = await self.client.post(
                 f"{self.base_url}/Items/{playlist_id}",
                 headers=headers,
-                params=params,
                 json={"Overview": comment}
             )
             response.raise_for_status()
@@ -140,20 +124,17 @@ class _PlaylistsMixin:
         return True
     
     async def delete_playlist(self, playlist_id: str) -> bool:
-        """Delete playlist."""
+        """Delete a playlist from Jellyfin.
+
+        Jellyfin 12.1 does not expose ``DELETE /Playlists/{id}``. A playlist is
+        an item, so the supported generic deletion endpoint is used instead.
+        """
         await self._ensure_authenticated()
-        user_id = await self._resolve_user_id()
         
         headers = self._get_auth_headers()
-        
-        params = {}
-        if user_id:
-            params["userId"] = user_id
-        
         response = await self.client.delete(
-            f"{self.base_url}/Playlists/{playlist_id}",
-            headers=headers,
-            params=params
+            f"{self.base_url}/Items/{playlist_id}",
+            headers=headers
         )
         response.raise_for_status()
         

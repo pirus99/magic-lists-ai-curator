@@ -5,6 +5,65 @@ from .utils import _get_quality_score
 class _TracksMixin:
     """Methods for fetching tracks from Jellyfin."""
     
+    async def get_library_stats(self) -> dict:
+        """
+        Calculate statistics needed for track scoring normalization.
+
+        Returns:
+            dict: Library statistics including max_play_count and max_playlist_appearances
+        """
+        try:
+            await self._ensure_authenticated()
+            
+            headers = self._get_auth_headers()
+            
+            # Get total track count from Jellyfin
+            response = await self.client.get(
+                f"{self.base_url}/Items",
+                headers=headers,
+                params=self._items_params(
+                    IncludeItemTypes="Audio",
+                    Limit=1
+                )
+            )
+            response.raise_for_status()
+            
+            # Get total count by making a request with all items
+            total_response = await self.client.get(
+                f"{self.base_url}/Items",
+                headers=headers,
+                params=self._items_params(
+                    IncludeItemTypes="Audio",
+                    Limit=0  # No limit to get total count
+                )
+            )
+            total_response.raise_for_status()
+            
+            total_tracks = total_response.json().get("TotalRecordCount", 0)
+            
+            # For max_play_count, we'll estimate based on total tracks
+            # Assuming most popular tracks might have 10-20% of total plays
+            # This is a rough estimate since we can't get actual max play count easily
+            estimated_max_plays = max(100, int(total_tracks * 0.1))
+            
+            stats = {
+                'max_play_count': estimated_max_plays,
+                'max_playlist_appearances': 10,  # Default reasonable max
+                'total_tracks': total_tracks
+            }
+            
+            print(f"📊 Calculated library stats: {stats}")
+            return stats
+            
+        except Exception as e:
+            print(f"⚠️ Error getting library stats, using defaults: {e}")
+            # Return safe defaults if we can't get stats
+            return {
+                'max_play_count': 100,
+                'max_playlist_appearances': 10,
+                'total_tracks': 0
+            }
+    
     async def get_tracks_by_artist(
         self, 
         artist_id: str, 

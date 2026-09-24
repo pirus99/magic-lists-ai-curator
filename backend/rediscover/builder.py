@@ -176,7 +176,7 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager) -
 
             track_ids = [track["id"] for track in tracks]
             comment_to_use = ai_description if (ai_description and ai_curated) else "Re-Discover Weekly v2.0 - Automatically refreshed"
-            await nav_client.update_playlist(
+            await server_client.update_playlist(
                 playlist_id=scheduled_playlist.navidrome_playlist_id,
                 track_ids=track_ids,
                 comment=comment_to_use,
