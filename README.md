@@ -62,7 +62,7 @@ Upcoming features include:
        # ... your existing Navidrome or Jellyfin config ...
      
      magiclists:
-       image: pirus999/magic-lists-for-navidrome:latest
+       image: pirus999/magic-lists-ai-curator:latest
        container_name: magiclists
        ports:
          - "4545:8000"
@@ -106,7 +106,7 @@ Use your public Navidrome URL (e.g., https://music.yourdomain.com):
       -e AI_API_KEY=your_openrouter_api_key \
       -e AI_MODEL=dots-studio/dots-3-note-preview:free \
       -v ./magiclists-data:/app/data \
-      pirus999/magic-lists-for-navidrome:latest
+      pirus999/magic-lists-ai-curator:latest
 ```
 
 ## Running Without Docker
@@ -114,8 +114,8 @@ Use this method if you prefer to run Python directly or want to contribute to de
 
 1. Clone the repository:
 ```bash
-   git clone https://github.com/pirus99/magic-lists-for-navidrome
-   cd magic-lists-for-navidrome
+   git clone https://github.com/pirus99/magic-lists-ai-curator
+   cd magic-lists-ai-curator
 ```
 2. Install dependencies:
 ```bash
