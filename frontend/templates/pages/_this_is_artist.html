@@ -29,6 +29,15 @@
             </div>
         </div>
 
+        <div class="navidrome-top-tracks-controls space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <label for="this-is-top-tracks-count" class="block text-sm text-gray-900 dark:text-gray-100 font-bold">Top Tracks per Artist</label>
+            <div class="flex items-center gap-3">
+                <input type="range" id="this-is-top-tracks-count" min="0" max="20" value="15" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600">
+                <output for="this-is-top-tracks-count" id="this-is-top-tracks-count-value" class="min-w-8 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold text-gray-900 dark:text-gray-100">15</output>
+            </div>
+            <p class="text-xs text-gray-400 dark:text-gray-500">Fetches up to this many popular songs. Set to 0 to disable.</p>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
                 <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Playlist Length</label>

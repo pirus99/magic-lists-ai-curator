@@ -100,6 +100,7 @@ async function openEditModal(playlistId) {
             if (thisIsArtist) thisIsArtist.textContent = settings.artist_name || settings.artist_id || 'Unknown';
             if (thisIsArtistId) thisIsArtistId.value = settings.artist_id || '';
             if (thisIsLibraryIds) thisIsLibraryIds.value = JSON.stringify(settings.library_ids || []);
+            setTopTracksFields('edit-this-is', settings);
         } else if (type === 'artist_radio') {
             if (artistRadioSection) artistRadioSection.classList.remove('hidden');
             if (artistRadioSource) artistRadioSource.classList.remove('hidden');
@@ -301,6 +302,7 @@ async function populateEditArtistRadioModal(settings) {
     set('edit-artist-radio-min-bitdepth', settings.min_bit_depth);
     set('edit-artist-radio-album-cap', settings.max_tracks_per_album ?? 4);
     set('edit-artist-radio-artist-cap', settings.max_tracks_per_artist ?? 8);
+    setTopTracksFields('edit-artist-radio', settings);
     const enabled = document.getElementById('edit-artist-radio-listenbrainz-enabled');
     const refetch = document.getElementById('edit-artist-radio-refetch');
     const recommendedField = document.getElementById('edit-artist-radio-recommended-artists-field');
@@ -355,6 +357,24 @@ async function populateEditArtistRadioModal(settings) {
     }
 }
 
+function topTracksPayloadFrom(prefix) {
+    const input = document.getElementById(`${prefix}-top-tracks-count`);
+    const maxCount = Number(input?.max) || 10;
+    const count = Math.max(0, Math.min(maxCount, Number(input?.value) || 0));
+    return { top_tracks_enabled: count > 0, top_tracks_count: count };
+}
+
+function setTopTracksFields(prefix, settings = {}) {
+    const input = document.getElementById(`${prefix}-top-tracks-count`);
+    const output = document.getElementById(`${prefix}-top-tracks-count-value`);
+    if (!input) return;
+    const maxCount = Number(input.max) || 10;
+    const count = Math.max(0, Math.min(maxCount, Number(settings.top_tracks_count) || 0));
+    input.value = String(count);
+    if (output) output.textContent = String(count);
+    input.dispatchEvent(new Event('input'));
+}
+
 // Collect the modal fields into a curation_settings object
 function collectEditSettings() {
     const type = document.getElementById('edit-modal-type-value').value || document.getElementById('edit-modal-type').textContent;
@@ -398,6 +418,7 @@ function collectEditSettings() {
         curation_settings.artist_id = document.getElementById('edit-this-is-artist-id').value;
         curation_settings.artist_name = document.getElementById('edit-this-is-artist').textContent;
         curation_settings.library_ids = JSON.parse(document.getElementById('edit-this-is-library-ids').value || '[]');
+        curation_settings = { ...curation_settings, ...topTracksPayloadFrom('edit-this-is') };
     } else if (type === 'artist_radio') {
         curation_settings = {
             ...curation_settings,
@@ -423,7 +444,8 @@ function collectEditSettings() {
             min_format: document.getElementById('edit-artist-radio-min-format').value || null,
             min_bitrate: document.getElementById('edit-artist-radio-min-format').value === 'flac' ? null : parseIntOrNull(document.getElementById('edit-artist-radio-min-bitrate').value),
             min_bit_depth: document.getElementById('edit-artist-radio-min-format').value === 'flac' ? parseIntOrNull(document.getElementById('edit-artist-radio-min-bitdepth').value) : null,
-            library_ids: JSON.parse(document.getElementById('edit-artist-radio-library-ids').value || '[]')
+            library_ids: JSON.parse(document.getElementById('edit-artist-radio-library-ids').value || '[]'),
+            ...topTracksPayloadFrom('edit-artist-radio')
         };
     } else {
         curation_settings.library_ids = JSON.parse(document.getElementById('edit-rediscover-library-ids').value || '[]');

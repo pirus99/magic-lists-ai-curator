@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -17,6 +17,8 @@ class CreatePlaylistRequest(BaseModel):
     refresh_frequency: str = "none"  # "none", "daily", "weekly", "monthly"
     playlist_length: int = 25  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
+    top_tracks_enabled: bool = False
+    top_tracks_count: int = Field(default=0, ge=0, le=20)
 
 class ArtistRadioRecommendationRequest(BaseModel):
     """Request schema for fetching ListenBrainz recommendations."""
@@ -49,6 +51,8 @@ class ArtistRadioRequest(BaseModel):
     min_bitrate: Optional[int] = None
     min_format: Optional[str] = None
     min_bit_depth: Optional[int] = None
+    top_tracks_enabled: bool = False
+    top_tracks_count: int = Field(default=0, ge=0, le=10)
 
 class CreateGenrePlaylistRequest(BaseModel):
     """Request schema for creating a genre mix playlist"""

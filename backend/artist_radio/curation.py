@@ -16,6 +16,7 @@ def filter_radio_tracks(
     min_bitrate: Optional[int] = None,
     min_format: Optional[str] = None,
     min_bit_depth: Optional[int] = None,
+    protected_track_ids: Optional[set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Apply Artist Radio year, quality, and diversity rules to local tracks."""
     result: List[Dict[str, Any]] = []
@@ -48,10 +49,13 @@ def filter_radio_tracks(
 
         album = str(track.get("album") or "").strip()
         artist = str(track.get("artist") or "").strip()
-        if max_tracks_per_album > 0 and album and album_counts.get(album, 0) >= max_tracks_per_album:
-            continue
-        if max_tracks_per_artist > 0 and artist and artist_counts.get(artist, 0) >= max_tracks_per_artist:
-            continue
+        track_id = track.get("id")
+        is_protected = track_id in (protected_track_ids or set())
+        if not is_protected:
+            if max_tracks_per_album > 0 and album and album_counts.get(album, 0) >= max_tracks_per_album:
+                continue
+            if max_tracks_per_artist > 0 and artist and artist_counts.get(artist, 0) >= max_tracks_per_artist:
+                continue
         result.append(track)
         if album:
             album_counts[album] = album_counts.get(album, 0) + 1

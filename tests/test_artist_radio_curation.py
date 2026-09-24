@@ -29,3 +29,22 @@ def test_filter_radio_tracks_keeps_unknown_years_without_range():
     tracks = [{"id": "1", "year": None, "album": "A", "artist": "One"}]
 
     assert filter_radio_tracks(tracks, None, None, 0, 0) == tracks
+
+
+def test_filter_radio_tracks_protects_top_tracks_from_caps():
+    tracks = [
+        {"id": "normal", "year": 2020, "album": "A", "artist": "One"},
+        {"id": "top-1", "year": 2020, "album": "A", "artist": "One"},
+        {"id": "top-2", "year": 2020, "album": "A", "artist": "One"},
+    ]
+
+    result = filter_radio_tracks(
+        tracks,
+        None,
+        None,
+        1,
+        2,
+        protected_track_ids={"top-1", "top-2"},
+    )
+
+    assert [track["id"] for track in result] == ["normal", "top-1", "top-2"]

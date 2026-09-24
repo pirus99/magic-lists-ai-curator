@@ -6,6 +6,7 @@ from ..database import DatabaseManager
 from ..core.dependencies import get_ai_client
 from ..core.server_router import get_server_client
 from ..core.playlist_builder import PlaylistTypeConfig
+from ..services.top_tracks_service import fetch_top_tracks, top_tracks_settings
 from .curation import curate_this_is
 
 
@@ -27,16 +28,37 @@ async def fetch_this_is_tracks(
     server_client = get_server_client()
 
     if playlist is not None:
-        # Refresh path: re-fetch fresh data for the saved artist.
-        artist_id = (settings or {}).get("artist_id") or playlist["artist_id"]
-        return await server_client.get_tracks_by_artist(artist_id, library_ids)
+        saved = settings or {}
+        artist_id = saved.get("artist_id") or playlist["artist_id"]
+        top_settings = top_tracks_settings(
+            saved.get("top_tracks_enabled"),
+            saved.get("top_tracks_count"),
+            max_count=20,
+        )
+    else:
+        if not request or not getattr(request, "artist_ids", None):
+            raise ValueError("At least one artist must be selected")
+        artist_id = request.artist_ids[0]
+        top_settings = top_tracks_settings(
+            getattr(request, "top_tracks_enabled", False),
+            getattr(request, "top_tracks_count", 0),
+            max_count=20,
+        )
 
-    # Creation path.
-    if not request or not getattr(request, "artist_ids", None):
-        raise ValueError("At least one artist must be selected")
-    first_artist_id = request.artist_ids[0]
-    tracks = await server_client.get_tracks_by_artist(first_artist_id, library_ids)
-    return tracks or []
+    tracks = await server_client.get_tracks_by_artist(artist_id, library_ids) or []
+    top_tracks = await fetch_top_tracks(
+        [artist_id],
+        library_ids,
+        top_settings["top_tracks_count"],
+    )
+    combined = list(tracks)
+    seen = {track.get("id") for track in combined if track.get("id")}
+    for track in top_tracks:
+        track_id = track.get("id")
+        if track_id and track_id not in seen:
+            seen.add(track_id)
+            combined.append(track)
+    return combined
 
 
 async def curate_this_is_wrapper(
@@ -125,6 +147,11 @@ def extra_this_is_settings(
     return {
         "artist_id": request.artist_ids[0],
         "artist_name": _artist_name_for(request=request, artist_name=artist_name),
+        **top_tracks_settings(
+            getattr(request, "top_tracks_enabled", False),
+            getattr(request, "top_tracks_count", 0),
+            max_count=20,
+        ),
     }
 
 
@@ -165,7 +192,11 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager) -> N
         original_length = settings.get("playlist_length") or original_playlist.get("playlist_length", 25)
         scheduler_logger.info(f"🎯 ENFORCING original playlist length: {original_length}")
 
-        tracks = await nav_client.get_tracks_by_artist(artist_id, library_ids)
+        tracks = await fetch_this_is_tracks(
+            library_ids=library_ids,
+            playlist=original_playlist,
+            settings=settings,
+        )
         if not tracks:
             scheduler_logger.warning(f"⚠️ No tracks found for artist in playlist {scheduled_playlist.navidrome_playlist_id}")
             return

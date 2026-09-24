@@ -31,6 +31,37 @@
     window.App.playlists = playlists;
 })(window);
 
+function setupNavidromeTopTracksControls(prefix) {
+    const input = document.getElementById(`${prefix}-top-tracks-count`);
+    const output = document.getElementById(`${prefix}-top-tracks-count-value`);
+    const controls = input?.closest('.navidrome-top-tracks-controls');
+    const serverIsNavidrome = document.body?.dataset.serverType === 'navidrome';
+    if (!input || !controls) return;
+    controls.classList.toggle('hidden', !serverIsNavidrome);
+    const sync = () => {
+        const maxCount = Number(input.max) || 10;
+        const count = Math.max(0, Math.min(maxCount, Number(input.value) || 0));
+        input.value = String(count);
+        if (output) output.textContent = String(count);
+        input.disabled = !serverIsNavidrome;
+    };
+    if (!serverIsNavidrome) input.value = '0';
+    input.addEventListener('input', sync);
+    sync();
+}
+
+document.querySelectorAll('.navidrome-top-tracks-controls').forEach(control => {
+    const input = control.querySelector('input[type="range"]');
+    if (input) setupNavidromeTopTracksControls(input.id.replace(/-top-tracks-count$/, ''));
+});
+
+function topTracksPayload(prefix) {
+    const input = document.getElementById(`${prefix}-top-tracks-count`);
+    const maxCount = Number(input?.max) || 10;
+    const count = Math.max(0, Math.min(maxCount, Number(input?.value) || 0));
+    return { top_tracks_enabled: count > 0, top_tracks_count: count };
+}
+
 // Handle artist selection change
 function handleArtistSelection(e) {
     selectedArtistId = e.target.value;
@@ -84,7 +115,8 @@ async function createArtistPlaylist() {
                 artist_ids: [selectedArtistId],
                 refresh_frequency: refreshFrequency,
                 playlist_length: parseInt(playlistLength),
-                library_ids: selectedLibraryIds
+                library_ids: selectedLibraryIds,
+                ...topTracksPayload('this-is')
             })
         });
 
@@ -620,7 +652,8 @@ async function createArtistRadioPlaylist(event) {
                 min_bit_depth: minFormat === 'flac' ? (minBitDepth ? Number(minBitDepth) : null) : null,
                 playlist_length: Number(document.querySelector('input[name="artist-radio-playlist-length"]:checked').value),
                 refresh_frequency: document.querySelector('input[name="artist-radio-refresh-frequency"]:checked').value,
-                library_ids: selectedLibraryIds
+                library_ids: selectedLibraryIds,
+                ...topTracksPayload('artist-radio')
             })
         });
         const data = await response.json();

@@ -83,6 +83,7 @@ from .genre_mix.builder import refresh_genre_playlist
 from .rediscover.builder import refresh_rediscover_playlist
 from .artist_radio.builder import refresh_artist_radio_playlist
 from .recipe_manager import recipe_manager
+from .services.top_tracks_service import top_tracks_settings
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
@@ -181,6 +182,14 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 templates = Jinja2Templates(directory="frontend/templates")
 
 
+def template_context(request: Request):
+    """Return shared template context for the active media server."""
+    return {
+        "request": request,
+        "server_type": os.getenv("SERVER_TYPE", "navidrome").lower(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
@@ -189,14 +198,14 @@ async def read_root(request: Request):
     """Serve the main HTML page"""
     if not system_check_passed:
         return RedirectResponse(url="/system-check", status_code=302)
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", template_context(request))
 
 
 # SYSTEM CHECK FEATURE - START
 @app.get("/system-check", response_class=HTMLResponse)
 async def system_check_page(request: Request):
     """Serve the system check page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", template_context(request))
 # SYSTEM CHECK FEATURE - END
 
 
@@ -384,6 +393,18 @@ async def update_playlist_settings(
         if not playlist:
             raise HTTPException(status_code=404, detail="Playlist not found")
 
+        curation_settings = dict(request.curation_settings)
+        if playlist.get("playlist_type") in ("artist_radio", "this_is"):
+            max_count = 20 if playlist.get("playlist_type") == "this_is" else 10
+            curation_settings.update(top_tracks_settings(
+                curation_settings.get("top_tracks_enabled"),
+                curation_settings.get("top_tracks_count"),
+                max_count=max_count,
+            ))
+        else:
+            curation_settings.pop("top_tracks_enabled", None)
+            curation_settings.pop("top_tracks_count", None)
+
         navidrome_playlist_id = playlist.get("navidrome_playlist_id")
         if not navidrome_playlist_id:
             raise HTTPException(status_code=400, detail="Playlist has no media server ID")
@@ -414,10 +435,10 @@ async def update_playlist_settings(
                 is_public=request.is_public if request.is_public is not None else playlist.get("is_public"),
             )
 
-        new_length = request.curation_settings.get("playlist_length")
+        new_length = curation_settings.get("playlist_length")
         await db.update_playlist_settings(
             playlist_id=playlist_id,
-            curation_settings=request.curation_settings,
+            curation_settings=curation_settings,
             playlist_length=new_length if new_length is not None else None
         )
 
@@ -647,7 +668,7 @@ async def spa_router(request: Request, path: str):
     if path in spa_paths:
         if not system_check_passed:
             return RedirectResponse(url="/system-check", status_code=302)
-        return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse("index.html", template_context(request))
     return RedirectResponse(url="/", status_code=302)
 
 

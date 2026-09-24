@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from ..core.playlist_builder import PlaylistTypeConfig
 from ..core.server_router import get_server_client
+from ..services.top_tracks_service import fetch_top_tracks, top_tracks_settings
 from .curation import curate_radio, filter_radio_tracks
 
 
@@ -22,6 +23,7 @@ async def fetch_radio_tracks(
         min_bitrate = request.min_bitrate
         min_format = request.min_format
         min_bit_depth = request.min_bit_depth
+        top_settings = top_tracks_settings(request.top_tracks_enabled, request.top_tracks_count)
     else:
         saved = settings or {}
         source_id = saved.get("artist_id") or playlist["artist_id"]
@@ -31,15 +33,36 @@ async def fetch_radio_tracks(
         min_bitrate = saved.get("min_bitrate")
         min_format = saved.get("min_format")
         min_bit_depth = saved.get("min_bit_depth")
+        top_settings = top_tracks_settings(
+            saved.get("top_tracks_enabled"),
+            saved.get("top_tracks_count"),
+        )
 
     client = get_server_client()
     tracks: List[Dict[str, Any]] = []
     seen = set()
-    for artist_id in dict.fromkeys(artist_ids):
+    unique_artist_ids = list(dict.fromkeys(artist_ids))
+    for artist_id in unique_artist_ids:
         for track in await client.get_tracks_by_artist(artist_id, library_ids) or []:
             if track.get("id") not in seen:
                 seen.add(track["id"])
                 tracks.append(track)
+
+    top_tracks = await fetch_top_tracks(
+        unique_artist_ids,
+        library_ids,
+        top_settings["top_tracks_count"],
+    )
+    protected_track_ids = set()
+    for track in top_tracks:
+        track_id = track.get("id")
+        if not track_id:
+            continue
+        protected_track_ids.add(track_id)
+        if track_id not in seen:
+            seen.add(track_id)
+            tracks.append(track)
+
     if request is not None and not request.diversity_enabled:
         album_cap = artist_cap = 0
     elif request is None and not saved.get("diversity_enabled", True):
@@ -47,6 +70,7 @@ async def fetch_radio_tracks(
     return filter_radio_tracks(
         tracks, year_start, year_end, album_cap, artist_cap,
         min_bitrate, min_format, min_bit_depth,
+        protected_track_ids=protected_track_ids,
     )
 
 
@@ -90,6 +114,7 @@ def extra_radio_settings(request: Any = None, artist_name: Optional[str] = None,
         "min_bitrate": request.min_bitrate,
         "min_format": request.min_format,
         "min_bit_depth": request.min_bit_depth,
+        **top_tracks_settings(request.top_tracks_enabled, request.top_tracks_count),
     }
 
 

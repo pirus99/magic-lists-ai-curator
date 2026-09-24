@@ -159,6 +159,68 @@ class _TracksMixin:
             raise Exception(f"Unexpected error fetching tracks for artist {artist_id}: {e}")
 
 
+    async def get_top_songs_by_artist(
+        self,
+        artist_name: str,
+        count: int,
+        library_ids: Union[List[str], None] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch an artist's most popular songs from Subsonic getTopSongs."""
+        if count <= 0:
+            return []
+
+        try:
+            await self._ensure_authenticated()
+            params = self._get_subsonic_params()
+            params["artist"] = artist_name
+            if library_ids:
+                params["musicFolderId"] = library_ids[0]
+            response = await self.client.get(
+                f"{self.base_url}/rest/getTopSongs.view",
+                params=params,
+            )
+            response.raise_for_status()
+            data = response.json()
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Subsonic API error: {error.get('message', 'Unknown error')}")
+
+            songs = subsonic_response.get("topSongs", {}).get("song", [])
+            if not isinstance(songs, list):
+                songs = [songs] if songs else []
+            tracks = []
+            for song in songs[:count]:
+                if not isinstance(song, dict):
+                    continue
+                raw_genres = song.get("genres", song.get("genre"))
+                tracks.append({
+                    "id": song.get("id"),
+                    "title": song.get("title"),
+                    "artist": song.get("artist") or artist_name,
+                    "album": song.get("album"),
+                    "year": song.get("year"),
+                    "play_count": song.get("playCount", 0),
+                    "starred": song.get("starred") is not None,
+                    "rating": song.get("userRating", 0),
+                    "format": song.get("suffix"),
+                    "bit_rate": song.get("bitRate", 0),
+                    "bit_depth": song.get("bitDepth"),
+                    "duration": song.get("duration"),
+                    "track_number": song.get("track"),
+                    "genre": song.get("genre"),
+                    "genres": _normalize_genres(raw_genres),
+                })
+            return [track for track in tracks if track.get("id")]
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error fetching top songs for artist {artist_name}: {e}")
+
+
     async def get_tracks_by_genres(self, genres: List[str], library_ids: List[str] = None) -> List[Dict[str, Any]]:
         """Fetch tracks for multiple genres using Subsonic getSongsByGenre API with pagination
 

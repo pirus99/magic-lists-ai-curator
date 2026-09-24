@@ -107,6 +107,10 @@
                         class="font-semibold text-gray-900 dark:text-gray-100"></span></p>
                 <input type="hidden" id="edit-this-is-artist-id">
                 <input type="hidden" id="edit-this-is-library-ids" value="[]">
+                <div class="navidrome-top-tracks-controls mt-4 space-y-3">
+                    <label for="edit-this-is-top-tracks-count" class="block text-sm text-gray-500 dark:text-gray-400">Top Tracks per Artist</label>
+                    <div class="flex items-center gap-3"><input type="range" id="edit-this-is-top-tracks-count" min="0" max="20" value="0" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600"><output for="edit-this-is-top-tracks-count" id="edit-this-is-top-tracks-count-value" class="min-w-8 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold">0</output></div>
+                </div>
             </div>
 
             <div id="edit-rediscover-section" class="hidden border-t border-gray-200 dark:border-gray-700 pt-4">
@@ -215,6 +219,10 @@
                 </div>
                 <div class="flex items-center"><input type="checkbox" id="edit-artist-radio-caps-enabled" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500"><label for="edit-artist-radio-caps-enabled" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use Artist & Album Diversity Limits</label></div>
                 <div id="edit-artist-radio-caps-inputs" class="grid grid-cols-2 gap-3"><div><label for="edit-artist-radio-album-cap" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per album</label><input type="number" id="edit-artist-radio-album-cap" min="0" value="4" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100"></div><div><label for="edit-artist-radio-artist-cap" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per artist</label><input type="number" id="edit-artist-radio-artist-cap" min="0" value="8" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100"></div></div>
+                <div class="navidrome-top-tracks-controls space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <label for="edit-artist-radio-top-tracks-count" class="block text-sm text-gray-500 dark:text-gray-400">Top Tracks per Selected Artist</label>
+                    <div class="flex items-center gap-3"><input type="range" id="edit-artist-radio-top-tracks-count" min="0" max="10" value="0" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600"><output for="edit-artist-radio-top-tracks-count" id="edit-artist-radio-top-tracks-count-value" class="min-w-8 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold">0</output></div>
+                </div>
                 <input type="hidden" id="edit-artist-radio-artist-id"><input type="hidden" id="edit-artist-radio-artist-name"><input type="hidden" id="edit-artist-radio-source-mbid"><input type="hidden" id="edit-artist-radio-selected-artists" value="[]"><input type="hidden" id="edit-artist-radio-manual-artists" value="[]"><input type="hidden" id="edit-artist-radio-library-ids" value="[]">
             </div>
 
