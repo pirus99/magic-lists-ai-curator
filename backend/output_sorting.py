@@ -17,6 +17,7 @@ def ensure_artist_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
     skipped_songs = []
     repositioned_songs_count = 0
     non_spaced_songs_count = 0
+    valid = False
     i = 0
     c = 0
 
@@ -69,13 +70,21 @@ def ensure_artist_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
         non_spaced_songs_count += 1
 
     if repositioned_songs_count == 0 and non_spaced_songs_count == 0:
+        valid = True
         print("✅ (Artist) All songs were spaced already correctly")
-    if repositioned_songs_count > 0:
+        return new_playlist, valid
+    if repositioned_songs_count > 0 and non_spaced_songs_count == 0:
+        valid = True
         print(f"↕️ (Artist) {repositioned_songs_count} songs repositioned")
+        return new_playlist, valid
+    if repositioned_songs_count > 0 and non_spaced_songs_count > 0:
+        print(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        return new_playlist, valid
     if non_spaced_songs_count > 0:
         print(f"⚠️ (Artist) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        return new_playlist, valid
 
-    return new_playlist
+    return new_playlist, valid
 
 def ensure_album_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
     """
@@ -96,6 +105,7 @@ def ensure_album_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
     skipped_songs = []
     repositioned_songs_count = 0
     non_spaced_songs_count = 0
+    valid = False
     i = 0
     c = 0
 
@@ -148,13 +158,49 @@ def ensure_album_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
         non_spaced_songs_count += 1
 
     if repositioned_songs_count == 0 and non_spaced_songs_count == 0:
+        valid = True
         print("✅ (Album) All songs were spaced already correctly")
-    if repositioned_songs_count > 0:
+        return new_playlist, valid
+    if repositioned_songs_count > 0 and non_spaced_songs_count == 0:
+        valid = True
         print(f"↕️ (Album) {repositioned_songs_count} songs repositioned")
+        return new_playlist, valid
+    if repositioned_songs_count > 0 and non_spaced_songs_count > 0:
+        print(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        return new_playlist, valid
     if non_spaced_songs_count > 0:
-        print(f"⚠️ (Album) {non_spaced_songs_count} songs could not be spaced due to spacing constraints") 
+        print(f"⚠️ (Album) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        return new_playlist, valid
 
-    return new_playlist
+    return new_playlist, valid
+
+def space_album(spaced_playlist: list[dict], album_spacing, runs):
+    # Ensure album spacing
+    album_valid = False
+    dex = 0
+    while not album_valid and dex < runs:
+        dex += 1
+        spaced_playlist, album_valid = ensure_album_spacing(spaced_playlist, spacing=album_spacing)
+        if not album_valid:
+            reversed_spaced_playlist, album_valid = ensure_album_spacing(spaced_playlist[::-1], spacing=album_spacing)
+            spaced_playlist = reversed_spaced_playlist[::-1]
+        if not album_valid:
+            spaced_playlist, album_valid = ensure_album_spacing(spaced_playlist, spacing=album_spacing)
+    return spaced_playlist, album_valid
+
+def space_artist(spaced_playlist: list[dict], artist_spacing, runs):
+    #Ensure artist spacing
+    artist_valid = False
+    dex = 0
+    while not artist_valid and dex < runs:
+        dex += 1
+        spaced_playlist, artist_valid = ensure_artist_spacing(spaced_playlist, spacing=artist_spacing)
+        if not artist_valid:
+            reversed_spaced_playlist, artist_valid = ensure_artist_spacing(spaced_playlist[::-1], spacing=artist_spacing)
+            spaced_playlist = reversed_spaced_playlist[::-1]
+        if not artist_valid:
+            spaced_playlist, artist_valid = ensure_artist_spacing(spaced_playlist, spacing=artist_spacing)
+    return spaced_playlist, artist_valid
 
 def space_id_track_list_by_artist_and_album(track_ids: list[int], candidate_tracks: list[dict], artist_spacing: int = 0, album_spacing: int = 0) -> list[dict]:
     """
@@ -174,6 +220,7 @@ def space_id_track_list_by_artist_and_album(track_ids: list[int], candidate_trac
     filtered_tracks = []
     added_ids = set()
     duplicate_count = 0
+    
     for track in candidate_tracks:
         if track["id"] in track_ids and track["id"] not in added_ids:
             filtered_tracks.append(track)
@@ -184,27 +231,25 @@ def space_id_track_list_by_artist_and_album(track_ids: list[int], candidate_trac
     if duplicate_count >= 1:
         print(f"⚠️ {duplicate_count} duplicate entries removed from output")
 
-    # Ensure artist spacing
+    #Define Spacing Vars
     spaced_playlist = filtered_tracks
-
-    if album_spacing > 0:
-        # Ensure album spacing
-        spaced_playlist = ensure_album_spacing(spaced_playlist, spacing=album_spacing)
-        reversed_spaced_playlist = ensure_album_spacing(spaced_playlist[::-1], spacing=album_spacing)
-        spaced_playlist = reversed_spaced_playlist[::-1]
-
-    if artist_spacing > 0:
-        #Ensure artist spacing
-        spaced_playlist = ensure_artist_spacing(spaced_playlist, spacing=artist_spacing)
-        reversed_spaced_playlist = ensure_artist_spacing(spaced_playlist[::-1], spacing=artist_spacing)
-        spaced_playlist = reversed_spaced_playlist[::-1]
+    correctly_spaced = False
 
     if artist_spacing > 0 and album_spacing > 0:
-        # Respace for both again
-        spaced_playlist = ensure_album_spacing(spaced_playlist, spacing=album_spacing)
-        reversed_spaced_playlist = ensure_artist_spacing(spaced_playlist[::-1], spacing=artist_spacing)
-        spaced_playlist = reversed_spaced_playlist[::-1]
-        spaced_playlist = ensure_album_spacing(spaced_playlist, spacing=album_spacing)
+        artist_valid = False
+        album_valid = False
+        dex = 0
+        while not correctly_spaced and dex < 25:
+            dex += 1
+            spaced_playlist, artist_valid = space_artist(spaced_playlist, artist_spacing, 1)
+            spaced_playlist, album_valid = space_album(spaced_playlist, album_spacing, 1)
+            correctly_spaced = album_valid and artist_valid
+
+    if album_spacing > 0 and artist_spacing == 0:
+        spaced_playlist, correctly_spaced = space_album(spaced_playlist, album_spacing, 10)
+
+    if artist_spacing > 0 and album_spacing == 0:
+        spaced_playlist, correctly_spaced = space_artist(spaced_playlist, artist_spacing, 10)
 
     for track in spaced_playlist:
         playlist.append(track["id"])
