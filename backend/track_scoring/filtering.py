@@ -29,13 +29,12 @@ def _format_tier(fmt: str) -> int:
     return _FORMAT_TIER.get((fmt or "").strip().lower(), 0)
 
 
-def filter_tracks_for_this_is_playlist(
+def filter_tracks_for_genre_mix_playlist(
     source_tracks: List[Dict],
     target_playlist_size: int,
     library_stats: Dict,
     playlist_type: str = "artist",
     diversity_config: Optional[Dict] = None,
-    ollama_max_tracks: Optional[int] = None,
     exploration_ratio: float = 0.0,
     high_tier_ratio: float = 0.4,
     high_tier_multiplier: float = 3.0,
@@ -57,8 +56,8 @@ def filter_tracks_for_this_is_playlist(
     payload sent to the AI model. Artist ("This Is") playlists keep the original
     score-based filtering unchanged.
     """
-    threshold_multiplier = calculate_filter_threshold(target_playlist_size, ollama_max_tracks)
-    threshold_count = ollama_max_tracks if ollama_max_tracks is not None else target_playlist_size * threshold_multiplier
+    threshold_multiplier = calculate_filter_threshold(target_playlist_size)
+    threshold_count = target_playlist_size * threshold_multiplier
 
     pre_filtered_tracks = []
     filter_stats = {"year_filtered": 0, "artist_filtered": 0, "quality_filtered": 0}
@@ -214,10 +213,7 @@ def filter_tracks_for_this_is_playlist(
         diversity_dropped = 0
 
     print(f"🎯 FILTERING DECISION:")
-    if ollama_max_tracks is not None:
-        print(f"   🎯 Ollama max tracks threshold: {threshold_count} tracks (absolute limit)")
-    else:
-        print(f"   🎯 Threshold: {threshold_count} tracks (target: {target_playlist_size} × {threshold_multiplier}x multiplier)")
+    print(f"   🎯 Threshold: {threshold_count} tracks (target: {target_playlist_size} × {threshold_multiplier}x multiplier)")
     print(f"   ✂️  Filtered {len(pre_filtered_tracks)} → {len(filtered_tracks)} tracks for LLM payload")
     print(f"   📤 Payload reduction: {((len(pre_filtered_tracks) - len(filtered_tracks)) / len(pre_filtered_tracks) * 100):.1f}%")
     if use_diverse_selection:
@@ -254,7 +250,6 @@ def filter_tracks_for_this_is_playlist(
         "diversity_dropped": diversity_dropped,
         "max_tracks_per_album": max_albums,
         "max_tracks_per_artist": max_tracks,
-        "ollama_max_tracks": ollama_max_tracks,
         "exploration_applied": use_diverse_selection,
         "exploration_ratio": exploration_ratio,
         "high_tier_ratio": high_tier_ratio,

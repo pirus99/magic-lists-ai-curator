@@ -1,13 +1,12 @@
 """Builder and refresh logic for 'Genre Mix' playlists."""
 import logging
-import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..database import DatabaseManager
 from ..core.dependencies import get_ai_client
 from ..core.server_router import get_server_client
 from ..core.playlist_builder import PlaylistTypeConfig
-from ..track_scoring import filter_tracks_for_this_is_playlist
+from ..track_scoring import filter_tracks_for_genre_mix_playlist
 from ..recipe_manager import recipe_manager
 from .curation import curate_genre_mix
 
@@ -56,10 +55,6 @@ async def apply_genre_mix_filter(
     genre_recipe = recipe_manager.get_recipe("genre_mix")
     diversity_config = genre_recipe.get("source_filtering", {})
 
-    ollama_max_tracks = None
-    if ai_client.provider.provider_type == "ollama":
-        ollama_max_tracks = int(os.getenv("OLLAMA_MAX_TRACKS", "0")) or None
-
     # Resolve caps / filters from request (creation) or settings (refresh).
     if request is not None:
         max_tracks_per_album = request.max_tracks_per_album if request.max_tracks_per_album is not None else DEFAULT_MAX_TRACKS_PER_ALBUM
@@ -80,13 +75,12 @@ async def apply_genre_mix_filter(
         min_format = (settings or {}).get("min_format")
         min_bit_depth = (settings or {}).get("min_bit_depth")
 
-    return filter_tracks_for_this_is_playlist(
+    return filter_tracks_for_genre_mix_playlist(
         source_tracks=source_tracks,
         target_playlist_size=target_playlist_size,
         library_stats=library_stats,
         playlist_type="genre",
         diversity_config=diversity_config,
-        ollama_max_tracks=ollama_max_tracks,
         exploration_ratio=diversity_config.get("exploration_ratio", 0.0),
         high_tier_ratio=diversity_config.get("high_tier_ratio", 0.4),
         high_tier_multiplier=diversity_config.get("high_tier_multiplier", 3.0),

@@ -109,6 +109,7 @@ Use your public Navidrome URL (e.g., https://music.yourdomain.com):
       pirus999/magic-lists-ai-curator:latest
 ```
 
+
 ## Running Without Docker
 Use this method if you prefer to run Python directly or want to contribute to development.
 
@@ -211,6 +212,33 @@ DESCRIPTION_AI_MODEL=llama-3.1-8b-instant
 **Note:** Without AI configuration, the app falls back to play-count based playlist generation.
 
 
+## Environment 
+
+| Section | Variable | Example / Default | What it does | Required? |
+|--------|----------|-------------------|--------------|-----------|
+| **Server selection** | `SERVER_TYPE` | `navidrome` *(or `jellyfin`)* | Chooses which music server the app talks to. | **Yes** – defaults to `navidrome`. |
+| **Navidrome settings** | `NAVIDROME_URL` | `http://navidrome:4533` | Base URL of the Navidrome instance. | Required **if** `SERVER_TYPE=navidrome`. |
+| | `NAVIDROME_USERNAME` | `your_navidrome_username` | Navidrome user name. | Required **if** Navidrome. |
+| | `NAVIDROME_PASSWORD` | `your_password` | Navidrome password (plain‑text – the container runs in a trusted environment). | Required **if** Navidrome. |
+| **Jellyfin settings** | `JELLYFIN_URL` | `http://jellyfin:8096` | Base URL of the Jellyfin instance. | Required **if** `SERVER_TYPE=jellyfin`. |
+| | `JELLYFIN_USERNAME` | `admin` | Jellyfin user name. | Required **if** Jellyfin. |
+| | `JELLYFIN_PASSWORD` | `password` | Jellyfin password. | Required **if** Jellyfin. |
+| | `JELLYFIN_API_KEY` | *(empty)* | API key for token‑based auth (optional – password auth works too). | Optional. |
+| | `JELLYFIN_VERIFY_SSL` | `true` | Verify TLS certs when using `https`. Set to `false` for self‑signed certs. | Optional. |
+| **ListenBrainz Labs (artist‑radio)** | `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint used for “artist radio” suggestions. | Fixed – leave as‑is. |
+| | `LISTENBRAINZ_TOKEN` | *(empty)* | Personal token – only needed when you hit rate‑limits. | Optional. |
+| | `LISTENBRAINZ_TIMEOUT` | `15` (seconds) | HTTP timeout for ListenBrainz calls. | Optional. |
+| **AI Provider** | `AI_PROVIDER` | `google` *(options: `openrouter`, `groq`, `google`, `ollama`)* | Which LLM service to call for playlist curation. | **Yes**. |
+| | `AI_API_KEY` | `your_api_key_here` | Provider‑specific API key (OpenRouter, Groq, Google). Not needed for Ollama. | **Yes** for all non‑Ollama providers. |
+| **LLM Model** | `AI_MODEL` | `gemini-3.5-flash` | The “heavy” model that does the actual playlist generation / reasoning. Choose a model that matches the provider you picked. | **Yes**. |
+| **Description‑only Model** | `DESCRIPTION_AI_MODEL` | `gemma-4-26b-a4b-it` | A cheaper / faster model used **only** for short description generation (e.g., “Genre Mix”, “This is a playlist” text). If left empty, `AI_MODEL` is reused. | Optional. |
+| **Ollama‑specific settings** *(ignored unless `AI_PROVIDER=ollama`)* | `OLLAMA_BASE_URL` | `http://localhost:11434/v1/chat/completions` | URL of the local Ollama server. Adjust when running inside Docker (`host.docker.internal`) or via a separate compose service. | Optional – required for Ollama. |
+| | `OLLAMA_TIMEOUT` | `180` (seconds) | HTTP request timeout for Ollama. Raise for slow CPUs or huge prompts. | Optional. |
+| | `OLLAMA_MAX_TRACKS` | `150` | Hard cap on how many tracks are sent to the LLM (prevents context‑size overflow). Leave empty for the automatic dynamic limit. | Optional. |
+| **Filesystem & persistence** | `DATABASE_PATH` | `/app/data/magiclists.db` | Where the SQLite DB lives inside the container. For Docker you normally mount a volume at `/app/data`. | Yes – defaults to the internal path. |
+| **Logging** | `LOG_LEVEL` | `INFO` *(options: `ERROR`, `INFO`, `DEBUG`)* | Verbosity of the app’s log output. | Optional. |
+| **Navidrome library filter** | `NAVIDROME_LIBRARY_ID` | *(empty)* | If you have multiple Navidrome libraries, set the ID to limit the app to one. | Optional. |
+
 
 ## System Check Page 
 
@@ -292,6 +320,8 @@ then try:
    - Make sure you have created the playlist with a version of MagicLists that allows playlist editing (>= 1.1.0).
    - Delete and recreate the playlist from scratch with a new version of MagicLists to enable editing features for the playlist.
 
+### Other Issues
+   - If you need Help and encounter Bugs or Issues open an Issue on the [Issue](https://github.com/pirus99/magic-lists-ai-curator/issues/new/choose) Tab
 
 ## API Endpoints
 

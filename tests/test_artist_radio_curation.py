@@ -43,11 +43,22 @@ def test_filter_radio_tracks_keeps_unknown_years_without_range():
     assert filter_radio_tracks(tracks, None, None, 0, 0) == tracks
 
 
+def test_filter_radio_tracks_applies_caps_in_score_order():
+    tracks = [
+        {"id": "low", "play_count": 1, "album": "A", "artist": "One"},
+        {"id": "high", "play_count": 20, "album": "A", "artist": "One"},
+    ]
+
+    result = filter_radio_tracks(tracks, None, None, 1, 8)
+
+    assert [track["id"] for track in result] == ["high"]
+
+
 def test_filter_radio_tracks_protects_top_tracks_from_caps():
     tracks = [
-        {"id": "normal", "year": 2020, "album": "A", "artist": "One"},
-        {"id": "top-1", "year": 2020, "album": "A", "artist": "One"},
-        {"id": "top-2", "year": 2020, "album": "A", "artist": "One"},
+        {"id": "normal", "play_count": 1, "year": 2020, "album": "A", "artist": "One"},
+        {"id": "top-1", "play_count": 1, "is_top_track": True, "year": 2020, "album": "A", "artist": "One"},
+        {"id": "top-2", "play_count": 1, "is_top_track": True, "year": 2020, "album": "A", "artist": "One"},
     ]
 
     result = filter_radio_tracks(
@@ -59,7 +70,7 @@ def test_filter_radio_tracks_protects_top_tracks_from_caps():
         protected_track_ids={"top-1", "top-2"},
     )
 
-    assert [track["id"] for track in result] == ["normal", "top-1", "top-2"]
+    assert {track["id"] for track in result} == {"normal", "top-1", "top-2"}
 
 
 @pytest.mark.anyio
@@ -87,4 +98,28 @@ async def test_curate_radio_uses_recipe_output_sorting(monkeypatch):
 
     assert len(track_ids) == 4
     assert len(set(track_ids)) == 4
-    assert track_ids[:2] == ["a1", "b1"]
+    by_id = {track["id"]: track for track in candidates}
+    assert by_id[track_ids[0]]["artist"] != by_id[track_ids[1]]["artist"]
+
+
+@pytest.mark.anyio
+async def test_curate_radio_fallback_scores_before_recipe_output_sorting(monkeypatch):
+    recipe = {
+        "output_sorting": {
+            "space_between_same_artist": 3,
+            "space_between_same_album": 2,
+        }
+    }
+    monkeypatch.setattr(curation.recipe_manager, "apply_recipe", lambda *args: recipe)
+    sorting_spy = lambda track_ids, tracks, artist_spacing, album_spacing: ["spaced-a1", "spaced-b1", "spaced-a2", "spaced-c1"]
+    monkeypatch.setattr(curation, "space_id_track_list_by_artist_and_album", sorting_spy)
+    candidates = [
+        {"id": "a1", "title": "A1", "artist": "Artist A", "album": "Album A", "play_count": 1},
+        {"id": "b1", "title": "B1", "artist": "Artist B", "album": "Album B", "play_count": 1},
+        {"id": "a2", "title": "A2", "artist": "Artist A", "album": "Album C", "play_count": 20},
+        {"id": "c1", "title": "C1", "artist": "Artist C", "album": "Album D", "play_count": 1},
+    ]
+
+    track_ids, _ = await curate_radio(candidates, 4)
+
+    assert track_ids == ["spaced-a1", "spaced-b1", "spaced-a2", "spaced-c1"]

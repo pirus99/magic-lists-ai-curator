@@ -16,6 +16,7 @@ from ..ai_client import (
     MAX_OVER_RETURN_FACTOR,
 )
 from ..output_sorting import space_id_track_list_by_artist_and_album
+from ..services.candidate_limiter import limit_candidates_for_ai
 from ..services.track_scoring_service import calculate_track_score
 
 
@@ -41,6 +42,7 @@ async def curate_this_is(
         return track_ids
 
     try:
+        ai_candidate_tracks = candidate_tracks
         shuffled_tracks = candidate_tracks.copy()
         random.shuffle(shuffled_tracks)
 
@@ -64,6 +66,15 @@ async def curate_this_is(
 
         print(f"🍳 Applying recipe for {artist_name} ({num_tracks} tracks)")
         final_recipe = recipe_manager.apply_recipe("this_is", recipe_inputs, include_description)
+        ai_candidate_tracks = limit_candidates_for_ai(
+            candidate_tracks,
+            final_recipe,
+            ai_client,
+        )
+        shuffled_tracks = ai_candidate_tracks.copy()
+        random.shuffle(shuffled_tracks)
+        shuffled_track_count = len(shuffled_tracks)
+        print(f"🎵 Preparing {shuffled_track_count} tracks for AI curation")
 
         if "llm_config" in final_recipe:
             llm_config = final_recipe.get("llm_config", {})
@@ -142,7 +153,7 @@ async def curate_this_is(
             valid_indices = [idx for idx in track_ids if 0 <= idx < len(track_id_map)]
             mapped_track_ids = [track_id_map[idx] for idx in valid_indices]
             final_selection = space_id_track_list_by_artist_and_album(
-                mapped_track_ids, candidate_tracks, artist_spacing=0, album_spacing=album_spacing
+                mapped_track_ids, ai_candidate_tracks, artist_spacing=0, album_spacing=album_spacing
             )
 
             description = ""

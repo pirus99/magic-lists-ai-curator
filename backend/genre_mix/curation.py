@@ -13,6 +13,7 @@ from ..ai_client import (
     MAX_OVER_RETURN_FACTOR,
 )
 from ..output_sorting import space_id_track_list_by_artist_and_album
+from ..services.candidate_limiter import limit_candidates_for_ai
 
 
 async def curate_genre_mix(
@@ -39,6 +40,11 @@ async def curate_genre_mix(
 
         print(f"🍳 Applying recipe for {genre_names} ({num_tracks} tracks)")
         final_recipe = recipe_manager.apply_recipe("genre_mix", recipe_inputs, include_description)
+        ai_candidate_tracks = limit_candidates_for_ai(
+            candidate_tracks,
+            final_recipe,
+            ai_client,
+        )
 
         user_content = ""
         track_id_map = []
@@ -58,7 +64,7 @@ async def curate_genre_mix(
         print(f"🤖 Using AI model: {model} (from {ai_client.provider.provider_type} provider)")
 
         indexed_tracks = []
-        for index, track in enumerate(candidate_tracks):
+        for index, track in enumerate(ai_candidate_tracks):
             track_id_map.append(track["id"])
             track_score = round(track.get("play_count", 0)) * 1.5
             liked = track.get("local_library_likes", False)
@@ -105,7 +111,7 @@ async def curate_genre_mix(
                 print(f"❌ AI returned {returned_track_count} tracks, more than {MAX_OVER_RETURN_FACTOR}x requested {num_tracks}")
                 raise ValueError(f"AI response validation failed: Too many tracks returned ({returned_track_count} vs max {max_reasonable})")
 
-            source_track_count = len(candidate_tracks)
+            source_track_count = len(ai_candidate_tracks)
             if returned_track_count > source_track_count:
                 print(f"❌ AI returned {returned_track_count} tracks but we only provided {source_track_count}")
                 raise ValueError(f"AI response validation failed: More tracks returned than provided")
@@ -117,7 +123,7 @@ async def curate_genre_mix(
             mapped_track_ids = mapped_track_ids[:num_tracks]
 
             final_selection = space_id_track_list_by_artist_and_album(
-                mapped_track_ids, candidate_tracks, artist_spacing=artist_spacing, album_spacing=album_spacing
+                mapped_track_ids, ai_candidate_tracks, artist_spacing=artist_spacing, album_spacing=album_spacing
             )
 
             description = ""
@@ -125,7 +131,7 @@ async def curate_genre_mix(
                 description = await ai_client._generate_playlist_description(
                     description_instructions=description_instructions,
                     selected_track_ids=final_selection,
-                    candidate_tracks=candidate_tracks,
+                    candidate_tracks=ai_candidate_tracks,
                     playlist_context=f"Genre Mix: {genre_names}",
                     llm_config=description_llm_config,
                 )

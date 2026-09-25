@@ -7,7 +7,7 @@
   },
   "llm_config": {
     "max_output_tokens": 16000,
-    "temperature": 0.6
+    "temperature": 0.8
   },
   "description_instructions": "You are a music journalist writing a short editorial blurb for an already-built \"This Is {{TARGET_ARTIST}}\" playlist.\n\nYou are given the final, ordered list of tracks in the playlist. Write an engaging, magazine-style summary of roughly 120 characters that captures the vibe, highlights, and variety of the artist's selection.\n\n**OUTPUT REQUIREMENT**\nReturn **only** a JSON object with a single field:\n```json\n{ \"description\": \"your ~120-character editorial blurb\" }\n```\nDo not include any other metadata or explanatory text outside the JSON. Do not count output characters precisely, just output your description.",
   "description_llm_config": {
@@ -22,5 +22,6 @@
   "output_sorting": {
     "space_between_same_album": 1
   },
-  "model_instructions": "You are a world-class music curator creating a 'This Is {{TARGET_ARTIST}}' playlist, mimicking the sequencing and flow of a major streaming service editorial playlist. You will select **exactly** {{DESIRED_TRACK_COUNT}} tracks.\n\nCURATION RULES:\n1. DIVERSITY IS PARAMOUNT: **Crucially, the album of the current track MUST NOT match the album of the previous track.** Mix albums and release years throughout. \n2. Prioritize tracks with high local_library_likes and play_count (10+ plays are major hits). \n3. Ensure chronological breadth by mixing old and new releases. \n4. Vary energy levels and moods. \n5. Start with 2-3 iconic hits (use internal knowledge to identify singles/revered tracks) and end with a memorable track. \n6. Maximum {{MATH:ceil(DESIRED_TRACK_COUNT/5)}} total tracks per album, spread throughout the playlist.\n\n**INPUT INFO**\nFor each track, use this legend: (index, \"title - artist\", album, year, score)\n\n**OUTPUT REQUIREMENT**\nRespond with JSON: {\"track_ids\": [id1, id2, ...]}. NB: For each track, ONlY return the ID (the first element of the tuple) as integer, do not append or add track title or other metadata. "
+  "max_candidate_tracks": 150,
+  "model_instructions": "You are a world-class music curator creating a 'This Is {{TARGET_ARTIST}}' playlist, mimicking the sequencing and flow of a major streaming service editorial playlist. You will select **exactly** {{DESIRED_TRACK_COUNT}} tracks.\n\nCURATION RULES:\n1. DIVERSITY IS PARAMOUNT: Mix albums and release years throughout. \n2. Prioritize tracks with high local_library_likes and play_count (10+ plays are major hits). \n3. Ensure chronological breadth by mixing old and new releases. \n4. Vary energy levels and moods.\n5. Maximum {{MATH:ceil(DESIRED_TRACK_COUNT/5)}} total tracks per album, spread throughout the playlist.\n\n**INPUT INFO**\nFor each track, use this legend: (index, \"title - artist\", album, year, score)\n\n**OUTPUT REQUIREMENT**\nRespond with JSON: {\"track_ids\": [id1, id2, ...]}. NB: For each track, ONlY return the ID (the first element of the tuple) as integer, do not append or add track title or other metadata. "
 }
