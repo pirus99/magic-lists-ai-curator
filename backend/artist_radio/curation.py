@@ -129,6 +129,11 @@ async def curate_radio(
     sorting_settings = recipe.get("output_sorting", {})
     artist_spacing = int(sorting_settings.get("space_between_same_artist", 0))
     album_spacing = int(sorting_settings.get("space_between_same_album", 0))
+    description_instructions = recipe.get("description_instructions", "")
+    description_llm_config = recipe.get(
+        "description_llm_config",
+        {"temperature": 0.7, "max_output_tokens": 500},
+    )
     limited_candidates = limit_candidates_for_ai(
         candidate_tracks,
         recipe,
@@ -157,7 +162,7 @@ async def curate_radio(
                 max_tokens=recipe.get("llm_config", {}).get("max_output_tokens", 4000),
                 temperature=recipe.get("llm_config", {}).get("temperature", 0.6),
             )
-            indices, description = parse_ai_track_response(content)
+            indices, _unused_description = parse_ai_track_response(content)
             if len(indices) > int(num_tracks * MAX_OVER_RETURN_FACTOR):
                 raise ValueError("AI returned too many tracks")
             selected = [ai_candidates[index]["id"] for index in indices if 0 <= index < len(ai_candidates)]
@@ -168,7 +173,16 @@ async def curate_radio(
                     artist_spacing=artist_spacing,
                     album_spacing=album_spacing,
                 )
-                return sorted_selection[:num_tracks], description or f"Artist Radio curated from {artist_name}."
+                final_selection = sorted_selection[:num_tracks]
+                description = await _generate_radio_description(
+                    ai_client,
+                    description_instructions=description_instructions,
+                    selected_track_ids=final_selection,
+                    candidate_tracks=ai_candidates,
+                    artist_name=artist_name,
+                    llm_config=description_llm_config,
+                )
+                return final_selection, description
     except Exception:
         pass
 
@@ -188,6 +202,39 @@ async def curate_radio(
         sorted_fallback[:num_tracks],
         "Artist Radio fallback selection based on local track scores.",
     )
+
+
+async def _generate_radio_description(
+    ai_client,
+    description_instructions: str,
+    selected_track_ids: List[str],
+    candidate_tracks: List[Dict[str, Any]],
+    artist_name: str,
+    llm_config: Dict[str, Any],
+) -> str:
+    """Generate an editorial description for the finished Artist Radio playlist.
+
+    Mirrors the two-phase approach used by ``this_is`` and ``genre_mix``: the
+    shortened track list is sent to a separate description model. Any failure
+    yields the algorithmic fallback text instead of blocking playlist creation.
+    """
+    playlist_context = f"Artist Radio: {artist_name}"
+    fallback_description = f"Artist Radio curated from {artist_name}."
+
+    if ai_client is None or getattr(ai_client, "description_provider", None) is None:
+        return fallback_description
+
+    try:
+        return await ai_client._generate_playlist_description(
+            description_instructions=description_instructions,
+            selected_track_ids=selected_track_ids[:20],
+            candidate_tracks=candidate_tracks,
+            playlist_context=playlist_context,
+            llm_config=llm_config,
+        )
+    except Exception as exc:
+        print(f"⚠️  Artist Radio description generation failed: {exc}")
+        return fallback_description
 
 
 def _build_ai_candidate_order(candidate_tracks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
