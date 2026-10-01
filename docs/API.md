@@ -500,7 +500,12 @@ List all available recipe versions and their metadata. No parameters.
 
 ### `GET /api/recipes/validate`
 
-Validate every recipe in the registry and report errors. No parameters.
+Validate every recipe in the registry and report errors. Checks required fields
+(`recipe_id`, `name`, `llm_config`, and a selection prompt), `user_parameters` token syntax,
+prompt placeholder resolvability, `{{MATH:…}}` expressions, and the optional
+`description_llm_config` / `output_sorting` / `source_filtering` / `max_candidate_tracks`
+blocks. Recipes using the parameterized `inputs` format are validated against that shape instead.
+No parameters.
 
 **Response**
 
@@ -508,8 +513,9 @@ Validate every recipe in the registry and report errors. No parameters.
 {
   "this_is":       { "recipe_file": "this_is_v2.json", "valid": true,  "errors": [] },
   "genre_mix":     { "recipe_file": "genre_mix_v2.json", "valid": true, "errors": [] },
-  "artist_radio":  { "recipe_file": "artist_radio_v1.json", "valid": false, "errors": ["…"] },
-  "rediscover_phase1": { "recipe_file": "re_discover_phase1_v2.json", "valid": true, "errors": [] }
+  "artist_radio":  { "recipe_file": "artist_radio_v1.json", "valid": true,  "errors": [] },
+  "re_discover":   { "recipe_file": "re_discover_phase2_v2.json", "valid": true, "errors": [] },
+  "re_discover_phase1_v2": { "recipe_file": "re_discover_phase1_v2.json", "valid": true, "errors": [] }
 }
 ```
 

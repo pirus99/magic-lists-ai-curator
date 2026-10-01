@@ -1,7 +1,16 @@
 import json
+import math
 import os
+import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
+
+# Math functions allowed inside recipe {{MATH:...}} expressions.
+_SAFE_MATH_NAMES = {
+    "abs": abs, "round": round, "min": min, "max": max,
+    "ceil": math.ceil, "floor": math.floor,
+    "pow": pow, "sqrt": math.sqrt,
+}
 
 class RecipeManager:
     """Manages playlist generation recipes and their application"""
@@ -240,50 +249,187 @@ class RecipeManager:
         
         return recipes_info
     
+    # Placeholders filled by RecipeManager/apply_recipe at request time and therefore
+    # not expected to be declared in a recipe's "user_parameters" block.
+    RUNTIME_PLACEHOLDERS = {
+        "TARGET_ARTIST",
+        "TARGET_GENRE",
+        "ARTISTS",
+        "DESIRED_TRACK_COUNT",
+        "CANDIDATE_TRACKS_JSON",
+        "ANALYSIS_SUMMARY",
+    }
+
     def validate_recipe(self, recipe_filename: str) -> List[str]:
         """Validate a recipe file and return any errors"""
         errors = []
-        
+
         try:
             recipe = self._load_recipe(recipe_filename)
-            
-            # Check required fields
-            required_fields = ["version", "description", "inputs", "strategy_notes"]
-            for field in required_fields:
-                if field not in recipe:
-                    errors.append(f"Missing required field: {field}")
-            
-            # Check that inputs is a list
-            if "inputs" in recipe and not isinstance(recipe["inputs"], list):
-                errors.append("'inputs' must be a list")
-            
-            # Check prompt template if present
-            if recipe.get("prompt_template"):
-                # Try to identify placeholders in the template
-                import re
-                placeholders = re.findall(r'\{(\w+)\}', recipe["prompt_template"])
-                inputs = recipe.get("inputs", [])
-                
-                # Check if all placeholders have corresponding inputs (allowing for some flexibility)
-                for placeholder in placeholders:
-                    if placeholder not in inputs and placeholder not in ["tracks_data", "num_tracks"]:
+        except Exception as e:
+            return [f"Failed to load recipe: {e}"]
+
+        if not isinstance(recipe, dict):
+            return ["Recipe must be a JSON object"]
+
+        if "user_parameters" in recipe or "llm_config" in recipe:
+            errors.extend(self._validate_current_format(recipe))
+        else:
+            errors.extend(self._validate_parameterized_format(recipe))
+
+        return errors
+
+    def _validate_llm_config(self, recipe: Dict[str, Any], key: str, errors: List[str]) -> None:
+        """Validate an LLM config block (max_output_tokens / temperature)"""
+        config = recipe.get(key)
+        if config is None:
+            return
+
+        if not isinstance(config, dict):
+            errors.append(f"'{key}' must be an object")
+            return
+
+        if "temperature" in config:
+            temp = config["temperature"]
+            if isinstance(temp, bool) or not isinstance(temp, (int, float)) or temp < 0 or temp > 2:
+                errors.append(f"'{key}.temperature' must be a number between 0 and 2")
+
+        if "max_output_tokens" in config:
+            tokens = config["max_output_tokens"]
+            if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens <= 0:
+                errors.append(f"'{key}.max_output_tokens' must be a positive integer")
+
+    def _validate_current_format(self, recipe: Dict[str, Any]) -> List[str]:
+        """Validate a recipe in the current format (user_parameters + {{PLACEHOLDER}} prompts)"""
+        errors = []
+
+        # Required metadata
+        for field in ("recipe_id", "name"):
+            if not recipe.get(field):
+                errors.append(f"Missing required field: {field}")
+
+        # At least one selection prompt is required
+        has_selection = any(recipe.get(f) for f in ("model_instructions", "selection_instructions"))
+        if not has_selection:
+            errors.append("Missing required field: model_instructions")
+
+        # user_parameters must be a flat name -> {{PLACEHOLDER}} mapping
+        declared_placeholders = set()
+        user_parameters = recipe.get("user_parameters", {})
+        if not isinstance(user_parameters, dict):
+            errors.append("'user_parameters' must be an object")
+        else:
+            for name, value in user_parameters.items():
+                if not isinstance(value, str) or not re.fullmatch(r'\{\{\s*\w+\s*\}\}', value.strip()):
+                    errors.append(f"'user_parameters.{name}' must be a single {{{{PLACEHOLDER}}}} token")
+                    continue
+                declared_placeholders.add(value.strip()[2:-2].strip())
+
+        # Every prompt must be a non-empty string
+        for field in ("model_instructions", "selection_instructions", "description_instructions"):
+            if field in recipe and not isinstance(recipe[field], str):
+                errors.append(f"'{field}' must be a string")
+
+        # Every placeholder used in a prompt must be resolvable
+        known = declared_placeholders | self.RUNTIME_PLACEHOLDERS
+        for field in ("model_instructions", "selection_instructions", "description_instructions"):
+            prompt = recipe.get(field)
+            if not isinstance(prompt, str):
+                continue
+            for token in re.findall(r'\{\{(MATH:)?\s*([A-Za-z_]\w*)\s*\}\}', prompt):
+                is_math, name = token
+                if is_math:
+                    continue
+                if name not in known:
+                    errors.append(f"Placeholder '{{{{{name}}}}}' in {field} is not provided by user_parameters")
+
+        # Math expressions must be evaluable
+        for field in ("model_instructions", "selection_instructions", "description_instructions"):
+            prompt = recipe.get(field)
+            if not isinstance(prompt, str):
+                continue
+            for expression in re.findall(r'\{\{MATH:([^}]+)\}\}', prompt):
+                candidate = expression.replace("DESIRED_TRACK_COUNT", "25")
+                try:
+                    result = eval(candidate, {"__builtins__": {}, **_SAFE_MATH_NAMES}, {})
+                except Exception:
+                    errors.append(f"Invalid math expression in {field}: {expression}")
+                    continue
+                if not isinstance(result, (int, float)):
+                    errors.append(f"Math expression in {field} did not produce a number: {expression}")
+
+        # LLM configs
+        self._validate_llm_config(recipe, "llm_config", errors)
+        self._validate_llm_config(recipe, "description_llm_config", errors)
+
+        if "llm_config" not in recipe:
+            errors.append("Missing required field: llm_config")
+
+        # Optional numeric config blocks
+        if "max_candidate_tracks" in recipe:
+            limit = recipe["max_candidate_tracks"]
+            if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+                errors.append("'max_candidate_tracks' must be a positive integer")
+
+        for key in ("output_sorting", "source_filtering"):
+            if key in recipe and not isinstance(recipe[key], dict):
+                errors.append(f"'{key}' must be an object")
+
+        if isinstance(recipe.get("output_sorting"), dict):
+            for sort_key, value in recipe["output_sorting"].items():
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    errors.append(f"'output_sorting.{sort_key}' must be a non-negative integer")
+
+        if isinstance(recipe.get("source_filtering"), dict):
+            for ratio_key in ("exploration_ratio", "high_tier_ratio"):
+                if ratio_key in recipe["source_filtering"]:
+                    ratio = recipe["source_filtering"][ratio_key]
+                    if isinstance(ratio, bool) or not isinstance(ratio, (int, float)) or ratio < 0 or ratio > 1:
+                        errors.append(f"'source_filtering.{ratio_key}' must be a number between 0 and 1")
+
+        return errors
+
+    def _validate_parameterized_format(self, recipe: Dict[str, Any]) -> List[str]:
+        """Validate a recipe that declares its parameters via an 'inputs' list"""
+        errors = []
+
+        for field in ("version", "description", "inputs", "strategy_notes"):
+            if field not in recipe:
+                errors.append(f"Missing required field: {field}")
+
+        inputs = recipe.get("inputs", [])
+        if not isinstance(inputs, list):
+            errors.append("'inputs' must be a list")
+            inputs = []
+
+        prompt_template = recipe.get("prompt_template")
+        if prompt_template is not None:
+            if not isinstance(prompt_template, str):
+                errors.append("'prompt_template' must be a string")
+            else:
+                for placeholder in re.findall(r'\{(\w+)\}', prompt_template):
+                    if placeholder not in inputs and placeholder not in ("tracks_data", "num_tracks"):
                         errors.append(f"Placeholder '{placeholder}' in prompt_template not found in inputs")
-            
-            # Validate LLM params if present
-            if recipe.get("llm_params"):
-                llm_params = recipe["llm_params"]
-                if not isinstance(llm_params, dict):
-                    errors.append("'llm_params' must be an object")
-                
-                # Check for valid temperature range
+
+        if "prompt_template_with_description" in recipe and not isinstance(
+            recipe["prompt_template_with_description"], str
+        ):
+            errors.append("'prompt_template_with_description' must be a string")
+
+        if "llm_params" in recipe:
+            llm_params = recipe["llm_params"]
+            if not isinstance(llm_params, dict):
+                errors.append("'llm_params' must be an object")
+            else:
                 if "temperature" in llm_params:
                     temp = llm_params["temperature"]
-                    if not isinstance(temp, (int, float)) or temp < 0 or temp > 2:
-                        errors.append("'temperature' must be a number between 0 and 2")
-        
-        except Exception as e:
-            errors.append(f"Failed to load recipe: {e}")
-        
+                    if isinstance(temp, bool) or not isinstance(temp, (int, float)) or temp < 0 or temp > 2:
+                        errors.append("'llm_params.temperature' must be a number between 0 and 2")
+                if "max_tokens" in llm_params:
+                    tokens = llm_params["max_tokens"]
+                    if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens <= 0:
+                        errors.append("'llm_params.max_tokens' must be a positive integer")
+
         return errors
     
     def clear_cache(self):
