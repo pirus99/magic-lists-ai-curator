@@ -54,7 +54,14 @@ class HealthCheckService:
         checks.append(artists_check)
         if artists_check["status"] == "error":
             all_passed = False
-            
+
+        # ListenBrainz Labs is only used with the Navidrome backend
+        if server_type != "jellyfin":
+            listenbrainz_check = await self._check_listenbrainz_connectivity()
+            checks.append(listenbrainz_check)
+            if listenbrainz_check["status"] == "error":
+                all_passed = False
+
         ai_check = await self._check_ai_provider()
         checks.append(ai_check)
         if ai_check["status"] == "error":
@@ -468,7 +475,77 @@ class HealthCheckService:
                 "message": f"Artists API error: {str(e)}",
                 "suggestion": "This may be a Navidrome library configuration issue. Check Navidrome logs for 'Library not found' errors."
             }
-    
+
+    async def _check_listenbrainz_connectivity(self) -> Dict[str, str]:
+        """Check that the ListenBrainz Labs API answers a real query.
+
+        The token is optional: an unauthenticated request is used when
+        LISTENBRAINZ_TOKEN is not set. Only a successful response counts as
+        success.
+        """
+        base_url = os.getenv("LISTENBRAINZ_LABS_URL", "https://labs.api.listenbrainz.org").rstrip("/")
+        token = os.getenv("LISTENBRAINZ_TOKEN")
+
+        headers = {"Accept": "application/json"}
+        if token:
+            headers["Authorization"] = f"Token {token}"
+
+        # A well-known artist MBID is used so the query always returns data
+        # even without authentication.
+        params = {
+            "artist_mbids": "a74b1b7f-71a5-4011-9441-d0b5e4122711",  # Radiohead
+            "algorithm": "session_based_days_1800_session_300_contribution_3_threshold_10_limit_100_filter_True_skip_30",
+            "limit": 1,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+                response = await client.get(
+                    f"{base_url}/similar-artists/json",
+                    params=params,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            if not isinstance(data, list):
+                return {
+                    "name": "ListenBrainz API",
+                    "status": "warning",
+                    "message": "ListenBrainz returned an unexpected response format",
+                    "suggestion": "The ListenBrainz Labs API responded but the payload was not a list.",
+                }
+
+            return {
+                "name": "ListenBrainz API",
+                "status": "success",
+                "message": f"Successfully queried ListenBrainz ({len(data)} result(s))",
+                "suggestion": "",
+            }
+
+        except httpx.TimeoutException:
+            return {
+                "name": "ListenBrainz API",
+                "status": "warning",
+                "message": f"Connection to {base_url} timed out after {self.timeout} seconds",
+                "suggestion": "Check your internet connection or increase LISTENBRAINZ_TIMEOUT.",
+            }
+        except httpx.HTTPStatusError as e:
+            status = "error" if e.response.status_code in (401, 403) else "warning"
+            return {
+                "name": "ListenBrainz API",
+                "status": status,
+                "message": f"ListenBrainz returned HTTP {e.response.status_code}",
+                "suggestion": "Check LISTENBRAINZ_LABS_URL and your LISTENBRAINZ_TOKEN in your .env file.",
+            }
+        except Exception as e:
+            return {
+                "name": "ListenBrainz API",
+                "status": "warning",
+                "message": f"Could not reach ListenBrainz at {base_url}: {str(e)}",
+                "suggestion": "Check your internet connection and the LISTENBRAINZ_LABS_URL setting.",
+            }
+
     async def _check_ai_provider(self) -> Dict[str, str]:
         """Check AI provider configuration and connectivity"""
         provider_type = os.getenv("AI_PROVIDER", "openrouter")
