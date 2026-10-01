@@ -6,6 +6,7 @@ MagicLists adds the kind of curated, evolving playlists you’d expect from Spot
 
 ## What it does
 - 🎵 **This Is (Artist)** — Builds a definitive playlist for any artist in your library, combining hits, deep cuts, and featured appearances without duplicates.
+- 📻 **Artist Radio** — Automatically search for similar artists for your selected one, then create a distinctive mixed radio playlist from your selection.
 - 🎸 **Genre Mix** — Creates curated playlists from your complete genre collections, using AI to craft the perfect mix of tracks.
 - 🔄 **Re-Discover** — Rotates tracks you haven't played in a while, helping you fall back in love with your collection.
 - ⏰ **Auto-Refresh** — Keep playlists fresh with daily, weekly, or monthly updates.
@@ -36,17 +37,15 @@ _Creating a 'Genre Mix' playlist_
    - Schedule of Playlists
    - Support for Big Music Libraries
    - Editing of Playlists
- - Refresh Schedule (time accuracy and actual refresh for Genre Mix and Rediscover playlists)
  - Multi‑library support
 
 Please contribute to the project and report your testing and experience with this application on the Issues tab.
 
 ## What’s next
 Upcoming features include:
-- Multi-artist “radio” blends
-- Decade- and discovery-focused lists
+- Discovery-focused lists
+- An updated scheduling for regeneration of Playlists
 - What is on your mind? Open an issue to tell me.
-
 
 
 # Installation
@@ -225,7 +224,7 @@ DESCRIPTION_AI_MODEL=llama-3.1-8b-instant
 | | `JELLYFIN_PASSWORD` | `password` | Jellyfin password. | Required **if** Jellyfin. |
 | | `JELLYFIN_API_KEY` | *(empty)* | API key for token‑based auth (optional – password auth works too). | Optional. |
 | | `JELLYFIN_VERIFY_SSL` | `true` | Verify TLS certs when using `https`. Set to `false` for self‑signed certs. | Optional. |
-| **ListenBrainz Labs (artist‑radio)** | `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint used for “artist radio” suggestions. | Fixed – leave as‑is. |
+| **ListenBrainz Labs (artist‑radio)** | `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint used for “artist radio” suggestions. |
 | | `LISTENBRAINZ_TOKEN` | *(empty)* | Personal token – only needed when you hit rate‑limits. | Optional. |
 | | `LISTENBRAINZ_TIMEOUT` | `15` (seconds) | HTTP timeout for ListenBrainz calls. | Optional. |
 | **AI Provider** | `AI_PROVIDER` | `google` *(options: `openrouter`, `groq`, `google`, `ollama`)* | Which LLM service to call for playlist curation. | **Yes**. |
@@ -323,31 +322,11 @@ then try:
 ### Other Issues
    - If you need Help and encounter Bugs or Issues open an Issue on the [Issue](https://github.com/pirus99/magic-lists-ai-curator/issues/new/choose) Tab
 
-## API Endpoints
+## API
 
-- `GET /` - Web interface
-- `GET /system-check` - System check / health diagnostics page
-- `GET /api/artists` - List all artists from Navidrome
-- `GET /api/genres` - List all genres from Navidrome
-- `GET /api/artists-by-genre` - List artists for a given genre
-- `GET /api/music-folders` - List available music folders/libraries
-- `GET /api/health-check` - Run system health checks (returns JSON status)
-- `POST /api/create_playlist` - Create a new "This Is" playlist
-- `POST /api/create_playlist_with_description` - Create playlist with an AI-generated description
-- `POST /api/create_genre_playlist` - Create a curated genre mix playlist
-- `GET /api/rediscover-weekly` - Generate Re-Discover Weekly recommendations
-- `GET /api/rediscover-weekly-v2` - Generate Re-Discover Weekly recommendations (v2)
-- `POST /api/create-rediscover-playlist` - Create Re-Discover Weekly playlist in Navidrome
-- `POST /api/create-rediscover-playlist-v2` - Create Re-Discover Weekly playlist in Navidrome (v2)
-- `GET /api/playlists` - List all managed playlists
-- `DELETE /api/playlists/{playlist_id}` - Delete a managed playlist
-- `GET /api/recipes` - List available recipe versions
-- `GET /api/recipes/validate` - Validate recipe configurations
-- `GET /api/scheduler/status` - Check auto-refresh scheduler status
-- `POST /api/scheduler/trigger` - Manually trigger scheduled refreshes
-- `POST /api/scheduler/start` - Start the auto-refresh scheduler
-- `GET /api/ai-model-info` - Get information about the configured AI model
-- `POST /api/track-library-size` - Get the size of the track library
+MagicLists exposes a REST API for all playlist features. FastAPI also serves interactive documentation at `/docs` (Swagger UI) and `/redoc` once the app is running.
+
+📖 **See the full [API Reference](docs/API.md)** for every endpoint, with all query parameters, request body fields, defaults, and validation rules.
 
 
 ## License
