@@ -1,10 +1,45 @@
 import httpx
-from typing import List
+from typing import List, Set
 
 
 class _PlaylistsMixin:
     """Methods for managing playlists in Jellyfin."""
     
+    async def get_playlist_ids(self) -> Set[str]:
+        """Return the set of playlist IDs that currently exist on the server.
+
+        Used to reconcile Magic Lists' local database with the media server so
+        playlists deleted outside of Magic Lists can be cleaned up.
+        """
+        await self._ensure_authenticated()
+
+        headers = self._get_auth_headers()
+        # GET /Playlists requires a userId; resolve it (API-key auth has none yet).
+        user_id = await self._resolve_user_id()
+        # GET /Playlists only accepts a userId query parameter (no
+        # Recursive/IncludeItemTypes), so _items_params() is not used here.
+        params = {}
+        if user_id:
+            params["userId"] = user_id
+        response = await self.client.get(
+            f"{self.base_url}/Playlists",
+            headers=headers,
+            params=params,
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        items = data.get("Items", data) if isinstance(data, dict) else data
+        return {
+            str(item.get("Id"))
+            for item in items
+            if item.get("Id")
+        }
+
+    async def playlist_exists(self, playlist_id: str) -> bool:
+        """Return True if the given playlist still exists on the server."""
+        return str(playlist_id) in await self.get_playlist_ids()
+
     async def create_playlist(
         self, 
         name: str, 
@@ -128,6 +163,10 @@ class _PlaylistsMixin:
 
         Jellyfin 12.1 does not expose ``DELETE /Playlists/{id}``. A playlist is
         an item, so the supported generic deletion endpoint is used instead.
+
+        Deleting an already-deleted playlist is a no-op and returns True, so
+        callers can reconcile state after the user removed the playlist
+        directly in Jellyfin.
         """
         await self._ensure_authenticated()
         
@@ -136,6 +175,11 @@ class _PlaylistsMixin:
             f"{self.base_url}/Items/{playlist_id}",
             headers=headers
         )
+        
+        if response.status_code == 404:
+            # Already gone -> treat as successfully deleted.
+            return True
+        
         response.raise_for_status()
         
         return True

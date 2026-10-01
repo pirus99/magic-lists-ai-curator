@@ -377,6 +377,41 @@ All of these operate on MagicLists' internal playlist IDs (the `id` field return
 
 List all managed playlists, enriched with scheduling info and a `track_count`. No parameters.
 
+Runs a reconciliation pass first (see `POST /api/playlists/reconcile`), so playlists that were deleted directly in Navidrome/Jellyfin are omitted instead of appearing as stale entries.
+
+---
+
+### `POST /api/playlists/reconcile`
+
+Reconcile locally tracked playlists against the media server. Removes local playlist and schedule records whose media-server playlist no longer exists. No parameters.
+
+This is safe to call repeatedly and is a no-op when everything is in sync. It also runs automatically on `GET /api/playlists` and before each scheduled refresh sweep.
+
+If the media server is unreachable, **nothing is deleted** — a network failure must not drop tracking data for playlists that still exist. The response reports this via `orphaned: true`.
+
+**Response**
+
+```json
+{
+  "message": "Reconciliation complete",
+  "checked": 12,
+  "removed_ids": [41, 42],
+  "removed_names": ["Daily Mix", "This Is Radiohead"],
+  "orphaned": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `checked` | int | Number of locally tracked playlists that were inspected. |
+| `removed_ids` | int[] | MagicLists playlist IDs that were removed. |
+| `removed_names` | string[] | Names of the removed playlists. |
+| `orphaned` | bool | `true` when the media server was unreachable and nothing was reconciled. |
+
+**Errors:** `500`
+
+---
+
 ### `GET /api/playlists/{playlist_id}`
 
 Fetch a single playlist with its schedule info and saved curation settings.
@@ -397,13 +432,15 @@ Delete a playlist from both the media server and the local database.
 |------------|------|----------|-------------|
 | `playlist_id` | int | **Yes** | The MagicLists playlist ID. |
 
+**Idempotent:** if the playlist was already deleted directly in Navidrome/Jellyfin, the server-side delete is treated as successful and the local records (playlist + schedule) are still removed. This endpoint no longer fails with a "playlist not found" error in that situation.
+
 **Response**
 
 ```json
 { "message": "Playlist deleted successfully" }
 ```
 
-**Errors:** `404` (not found), `502` (media server refused the delete — the local record is left intact), `500`
+**Errors:** `404` (no such MagicLists playlist), `502` (media server refused the delete for a reason other than "already gone" — the local record is left intact), `500`
 
 ---
 

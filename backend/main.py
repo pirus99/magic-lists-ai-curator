@@ -84,6 +84,7 @@ from .rediscover.builder import refresh_rediscover_playlist
 from .artist_radio.builder import refresh_artist_radio_playlist
 from .recipe_manager import recipe_manager
 from .services.top_tracks_service import top_tracks_settings
+from .services.playlist_sync_service import reconcile_playlists_with_server
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
@@ -310,8 +311,14 @@ async def get_health_check():
 # ---------------------------------------------------------------------------
 @app.get("/api/playlists")
 async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
-    """Get all playlists with scheduling information"""
+    """Get all playlists with scheduling information.
+
+    Runs a reconciliation pass first so playlists deleted directly in
+    Navidrome/Jellyfin disappear from Magic Lists instead of showing up as
+    stale entries that can no longer be deleted.
+    """
     try:
+        await reconcile_playlists_with_server(db)
         playlists = await db.get_all_playlists_with_schedule_info()
         for playlist in playlists:
             songs = playlist.get("songs", [])
@@ -319,6 +326,23 @@ async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
         return playlists
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlists: {str(e)}")
+
+
+@app.post("/api/playlists/reconcile")
+async def reconcile_playlists(db: DatabaseManager = Depends(get_db)):
+    """Manually reconcile local playlist records against the media server.
+
+    Removes local playlists (and their schedules) whose media-server playlist
+    no longer exists. Safe to call repeatedly; it is a no-op when everything
+    is in sync.
+    """
+    try:
+        result = await reconcile_playlists_with_server(db)
+        return {"message": "Reconciliation complete", **result}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to reconcile playlists: {str(e)}"
+        )
 
 
 @app.get("/api/playlists/{playlist_id}")
@@ -337,7 +361,12 @@ async def get_playlist_detail(playlist_id: int, db: DatabaseManager = Depends(ge
 
 @app.delete("/api/playlists/{playlist_id}")
 async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
-    """Delete a playlist from the configured server and the local database."""
+    """Delete a playlist from the configured server and the local database.
+
+    Deletion is idempotent: if the playlist was already removed in
+    Navidrome/Jellyfin, the local records (playlist + schedule) are still
+    cleaned up and the request succeeds.
+    """
     try:
         playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
         if not playlist:
@@ -351,6 +380,9 @@ async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db
                 f"(ID: {navidrome_playlist_id})"
             )
             try:
+                # The clients treat an already-missing playlist as deleted and
+                # return True, so an externally deleted playlist no longer
+                # blocks removing the local records.
                 await server_client.delete_playlist(navidrome_playlist_id)
             except Exception as delete_error:
                 scheduler_logger.warning(

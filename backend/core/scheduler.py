@@ -85,6 +85,14 @@ async def refresh_scheduled_playlists() -> None:
         db = DatabaseManager(get_database_path())
         current_time = datetime.now()
 
+        # Drop local records for playlists that were deleted directly in
+        # Navidrome/Jellyfin, otherwise they linger in the UI and later fail
+        # to delete because the server-side playlist no longer exists.
+        # Imported lazily: playlist_sync_service depends on core.server_router.
+        from ..services.playlist_sync_service import reconcile_playlists_with_server
+
+        await reconcile_playlists_with_server(db)
+
         # Get playlists due for refresh (including 7-day catch-up window)
         scheduled_playlists = await db.get_scheduled_playlists_due(current_time, grace_hours=168)
 

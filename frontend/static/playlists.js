@@ -450,7 +450,7 @@ function renderPlaylists(playlists) {
 }
 
 async function deletePlaylist(playlistId, playlistName) {
-    if (!confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your Navidrome library.`)) {
+    if (!confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your media server.`)) {
         return;
     }
 
@@ -468,8 +468,9 @@ async function deletePlaylist(playlistId, playlistName) {
         loadPlaylists();
         updatePlaylistCount();
 
-        // Show success toast - note that the backend may only delete locally if Navidrome deletion fails
-        showToast('success', 'Playlist deleted from local database (check Navidrome if it still appears there)');
+        // Deletion is idempotent server-side: a playlist already removed in
+        // Navidrome/Jellyfin is simply cleaned up locally as well.
+        showToast('success', 'Playlist deleted from Magic Lists and your media server');
 
     } catch (error) {
         console.error('Error deleting playlist:', error);
