@@ -77,6 +77,21 @@ Used for **Artist Radio** similar-artist lookups.
 | `LISTENBRAINZ_TOKEN` | *(empty)* | Personal token — only needed if you hit rate limits | No |
 | `LISTENBRAINZ_TIMEOUT` | `15` (seconds) | HTTP timeout for ListenBrainz calls | No |
 
+## Last.fm
+
+Used for **artist top tracks** when `SERVER_TYPE=jellyfin` (Jellyfin has no equivalent of Navidrome's
+`getTopSongs`), and to resolve artist names to MusicBrainz IDs for the **This Is** manual artist
+fallback. Not used on Navidrome, which has a native top-tracks endpoint.
+
+| Variable | Default | Description | Required |
+|---|---|---|---|
+| `LASTFM_API_KEY` | *(empty)* | API key from a free Last.fm account. Enables top tracks on Jellyfin. Without it, top tracks are skipped and playlists fall back to play-count ordering | For Jellyfin top tracks |
+| `LASTFM_API_URL` | `https://ws.audioscrobbler.com` | API endpoint — override only for testing | No |
+| `LASTFM_TIMEOUT` | `15` (seconds) | HTTP timeout for Last.fm calls | No |
+
+Create a key at [last.fm/api/account/create](https://www.last.fm/api/account/create). Last.fm is rate
+limited to roughly 5 requests/second, so avoid setting a very high top-tracks count across many artists.
+
 ## Minimal working `.env`
 
 Navidrome with Google AI:

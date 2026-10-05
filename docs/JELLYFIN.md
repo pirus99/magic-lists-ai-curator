@@ -94,6 +94,47 @@ curl "http://localhost:4545/system-check"
 
 The Jellyfin checks verify URL reachability, authentication, and that the Artists API returns results. Open <http://localhost:4545/system-check> in a browser for a rendered view with suggestions.
 
+## Artist top tracks (Last.fm)
+
+Jellyfin has no equivalent of Navidrome's `getTopSongs` endpoint, so **Top Tracks per Artist** on the
+This Is and Artist Radio pages is powered by the [Last.fm](https://www.last.fm/api) API on Jellyfin.
+Navidrome keeps using its native endpoint — nothing changes there.
+
+To enable it:
+
+1. Create a free API account at [last.fm/api/account/create](https://www.last.fm/api/account/create).
+2. Add the key to your `.env`:
+
+   ```ini
+   SERVER_TYPE=jellyfin
+   LASTFM_API_KEY=your_lastfm_api_key
+   ```
+
+3. Confirm the **Last.fm Integration** card on `/system-check` shows *Connected*. A missing key is
+   reported as a warning and never blocks startup — playlists simply fall back to play-count ordering.
+
+Last.fm returns song titles, not Jellyfin item IDs, so MagicLists matches each top track against the
+artist's tracks already in your library using a normalized title match (accent- and
+punctuation-insensitive, ignoring suffixes such as *- Remastered*, *(feat. …)*, *- Live*). Only matched
+tracks are used, so the playlist always contains real library tracks.
+
+The active source is chosen automatically and shown next to the slider as **Native**, **Last.fm**, or
+**Off**. Query it programmatically:
+
+```bash
+curl "http://localhost:4545/api/top-tracks/strategies"
+```
+
+## Manual artist entry (This Is)
+
+If an artist is missing from Jellyfin's artist list — or is listed but has no MusicBrainz ID — the
+This Is page shows a fallback panel. Enter the artist name, and optionally the MusicBrainz ID (preferred
+because it skips name lookup). Last.fm resolves the name to a MusicBrainz ID, which is then matched
+against your library.
+
+The artist must still exist in your library, since the playlist is built from its local tracks. If it
+cannot be resolved the API returns a `404` explaining why.
+
 ## Known limitations
 
 - **Playlist generation quality** — results need more tuning than the Navidrome path.
@@ -101,6 +142,8 @@ The Jellyfin checks verify URL reachability, authentication, and that the Artist
 - **Large libraries** — very large collections may be slow; expect to raise timeouts.
 - **Playlist editing** — playlists created on newer MagicLists versions are editable; older ones need to be recreated.
 - **Multi-library** — not supported; the Artists API call isn't scoped per library.
+- **Top tracks depend on Last.fm** — without `LASTFM_API_KEY` the slider is disabled and ordering falls
+  back to play count. Last.fm is also rate limited (~5 requests/second).
 
 ## Troubleshooting
 

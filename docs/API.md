@@ -33,6 +33,7 @@ Complete reference of every HTTP endpoint exposed by MagicLists AI Curator.
 - [Page routes](#page-routes)
 - [Library & metadata](#library--metadata)
 - [This Is (artist)](#this-is-artist)
+- [Top tracks](#top-tracks)
 - [Artist Radio & ListenBrainz](#artist-radio--listenbrainz)
 - [Genre Mix](#genre-mix)
 - [Re-Discover](#re-discover)
@@ -143,13 +144,25 @@ Create an AI-curated "This Is" playlist for a single artist. The AI description 
 
 | Field | Type | Required | Default | Constraints / description |
 |-------|------|----------|---------|--------------------------|
-| `artist_ids` | list of strings | **Yes** | — | Non-empty. Only `artist_ids[0]` is used as the source artist. |
+| `artist_ids` | list of strings | **Yes**\* | `[]` | Only `artist_ids[0]` is used as the source artist. May be empty if `artist_name` or `artist_mbid` is supplied. |
 | `playlist_name` | string | No | auto-generated | Playlist title. |
 | `refresh_frequency` | string | No | `"none"` | One of `none`, `daily`, `weekly`, `monthly`. |
 | `playlist_length` | int | No | `25` | Number of tracks. |
 | `library_ids` | list of strings | No | `[]` (all) | Libraries to source tracks from. |
-| `top_tracks_enabled` | bool | No | `false` | Bias selection toward the artist's most-played tracks. |
+| `top_tracks_enabled` | bool | No | `false` | Bias selection toward the artist's most popular tracks. |
 | `top_tracks_count` | int | No | `0` | `0`–`20`. Max number of top tracks to include. |
+| `artist_name` | string | No | `null` | Manual fallback: artist name, used when the artist is missing from the library list. |
+| `artist_mbid` | string | No | `null` | Manual fallback: MusicBrainz ID. Preferred over `artist_name` because it skips the Last.fm lookup. |
+
+\* Provide either `artist_ids` or one of the fallback fields; supplying neither returns `400`.
+
+**Manual artist fallback**
+
+When `artist_ids` is empty, MagicLists resolves the artist from `artist_mbid`, or from `artist_name`
+via Last.fm (`artist.getInfo`, `autocorrect=1`). The resolved MBID is matched against library artists
+first, then the normalized name. The artist must still exist in the library, because the playlist is
+built from its local tracks. The resolved id and name are written back into the request so scheduled
+refreshes work normally.
 
 **Example**
 
@@ -157,6 +170,13 @@ Create an AI-curated "This Is" playlist for a single artist. The AI description 
 curl -X POST http://localhost:4545/api/create_playlist \
   -H "Content-Type: application/json" \
   -d '{"artist_ids": ["abc123"], "playlist_length": 30, "refresh_frequency": "weekly"}'
+```
+
+```bash
+# Artist missing from the library list, or missing a MusicBrainz ID
+curl -X POST http://localhost:4545/api/create_playlist \
+  -H "Content-Type: application/json" \
+  -d '{"artist_ids": [], "artist_name": "Radiohead", "playlist_length": 25}'
 ```
 
 **Response:** the created `Playlist` object
@@ -178,7 +198,38 @@ curl -X POST http://localhost:4545/api/create_playlist \
 }
 ```
 
-**Errors:** `400` (no artist selected), `404` (artist not found), `500`
+**Errors:** `400` (no artist selected and no fallback name), `404` (artist not found in the library and unresolvable via Last.fm), `500`
+
+---
+
+## Top tracks
+
+### `GET /api/top-tracks/strategies`
+
+Report which top-track source is active and how each strategy is labelled. No parameters.
+
+Top tracks are selected automatically: Navidrome uses its native `getTopSongs` endpoint (`native`),
+while Jellyfin resolves them through Last.fm (`lastfm`), which requires `LASTFM_API_KEY`. Without a key
+on Jellyfin the strategy is `off` and top tracks are skipped.
+
+**Response**
+
+```json
+{
+  "active": "lastfm",
+  "active_label": "Last.fm",
+  "supported": true,
+  "strategies": [
+    { "key": "native",  "label": "Native",  "active": false, "available": true },
+    { "key": "lastfm",  "label": "Last.fm", "active": true,  "available": true },
+    { "key": "hybrid",  "label": "Hybrid",  "active": false, "available": false },
+    { "key": "off",     "label": "Off",     "active": false, "available": true }
+  ]
+}
+```
+
+The labels are the short, human-readable names shown in the UI next to the top-tracks slider. Keys are
+stable and safe to persist; labels may be reworded. `hybrid` is reserved and not currently selectable.
 
 ---
 
@@ -588,6 +639,15 @@ Run the full system health check suite (environment variables, media server URL,
 ```
 
 Never returns an error status for a failed *check* — failures are reported inside the payload. Only an internal failure produces a single check with `"status": "error"`.
+
+The check list is server-type dependent:
+
+- `SERVER_TYPE=jellyfin` includes a **Last.fm API** check, reported as `warning` when `LASTFM_API_KEY`
+  is missing or the API is unreachable. It is informational: top tracks degrade to play-count ordering
+  rather than blocking playlist creation.
+- `SERVER_TYPE=navidrome` includes a **ListenBrainz API** check instead.
+
+Use `GET /api/top-tracks/strategies` to learn the active source at runtime.
 
 ---
 
