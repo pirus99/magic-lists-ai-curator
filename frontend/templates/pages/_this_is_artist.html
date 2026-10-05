@@ -29,13 +29,32 @@
             </div>
         </div>
 
-        <div class="navidrome-top-tracks-controls space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <label for="this-is-top-tracks-count" class="block text-sm text-gray-900 dark:text-gray-100 font-bold">Top Tracks per Artist</label>
+        <div class="top-tracks-controls space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center justify-between gap-2">
+                <label for="this-is-top-tracks-count" class="block text-sm text-gray-900 dark:text-gray-100 font-bold">Top Tracks per Artist</label>
+                <span class="text-xs font-semibold text-blue-600 dark:text-blue-400">Source: <span data-top-tracks-source-label>Native</span></span>
+            </div>
             <div class="flex items-center gap-3">
                 <input type="range" id="this-is-top-tracks-count" min="0" max="20" value="15" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600">
                 <output for="this-is-top-tracks-count" id="this-is-top-tracks-count-value" class="min-w-8 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold text-gray-900 dark:text-gray-100">15</output>
             </div>
-            <p class="text-xs text-gray-400 dark:text-gray-500">Fetches up to this many popular songs. Set to 0 to disable.</p>
+            <p class="text-xs text-gray-400 dark:text-gray-500" data-top-tracks-source-hint>Fetches up to this many popular songs. Set to 0 to disable.</p>
+        </div>
+
+        <div id="this-is-artist-fallback" class="space-y-3 hidden rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/30 p-4">
+            <label for="this-is-artist-name" class="block text-sm text-gray-900 dark:text-gray-100 font-bold">Artist not listed or missing a MusicBrainz ID?</label>
+            <p class="text-xs text-gray-600 dark:text-gray-400" id="this-is-artist-fallback-hint">Enter the artist name; Last.fm resolves it to a MusicBrainz ID.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label for="this-is-artist-name" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Artist name</label>
+                    <input type="text" id="this-is-artist-name" placeholder="e.g. Radiohead" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="this-is-artist-mbid" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">MusicBrainz ID <span class="font-normal text-gray-400">(optional, preferred)</span></label>
+                    <input type="text" id="this-is-artist-mbid" placeholder="e.g. a74b1b7f-71a5-4011-9441-d0b5e4122711" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-blue-500">
+                </div>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">The artist must still exist in your library — Last.fm only resolves the artist so top tracks can be found.</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
