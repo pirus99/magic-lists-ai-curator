@@ -13,7 +13,6 @@ from backend.services.lastfm_service import (
     artists_match,
     normalize_artist,
     normalize_title,
-    resolve_artist_mbid,
     resolve_top_tracks,
     top_tracks_strategy_label,
 )
@@ -27,9 +26,8 @@ def run(coro):
 class FakeLastFmClient:
     """Minimal Last.fm client stand-in returning canned top tracks."""
 
-    def __init__(self, tracks=None, info=None, configured=True, error=None):
+    def __init__(self, tracks=None, configured=True, error=None):
         self._tracks = tracks or []
-        self._info = info or {}
         self._configured = configured
         self._error = error
         self.calls = []
@@ -42,12 +40,6 @@ class FakeLastFmClient:
         if self._error:
             raise self._error
         return self._tracks[:limit]
-
-    async def get_artist_info(self, artist_name):
-        self.calls.append(("info", artist_name))
-        if self._error:
-            raise self._error
-        return self._info
 
 
 # ---------------------------------------------------------------------------
@@ -160,21 +152,89 @@ def test_resolve_top_tracks_respects_limit():
 
 
 # ---------------------------------------------------------------------------
-# Artist MBID resolution
+# MBID override plumbing
 # ---------------------------------------------------------------------------
-def test_resolve_artist_mbid_returns_mbid():
-    client = FakeLastFmClient(info={"name": "Radiohead", "mbid": "abc-123"})
-    assert run(resolve_artist_mbid("Radiohead", client=client)) == "abc-123"
+def test_resolve_top_tracks_forwards_user_mbid():
+    client = FakeLastFmClient(tracks=[{"name": "Creep", "artist": "Radiohead"}])
+    run(resolve_top_tracks("Radiohead", local_tracks(), limit=5, artist_mbid="user-mbid", client=client))
+    assert client.calls == [("top", "Radiohead", "user-mbid", 5)]
 
 
-def test_resolve_artist_mbid_returns_none_without_match():
-    client = FakeLastFmClient(info={"name": "Nobody", "mbid": None})
-    assert run(resolve_artist_mbid("Nobody", client=client)) is None
+def test_resolve_top_tracks_falls_back_to_artist_name_without_mbid():
+    client = FakeLastFmClient(tracks=[{"name": "Creep", "artist": "Radiohead"}])
+    run(resolve_top_tracks("Radiohead", local_tracks(), limit=5, client=client))
+    assert client.calls == [("top", "Radiohead", None, 5)]
 
 
-def test_resolve_artist_mbid_returns_none_on_error():
-    client = FakeLastFmClient(error=RuntimeError("boom"))
-    assert run(resolve_artist_mbid("Radiohead", client=client)) is None
+def test_jellyfin_top_tracks_prefers_user_mbid_over_library(monkeypatch):
+    """A user-supplied MBID must win over the library's own value."""
+    from backend.jellyfin import JellyfinClient
+
+    monkeypatch.setenv("SERVER_TYPE", "jellyfin")
+    monkeypatch.setenv("JELLYFIN_URL", "http://jellyfin")
+    monkeypatch.setenv("JELLYFIN_API_KEY", "key")
+
+    client = JellyfinClient()
+    client.find_artist_by_name = AsyncMock(
+        return_value={"id": "a1", "name": "Radiohead", "mbid": "library-mbid"}
+    )
+    client.get_tracks_by_artist = AsyncMock(return_value=[
+        {"id": "jf-1", "title": "Creep", "artist": "Radiohead"},
+    ])
+
+    fake = FakeLastFmClient(tracks=[{"name": "Creep", "artist": "Radiohead"}])
+
+    async def fake_resolve(artist_name, local, *, artist_mbid=None, limit=20):
+        return await resolve_top_tracks(
+            artist_name, local, artist_mbid=artist_mbid, limit=limit, client=fake
+        )
+
+    monkeypatch.setattr("backend.jellyfin.tracks.resolve_top_tracks", fake_resolve)
+
+    tracks = run(client.get_top_songs_by_artist("Radiohead", 5, artist_mbid="user-mbid"))
+    assert [t["id"] for t in tracks] == ["jf-1"]
+    assert fake.calls[0][2] == "user-mbid"
+
+
+def test_jellyfin_top_tracks_uses_library_mbid_without_override(monkeypatch):
+    from backend.jellyfin import JellyfinClient
+
+    monkeypatch.setenv("SERVER_TYPE", "jellyfin")
+    monkeypatch.setenv("JELLYFIN_URL", "http://jellyfin")
+    monkeypatch.setenv("JELLYFIN_API_KEY", "key")
+
+    client = JellyfinClient()
+    client.find_artist_by_name = AsyncMock(
+        return_value={"id": "a1", "name": "Radiohead", "mbid": "library-mbid"}
+    )
+    client.get_tracks_by_artist = AsyncMock(return_value=[
+        {"id": "jf-1", "title": "Creep", "artist": "Radiohead"},
+    ])
+
+    fake = FakeLastFmClient(tracks=[{"name": "Creep", "artist": "Radiohead"}])
+
+    async def fake_resolve(artist_name, local, *, artist_mbid=None, limit=20):
+        return await resolve_top_tracks(
+            artist_name, local, artist_mbid=artist_mbid, limit=limit, client=fake
+        )
+
+    monkeypatch.setattr("backend.jellyfin.tracks.resolve_top_tracks", fake_resolve)
+
+    run(client.get_top_songs_by_artist("Radiohead", 5))
+    assert fake.calls[0][2] == "library-mbid"
+
+
+def test_both_clients_accept_the_same_signature():
+    """Shared code passes artist_mbid; both clients must accept it."""
+    import inspect
+
+    from backend.jellyfin import JellyfinClient
+    from backend.navidrome import NavidromeClient
+
+    for cls in (NavidromeClient, JellyfinClient):
+        params = inspect.signature(cls.get_top_songs_by_artist).parameters
+        assert "artist_mbid" in params, f"{cls.__name__} is missing artist_mbid"
+        assert params["artist_mbid"].default is None
 
 
 # ---------------------------------------------------------------------------
@@ -187,18 +247,28 @@ def test_strategy_is_native_on_navidrome(monkeypatch):
     assert top_tracks_service.top_tracks_supported() is True
 
 
-def test_strategy_is_lastfm_on_jellyfin_with_key(monkeypatch):
+def test_strategy_is_lastfm_on_jellyfin_even_without_key(monkeypatch):
+    """The strategy reflects capability, so the UI can keep the control visible."""
+    monkeypatch.setenv("SERVER_TYPE", "jellyfin")
+    monkeypatch.delenv("LASTFM_API_KEY", raising=False)
+    assert top_tracks_service.top_tracks_strategy() == "lastfm"
+    assert top_tracks_service.top_tracks_supported() is True
+    # ...but it is not usable yet, which the UI surfaces as a setup prompt.
+    assert top_tracks_service.top_tracks_configured() is False
+
+
+def test_strategy_is_configured_on_jellyfin_with_key(monkeypatch):
     monkeypatch.setenv("SERVER_TYPE", "jellyfin")
     monkeypatch.setenv("LASTFM_API_KEY", "key")
     assert top_tracks_service.top_tracks_strategy() == "lastfm"
-    assert top_tracks_service.top_tracks_supported() is True
+    assert top_tracks_service.top_tracks_configured() is True
 
 
-def test_strategy_is_off_on_jellyfin_without_key(monkeypatch):
-    monkeypatch.setenv("SERVER_TYPE", "jellyfin")
+def test_navidrome_is_always_configured(monkeypatch):
+    monkeypatch.setenv("SERVER_TYPE", "navidrome")
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
-    assert top_tracks_service.top_tracks_strategy() == "off"
-    assert top_tracks_service.top_tracks_supported() is False
+    assert top_tracks_service.top_tracks_supported() is True
+    assert top_tracks_service.top_tracks_configured() is True
 
 
 def test_top_tracks_settings_preserved_for_jellyfin(monkeypatch):
@@ -210,9 +280,19 @@ def test_top_tracks_settings_preserved_for_jellyfin(monkeypatch):
     }
 
 
-def test_top_tracks_settings_disabled_when_unsupported(monkeypatch):
+def test_top_tracks_settings_preserved_without_lastfm_key(monkeypatch):
+    """Settings survive so a stored preference isn't lost while Last.fm is unconfigured."""
     monkeypatch.setenv("SERVER_TYPE", "jellyfin")
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
+    assert top_tracks_service.top_tracks_settings(True, 15, max_count=20) == {
+        "top_tracks_enabled": True,
+        "top_tracks_count": 15,
+    }
+
+
+def test_top_tracks_settings_disabled_on_unknown_server_type(monkeypatch):
+    monkeypatch.setenv("SERVER_TYPE", "something-else")
+    assert top_tracks_service.top_tracks_supported() is False
     assert top_tracks_service.top_tracks_settings(True, 15, max_count=20) == {
         "top_tracks_enabled": False,
         "top_tracks_count": 0,

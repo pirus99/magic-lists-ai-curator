@@ -80,12 +80,20 @@ Used for **Artist Radio** similar-artist lookups.
 ## Last.fm
 
 Used for **artist top tracks** when `SERVER_TYPE=jellyfin` (Jellyfin has no equivalent of Navidrome's
-`getTopSongs`), and to resolve artist names to MusicBrainz IDs for the **This Is** manual artist
-fallback. Not used on Navidrome, which has a native top-tracks endpoint.
+`getTopSongs`). Not used on Navidrome, which has a native top-tracks endpoint.
+
+Last.fm resolves artists by MusicBrainz ID. When Jellyfin's artist metadata has none, you can supply
+one yourself via the `artist_mbid` field on `POST /api/create_playlist`; the UI shows the field
+automatically in that case.
+
+Omitting the key never breaks anything: the **Top Tracks per Artist** control stays visible on This Is
+and Artist Radio, shows "Source: Last.fm" with a setup prompt, and playlist builds continue using
+play-count ordering. Check `GET /api/top-tracks/strategies` to see `supported` (capability) versus
+`configured` (usable now).
 
 | Variable | Default | Description | Required |
 |---|---|---|---|
-| `LASTFM_API_KEY` | *(empty)* | API key from a free Last.fm account. Enables top tracks on Jellyfin. Without it, top tracks are skipped and playlists fall back to play-count ordering | For Jellyfin top tracks |
+| `LASTFM_API_KEY` | *(empty)* | API key from a free Last.fm account. Required for top tracks on Jellyfin. Without it the control stays visible but prompts for setup, and playlists fall back to play-count ordering | For Jellyfin top tracks |
 | `LASTFM_API_URL` | `https://ws.audioscrobbler.com` | API endpoint — override only for testing | No |
 | `LASTFM_TIMEOUT` | `15` (seconds) | HTTP timeout for Last.fm calls | No |
 

@@ -511,10 +511,12 @@ class HealthCheckService:
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
                 response = await client.get(
                     f"{base_url}/2.0/",
+                    # Probe the exact endpoint top-track resolution uses, so a
+                    # successful check really means the feature will work.
                     params={
-                        "method": "artist.getInfo",
+                        "method": "artist.getTopTracks",
                         "artist": "Radiohead",
-                        "autocorrect": 1,
+                        "limit": 1,
                         "api_key": api_key,
                         "format": "json",
                     },
@@ -532,11 +534,13 @@ class HealthCheckService:
                     "suggestion": "Verify LASTFM_API_KEY in your .env file.",
                 }
 
-            artist = data.get("result", {}).get("artist", {})
+            tracks = data.get("result", {}).get("toptracks", {}).get("track", [])
+            if not isinstance(tracks, list):
+                tracks = [tracks] if tracks else []
             return {
                 "name": "Last.fm API",
                 "status": "success",
-                "message": f"Successfully queried Last.fm for '{artist.get('name', 'unknown')}'",
+                "message": f"Successfully queried Last.fm top tracks ({len(tracks)} result(s))",
                 "suggestion": "",
             }
 

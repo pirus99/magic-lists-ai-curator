@@ -125,40 +125,6 @@ class LastFmClient:
             })
         return tracks
 
-    async def get_artist_info(self, artist_name: str) -> Dict[str, Any]:
-        """Fetch artist metadata via ``artist.getInfo``.
-
-        Used as a name-to-MBID resolver for the 'This Is' manual artist fallback.
-        ``autocorrect=1`` lets Last.fm resolve misspellings.
-
-        Returns:
-            Dict with ``name``, ``mbid``, ``url`` and ``tags`` keys.
-        """
-        if not artist_name:
-            return {}
-
-        result = await self._call("artist.getInfo", {
-            "artist": artist_name,
-            "autocorrect": 1,
-        })
-        artist = result.get("artist", {})
-        if not isinstance(artist, dict):
-            return {}
-
-        tags = artist.get("tags", {}).get("tag", [])
-        if not isinstance(tags, list):
-            tags = [tags] if tags else []
-        return {
-            "name": artist.get("name") or artist_name,
-            "mbid": artist.get("mbid") or None,
-            "url": artist.get("url"),
-            "tags": [
-                str(tag.get("name", "")).strip()
-                for tag in tags
-                if isinstance(tag, dict) and tag.get("name")
-            ],
-        }
-
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self.client.aclose()

@@ -203,42 +203,6 @@ async def resolve_top_tracks(
     return resolved
 
 
-async def resolve_artist_mbid(
-    artist_name: str,
-    *,
-    client: Optional[LastFmClient] = None,
-) -> Optional[str]:
-    """Resolve an artist name to a MusicBrainz ID via Last.fm.
-
-    Used by the 'This Is' manual artist fallback. Returns ``None`` when Last.fm is
-    unconfigured, unreachable, or has no confident match.
-    """
-    if not artist_name:
-        return None
-
-    lastfm = client or LastFmClient()
-    if not lastfm.is_configured():
-        logger.warning("⚠️ Last.fm artist lookup skipped: LASTFM_API_KEY is not configured")
-        return None
-
-    try:
-        info = await lastfm.get_artist_info(artist_name)
-    except RuntimeError as exc:
-        logger.warning(f"⚠️ Last.fm could not resolve artist '{artist_name}': {exc}")
-        return None
-
-    mbid = info.get("mbid")
-    resolved_name = info.get("name") or artist_name
-    if not mbid:
-        logger.info(f"ℹ️ Last.fm has no MusicBrainz ID for '{artist_name}'")
-        return None
-
-    if normalize_artist(resolved_name) != normalize_artist(artist_name):
-        logger.info(f"🔁 Last.fm autocorrected '{artist_name}' to '{resolved_name}'")
-
-    return str(mbid)
-
-
 def top_tracks_strategy_label(strategy: str) -> str:
     """Return a short human-readable label for a top-track strategy key."""
     return TOP_TRACK_STRATEGY_LABELS.get(strategy, strategy)

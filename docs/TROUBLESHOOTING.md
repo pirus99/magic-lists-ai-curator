@@ -140,6 +140,37 @@ More detail: [`recipes/README.md`](../recipes/README.md) and [AI Providers](AI_P
 
 ---
 
+## Top Tracks Not Appearing (Jellyfin)
+
+The **Top Tracks per Artist** slider is always visible on This Is and Artist Radio, but the tracks
+themselves are only fetched when the source is usable.
+
+**Check the current state:**
+
+```bash
+curl "http://localhost:4545/api/top-tracks/strategies"
+```
+
+- `configured: false` on Jellyfin means `LASTFM_API_KEY` is missing. Add it to `.env` and
+  `docker compose up -d`. Until then, playlists are ordered by play count — nothing is broken.
+- Look at the **Last.fm Integration** card on `/system-check`. *Not checked* means the backend did not
+  run the probe; *Unavailable* means the key is missing or Last.fm could not be reached.
+
+**The slider is there but no tracks are being added:**
+
+- Confirm the slider is above `0` — it defaults to `15` on This Is and `3` on Artist Radio, but `0`
+  disables the feature entirely.
+- On Jellyfin, Last.fm returns song *titles*, which are matched against the artist's tracks already in
+  your library. An artist whose catalogue is sparse in your library may match very few of them; this is
+  expected, not a bug.
+- Artists with no MusicBrainz ID in Jellyfin's metadata need one supplied manually. The This Is page
+  shows a **MusicBrainz ID for Last.fm lookup** field for exactly that case — see
+  [JELLYFIN.md](JELLYFIN.md).
+- Check the logs for `⚠️ Last.fm top tracks skipped` or `⚠️ Top track enrichment failed`, which report the
+  underlying reason (unreachable API, unknown artist, or a client error).
+
+---
+
 ## Issues with Editing Playlists
 
 - Playlists are only editable if created with MagicLists **>= 1.1.0**.

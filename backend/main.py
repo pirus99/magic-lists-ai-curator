@@ -85,6 +85,7 @@ from .artist_radio.builder import refresh_artist_radio_playlist
 from .recipe_manager import recipe_manager
 from .services.top_tracks_service import (
     STRATEGY_LABELS,
+    top_tracks_configured,
     top_tracks_settings,
     top_tracks_strategy,
     top_tracks_supported,
@@ -196,7 +197,10 @@ def template_context(request: Request):
         "server_type": os.getenv("SERVER_TYPE", "navidrome").lower(),
         "top_tracks_strategy": strategy,
         "top_tracks_strategy_label": STRATEGY_LABELS.get(strategy, strategy),
+        # "supported" = the server type has a source at all (keep the UI visible);
+        # "configured" = it can actually service a request right now.
         "top_tracks_supported": top_tracks_supported(),
+        "top_tracks_configured": top_tracks_configured(),
         "lastfm_configured": bool(os.getenv("LASTFM_API_KEY")),
     }
 
@@ -298,13 +302,16 @@ async def get_top_track_strategies():
     return {
         "active": strategy,
         "active_label": STRATEGY_LABELS.get(strategy, strategy),
+        # A strategy is "supported" when the server type can use it at all and
+        # "configured" when it is usable right now (Last.fm needs an API key).
         "supported": top_tracks_supported(),
+        "configured": top_tracks_configured(),
         "strategies": [
             {
                 "key": key,
                 "label": label,
                 "active": key == strategy,
-                "available": key in ("native", "off") or key == "lastfm" and top_tracks_supported(),
+                "available": key != "hybrid" and key != "off",
             }
             for key, label in STRATEGY_LABELS.items()
         ],

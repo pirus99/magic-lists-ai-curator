@@ -138,12 +138,20 @@ class _TracksMixin:
         artist_name: str,
         count: int,
         library_ids: Union[List[str], None] = None,
+        artist_mbid: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch an artist's most popular songs, resolved via Last.fm.
 
         Jellyfin exposes no equivalent of Subsonic's ``getTopSongs``. Last.fm's
         ``artist.getTopTracks`` is used instead, and each returned title is matched
         against the artist's local tracks so results carry real Jellyfin item ids.
+
+        Args:
+            artist_name: Artist name used to locate the library artist.
+            count: Max number of top tracks to return.
+            library_ids: Optional library scope.
+            artist_mbid: MBID override for the Last.fm request. Takes precedence over
+                the library's own MBID, which is often missing from Jellyfin metadata.
 
         Degrades gracefully to an empty list when Last.fm is unconfigured, the
         artist is unknown, or the API is unreachable.
@@ -161,10 +169,12 @@ class _TracksMixin:
             print(f"⚠️ Jellyfin top tracks skipped: '{artist['name']}' has no local tracks")
             return []
 
+        # A user-supplied MBID wins; otherwise fall back to the library's, if any.
+        effective_mbid = artist_mbid or artist.get("mbid")
         top_tracks = await resolve_top_tracks(
             artist.get("name") or artist_name,
             local_tracks,
-            artist_mbid=artist.get("mbid"),
+            artist_mbid=effective_mbid,
             limit=count,
         )
 

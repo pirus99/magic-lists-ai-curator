@@ -35,6 +35,7 @@ async def fetch_this_is_tracks(
             saved.get("top_tracks_count"),
             max_count=20,
         )
+        mbid_override = saved.get("artist_mbid_override")
     else:
         if not request or not getattr(request, "artist_ids", None):
             raise ValueError("At least one artist must be selected")
@@ -44,12 +45,14 @@ async def fetch_this_is_tracks(
             getattr(request, "top_tracks_count", 0),
             max_count=20,
         )
+        mbid_override = getattr(request, "artist_mbid", None)
 
     tracks = await server_client.get_tracks_by_artist(artist_id, library_ids) or []
     top_tracks = await fetch_top_tracks(
         [artist_id],
         library_ids,
         top_settings["top_tracks_count"],
+        artist_mbids={artist_id: mbid_override} if mbid_override else None,
     )
     combined = list(tracks)
     tracks_by_id = {track.get("id"): track for track in combined if track.get("id")}
@@ -129,9 +132,6 @@ def _artist_name_for(
     if artist_name:
         return artist_name
 
-    if request is not None and getattr(request, "artist_name", None):
-        return request.artist_name
-
     if request is not None and getattr(request, "artist_ids", None):
         return request.artist_ids[0]
 
@@ -148,10 +148,10 @@ def extra_this_is_settings(
     artist_name: Optional[str] = None,
     **kwargs,
 ) -> Dict[str, Any]:
-    """Persist the artist id/name for later refreshes."""
+    """Persist the artist id/name and top-track settings for later refreshes."""
     if request is None or not getattr(request, "artist_ids", None):
         return {}
-    return {
+    settings: Dict[str, Any] = {
         "artist_id": request.artist_ids[0],
         "artist_name": _artist_name_for(request=request, artist_name=artist_name),
         **top_tracks_settings(
@@ -160,6 +160,12 @@ def extra_this_is_settings(
             max_count=20,
         ),
     }
+    # Only persist a user-supplied MBID; an empty value must not shadow the
+    # library's own MBID on refresh.
+    mbid_override = (getattr(request, "artist_mbid", None) or "").strip()
+    if mbid_override:
+        settings["artist_mbid_override"] = mbid_override
+    return settings
 
 
 # ---------------------------------------------------------------------------

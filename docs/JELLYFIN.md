@@ -100,6 +100,10 @@ Jellyfin has no equivalent of Navidrome's `getTopSongs` endpoint, so **Top Track
 This Is and Artist Radio pages is powered by the [Last.fm](https://www.last.fm/api) API on Jellyfin.
 Navidrome keeps using its native endpoint — nothing changes there.
 
+The **Top Tracks per Artist** control is always visible on This Is and Artist Radio, labelled
+**Source: Last.fm**, whether or not a key is set. Without a key it shows a setup prompt and playlist
+builds fall back to play-count ordering — nothing breaks, and the feature stays discoverable.
+
 To enable it:
 
 1. Create a free API account at [last.fm/api/account/create](https://www.last.fm/api/account/create).
@@ -110,30 +114,41 @@ To enable it:
    LASTFM_API_KEY=your_lastfm_api_key
    ```
 
-3. Confirm the **Last.fm Integration** card on `/system-check` shows *Connected*. A missing key is
-   reported as a warning and never blocks startup — playlists simply fall back to play-count ordering.
+3. Restart the container (`docker compose up -d`).
+4. Confirm the **Last.fm Integration** card on `/system-check` shows *Connected*. It probes
+   `artist.getTopTracks`, the same endpoint playlist builds use. A missing or invalid key is reported
+   as a warning and never blocks startup.
 
 Last.fm returns song titles, not Jellyfin item IDs, so MagicLists matches each top track against the
 artist's tracks already in your library using a normalized title match (accent- and
 punctuation-insensitive, ignoring suffixes such as *- Remastered*, *(feat. …)*, *- Live*). Only matched
 tracks are used, so the playlist always contains real library tracks.
 
-The active source is chosen automatically and shown next to the slider as **Native**, **Last.fm**, or
-**Off**. Query it programmatically:
+The active source is chosen automatically from the server type and shown next to the slider as
+**Native** or **Last.fm**. Query it programmatically:
 
 ```bash
 curl "http://localhost:4545/api/top-tracks/strategies"
 ```
 
-## Manual artist entry (This Is)
+`supported` tells you whether the server type has a top-track source (always `true` for Jellyfin);
+`configured` tells you whether it can service a request right now (`false` until `LASTFM_API_KEY`
+is set).
 
-If an artist is missing from Jellyfin's artist list — or is listed but has no MusicBrainz ID — the
-This Is page shows a fallback panel. Enter the artist name, and optionally the MusicBrainz ID (preferred
-because it skips name lookup). Last.fm resolves the name to a MusicBrainz ID, which is then matched
-against your library.
+## Missing MusicBrainz IDs (This Is)
 
-The artist must still exist in your library, since the playlist is built from its local tracks. If it
-cannot be resolved the API returns a `404` explaining why.
+Last.fm resolves an artist by MusicBrainz ID, and Jellyfin's artist metadata frequently has none —
+in which case top tracks can't be found for that artist.
+
+When the source is Last.fm, the top-tracks slider is above `0`, and the selected artist has no MusicBrainz
+ID, the This Is page shows a **MusicBrainz ID for Last.fm lookup** field. Enter the artist's MBID
+(found on [musicbrainz.org](https://musicbrainz.org)) and it is used for the Last.fm request only. It
+does not change which tracks are selected — those still come from the selected library artist — and it
+is stored with the playlist so scheduled refreshes keep working.
+
+The field stays hidden on Navidrome, when top tracks are switched off, and for artists that already
+have an MBID. It is shown on Jellyfin even before `LASTFM_API_KEY` is set, so you can paste the ID in
+ahead of configuring the key.
 
 ## Known limitations
 
@@ -142,8 +157,9 @@ cannot be resolved the API returns a `404` explaining why.
 - **Large libraries** — very large collections may be slow; expect to raise timeouts.
 - **Playlist editing** — playlists created on newer MagicLists versions are editable; older ones need to be recreated.
 - **Multi-library** — not supported; the Artists API call isn't scoped per library.
-- **Top tracks depend on Last.fm** — without `LASTFM_API_KEY` the slider is disabled and ordering falls
-  back to play count. Last.fm is also rate limited (~5 requests/second).
+- **Top tracks depend on Last.fm** — without `LASTFM_API_KEY` the slider stays visible but ordering
+  falls back to play count. Last.fm is also rate limited (~5 requests/second), and responses are not
+  cached, so a refresh across many artists costs one request per artist.
 
 ## Troubleshooting
 

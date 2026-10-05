@@ -104,10 +104,15 @@ async function loadArtists() {
                 const option = document.createElement('option');
                 option.value = artist.id;
                 option.textContent = artist.name;
+                // Expose the MusicBrainz ID so other modules can tell whether this
+                // artist needs a Last.fm MBID override (Jellyfin metadata often has none).
+                option.dataset.mbid = artist.mbid || '';
                 artistSelect.appendChild(option);
             });
 
             reinitHSSelect(artistSelect);
+            // The MBID is only known once options are rendered.
+            updateThisIsMbidFallback();
         }
     } catch (error) {
         console.error('Error loading artists:', error);
