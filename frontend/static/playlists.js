@@ -31,28 +31,66 @@
     window.App.playlists = playlists;
 })(window);
 
-function setupNavidromeTopTracksControls(prefix) {
+// Short labels for the top-track strategy, mirroring TOP_TRACK_STRATEGY_LABELS in
+// backend/services/lastfm_service.py. Rendered next to the count slider so the user
+// knows where their top tracks come from.
+const TOP_TRACK_STRATEGY_LABELS = {
+    native: 'Native',
+    lastfm: 'Last.fm',
+    hybrid: 'Hybrid',
+    off: 'Off',
+};
+
+function topTracksStrategy() {
+    const strategy = document.body?.dataset.topTracksStrategy || '';
+    if (strategy) return strategy;
+    // Fallback for pages rendered without the strategy in the template context.
+    return document.body?.dataset.serverType === 'navidrome' ? 'native' : 'off';
+}
+
+function topTracksSourceLabel() {
+    const strategy = topTracksStrategy();
+    return TOP_TRACK_STRATEGY_LABELS[strategy] || strategy;
+}
+
+function setupTopTracksControls(prefix) {
     const input = document.getElementById(`${prefix}-top-tracks-count`);
     const output = document.getElementById(`${prefix}-top-tracks-count-value`);
-    const controls = input?.closest('.navidrome-top-tracks-controls');
-    const serverIsNavidrome = document.body?.dataset.serverType === 'navidrome';
+    const controls = input?.closest('.top-tracks-controls');
+    const supported = topTracksStrategy() !== 'off';
     if (!input || !controls) return;
-    controls.classList.toggle('hidden', !serverIsNavidrome);
+
+    controls.classList.toggle('hidden', !supported);
+    controls.dataset.topTracksSupported = String(supported);
+
+    const label = controls.querySelector('[data-top-tracks-source-label]');
+    if (label) label.textContent = topTracksSourceLabel();
+
+    const hint = controls.querySelector('[data-top-tracks-source-hint]');
+    if (hint) {
+        hint.textContent = supported
+            ? `Popularity source: ${topTracksSourceLabel()}. Fetches up to this many popular songs. Set to 0 to disable.`
+            : 'Top tracks are unavailable for the current server configuration. Set LASTFM_API_KEY to enable them on Jellyfin.';
+    }
+
     const sync = () => {
         const maxCount = Number(input.max) || 10;
         const count = Math.max(0, Math.min(maxCount, Number(input.value) || 0));
         input.value = String(count);
         if (output) output.textContent = String(count);
-        input.disabled = !serverIsNavidrome;
+        input.disabled = !supported;
     };
-    if (!serverIsNavidrome) input.value = '0';
+    if (!supported) input.value = '0';
     input.addEventListener('input', sync);
     sync();
 }
 
-document.querySelectorAll('.navidrome-top-tracks-controls').forEach(control => {
+// Back-compat alias: the old helper name is referenced by inline page scripts.
+const setupNavidromeTopTracksControls = setupTopTracksControls;
+
+document.querySelectorAll('.top-tracks-controls').forEach(control => {
     const input = control.querySelector('input[type="range"]');
-    if (input) setupNavidromeTopTracksControls(input.id.replace(/-top-tracks-count$/, ''));
+    if (input) setupTopTracksControls(input.id.replace(/-top-tracks-count$/, ''));
 });
 
 function topTracksPayload(prefix) {
@@ -67,12 +105,59 @@ function handleArtistSelection(e) {
     selectedArtistId = e.target.value;
     const submitBtn = document.getElementById('create-artist-playlist-btn');
 
+    updateThisIsFallbackVisibility();
+
     if (selectedArtistId) {
         submitBtn.disabled = false;
     } else {
-        submitBtn.disabled = true;
+        // Allow submitting via the manual artist fallback when a name was typed.
+        submitBtn.disabled = !thisIsFallbackValues().artist_name;
     }
 }
+
+// Read the manual artist fallback inputs, if present on the page.
+function thisIsFallbackValues() {
+    return {
+        artist_name: document.getElementById('this-is-artist-name')?.value.trim() || '',
+        artist_mbid: document.getElementById('this-is-artist-mbid')?.value.trim() || '',
+    };
+}
+
+// Show the manual fallback block only when it is actually needed: either no artist
+// is selected, or the selected library artist has no MusicBrainz ID to fall back on.
+function updateThisIsFallbackVisibility() {
+    const block = document.getElementById('this-is-artist-fallback');
+    if (!block) return;
+
+    const hint = document.getElementById('this-is-artist-fallback-hint');
+    if (selectedArtistId) {
+        const artist = (window.allArtists || []).find(a => a.id === selectedArtistId);
+        const hasMbid = Boolean(artist?.mbid);
+        block.classList.toggle('hidden', hasMbid);
+        if (hint) {
+            hint.textContent = hasMbid
+                ? 'Optional: override how this artist is looked up.'
+                : `No MusicBrainz ID in the library metadata for "${artist?.name || 'this artist'}". Enter the artist name or MBID so Last.fm can resolve it.`;
+        }
+    } else {
+        block.classList.remove('hidden');
+        if (hint) {
+            hint.textContent = 'No artist selected. Enter an artist name; Last.fm resolves it to a MusicBrainz ID.';
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    ['this-is-artist-name', 'this-is-artist-mbid'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', () => {
+            const submitBtn = document.getElementById('create-artist-playlist-btn');
+            if (submitBtn && !selectedArtistId) {
+                submitBtn.disabled = !thisIsFallbackValues().artist_name;
+            }
+        });
+    });
+    updateThisIsFallbackVisibility();
+});
 
 // This Is Artist form submission
 document.getElementById('this-is-form').addEventListener('submit', function (e) {
@@ -88,8 +173,9 @@ document.getElementById('genre-mix-form').addEventListener('submit', function (e
 
 async function createArtistPlaylist() {
     const submitBtn = document.getElementById('create-artist-playlist-btn');
+    const fallback = thisIsFallbackValues();
 
-    if (!selectedArtistId) {
+    if (!selectedArtistId && !fallback.artist_name) {
         showToast('error', 'Please select an artist first');
         return;
     }
@@ -106,13 +192,21 @@ async function createArtistPlaylist() {
         const refreshFrequency = document.querySelector('input[name="artist-refresh-frequency"]:checked').value;
         const playlistLength = document.querySelector('input[name="artist-playlist-length"]:checked').value;
 
+        // When an artist is selected the id wins; otherwise fall back to the typed
+        // name / MBID, which the backend resolves via Last.fm.
+        const payload = selectedArtistId
+            ? { artist_ids: [selectedArtistId] }
+            : { artist_ids: [] };
+
         const response = await fetch('/api/create_playlist', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                artist_ids: [selectedArtistId],
+                ...payload,
+                artist_name: fallback.artist_name || null,
+                artist_mbid: fallback.artist_mbid || null,
                 refresh_frequency: refreshFrequency,
                 playlist_length: parseInt(playlistLength),
                 library_ids: selectedLibraryIds,
