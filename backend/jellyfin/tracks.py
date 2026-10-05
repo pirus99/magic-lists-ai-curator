@@ -1,5 +1,10 @@
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 from .utils import _get_quality_score
+from ..services.lastfm_service import (
+    artists_match,
+    normalize_artist,
+    resolve_top_tracks,
+)
 
 
 class _TracksMixin:
@@ -93,6 +98,86 @@ class _TracksMixin:
                 all_tracks.append(self._normalize_track(track))
         
         return self._deduplicate_tracks(all_tracks)
+
+    async def find_artist_by_name(
+        self,
+        artist_name: str,
+        library_ids: Union[List[str], str, None] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Look up a library artist by (fuzzy) name.
+
+        Jellyfin's Subsonic-compatible API is not used here because it has no
+        top-songs endpoint; this helper exists so top-track resolution can turn the
+        artist *name* used by Last.fm back into a Jellyfin artist id.
+
+        Returns:
+            The matching artist dict ({id, name, mbid, ...}), or None if not found.
+        """
+        if not artist_name:
+            return None
+
+        artists = await self.get_artists(library_ids) or []
+        target = normalize_artist(artist_name)
+        if not target:
+            return None
+
+        for artist in artists:
+            if normalize_artist(artist.get("name")) == target:
+                return artist
+
+        # Fall back to a case-insensitive substring match for partial user input.
+        for artist in artists:
+            name = normalize_artist(artist.get("name"))
+            if name and (target in name or name in target):
+                return artist
+
+        return None
+
+    async def get_top_songs_by_artist(
+        self,
+        artist_name: str,
+        count: int,
+        library_ids: Union[List[str], None] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch an artist's most popular songs, resolved via Last.fm.
+
+        Jellyfin exposes no equivalent of Subsonic's ``getTopSongs``. Last.fm's
+        ``artist.getTopTracks`` is used instead, and each returned title is matched
+        against the artist's local tracks so results carry real Jellyfin item ids.
+
+        Degrades gracefully to an empty list when Last.fm is unconfigured, the
+        artist is unknown, or the API is unreachable.
+        """
+        if count <= 0 or not artist_name:
+            return []
+
+        artist = await self.find_artist_by_name(artist_name, library_ids)
+        if not artist:
+            print(f"⚠️ Jellyfin top tracks skipped: no library artist matching '{artist_name}'")
+            return []
+
+        local_tracks = await self.get_tracks_by_artist(artist["id"], library_ids) or []
+        if not local_tracks:
+            print(f"⚠️ Jellyfin top tracks skipped: '{artist['name']}' has no local tracks")
+            return []
+
+        top_tracks = await resolve_top_tracks(
+            artist.get("name") or artist_name,
+            local_tracks,
+            artist_mbid=artist.get("mbid"),
+            limit=count,
+        )
+
+        # resolve_top_tracks already stamps is_top_track; keep the guarantee local so
+        # this method honours its contract regardless of the resolver's internals.
+        for track in top_tracks:
+            track["is_top_track"] = True
+
+        resolved_name = top_tracks[0].get("artist") if top_tracks else None
+        if resolved_name and not artists_match(resolved_name, artist.get("name")):
+            print(f"⚠️ Last.fm returned tracks by '{resolved_name}' for '{artist['name']}'")
+
+        return top_tracks[:count]
     
     async def get_tracks_by_genres(
         self, 

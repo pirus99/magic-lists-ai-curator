@@ -5,6 +5,7 @@ from typing import Dict, Any
 from google import genai
 
 from ..database import get_database_path
+from .lastfm_client import DEFAULT_LASTFM_API_URL
 
 
 class HealthCheckService:
@@ -60,6 +61,15 @@ class HealthCheckService:
             listenbrainz_check = await self._check_listenbrainz_connectivity()
             checks.append(listenbrainz_check)
             if listenbrainz_check["status"] == "error":
+                all_passed = False
+
+        # Last.fm provides artist top tracks for the Jellyfin backend
+        if server_type == "jellyfin":
+            lastfm_check = await self._check_lastfm_connectivity()
+            checks.append(lastfm_check)
+            # Informational only: top tracks degrade to play-count ordering, so a
+            # missing key or an unreachable API must not block startup.
+            if lastfm_check["status"] == "error":
                 all_passed = False
 
         ai_check = await self._check_ai_provider()
@@ -474,6 +484,90 @@ class HealthCheckService:
                 "status": "error",
                 "message": f"Artists API error: {str(e)}",
                 "suggestion": "This may be a Navidrome library configuration issue. Check Navidrome logs for 'Library not found' errors."
+            }
+
+    async def _check_lastfm_connectivity(self) -> Dict[str, str]:
+        """Check that the Last.fm API answers a real query.
+
+        Last.fm is the top-track source for the Jellyfin backend. It is optional:
+        a missing key is reported as a warning and the check never fails startup,
+        because playlists fall back to local play-count ordering.
+        """
+        base_url = os.getenv("LASTFM_API_URL", DEFAULT_LASTFM_API_URL).rstrip("/")
+        api_key = os.getenv("LASTFM_API_KEY")
+
+        if not api_key:
+            return {
+                "name": "Last.fm API",
+                "status": "warning",
+                "message": "LASTFM_API_KEY is not configured, so artist top tracks are unavailable",
+                "suggestion": (
+                    "Create a free API account at https://www.last.fm/api/account/create and add "
+                    "LASTFM_API_KEY to your .env file to enable top tracks for Jellyfin."
+                ),
+            }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+                response = await client.get(
+                    f"{base_url}/2.0/",
+                    params={
+                        "method": "artist.getInfo",
+                        "artist": "Radiohead",
+                        "autocorrect": 1,
+                        "api_key": api_key,
+                        "format": "json",
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            if not isinstance(data, dict) or "error" in data:
+                message = data.get("message") if isinstance(data, dict) else "Unexpected response format"
+                status = "error" if data.get("error") in (2, 4, 5, 6) else "warning"
+                return {
+                    "name": "Last.fm API",
+                    "status": status,
+                    "message": f"Last.fm rejected the request: {message}",
+                    "suggestion": "Verify LASTFM_API_KEY in your .env file.",
+                }
+
+            artist = data.get("result", {}).get("artist", {})
+            return {
+                "name": "Last.fm API",
+                "status": "success",
+                "message": f"Successfully queried Last.fm for '{artist.get('name', 'unknown')}'",
+                "suggestion": "",
+            }
+
+        except httpx.TimeoutException:
+            return {
+                "name": "Last.fm API",
+                "status": "warning",
+                "message": f"Connection to {base_url} timed out after {self.timeout} seconds",
+                "suggestion": "Check your internet connection or increase LASTFM_TIMEOUT.",
+            }
+        except httpx.HTTPStatusError as e:
+            status = "error" if e.response.status_code in (401, 403) else "warning"
+            return {
+                "name": "Last.fm API",
+                "status": status,
+                "message": f"Last.fm returned HTTP {e.response.status_code}",
+                "suggestion": "Check LASTFM_API_URL and LASTFM_API_KEY in your .env file.",
+            }
+        except httpx.RequestError as e:
+            return {
+                "name": "Last.fm API",
+                "status": "warning",
+                "message": f"Could not reach Last.fm: {e}",
+                "suggestion": "Check your internet connection.",
+            }
+        except Exception as e:
+            return {
+                "name": "Last.fm API",
+                "status": "warning",
+                "message": f"Could not query Last.fm: {e}",
+                "suggestion": "Check your internet connection.",
             }
 
     async def _check_listenbrainz_connectivity(self) -> Dict[str, str]:

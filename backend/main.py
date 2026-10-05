@@ -83,7 +83,12 @@ from .genre_mix.builder import refresh_genre_playlist
 from .rediscover.builder import refresh_rediscover_playlist
 from .artist_radio.builder import refresh_artist_radio_playlist
 from .recipe_manager import recipe_manager
-from .services.top_tracks_service import top_tracks_settings
+from .services.top_tracks_service import (
+    STRATEGY_LABELS,
+    top_tracks_settings,
+    top_tracks_strategy,
+    top_tracks_supported,
+)
 from .services.playlist_sync_service import reconcile_playlists_with_server
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
@@ -185,9 +190,14 @@ templates = Jinja2Templates(directory="frontend/templates")
 
 def template_context(request: Request):
     """Return shared template context for the active media server."""
+    strategy = top_tracks_strategy()
     return {
         "request": request,
         "server_type": os.getenv("SERVER_TYPE", "navidrome").lower(),
+        "top_tracks_strategy": strategy,
+        "top_tracks_strategy_label": STRATEGY_LABELS.get(strategy, strategy),
+        "top_tracks_supported": top_tracks_supported(),
+        "lastfm_configured": bool(os.getenv("LASTFM_API_KEY")),
     }
 
 
@@ -275,6 +285,30 @@ async def get_music_folders():
             raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
         else:
             raise HTTPException(status_code=500, detail=f"Failed to fetch music folders: {error_msg}")
+
+
+@app.get("/api/top-tracks/strategies")
+async def get_top_track_strategies():
+    """List available top-track strategies and which one is active.
+
+    Each entry maps a stable strategy key to a short human-readable label so the
+    frontend never has to hardcode the wording.
+    """
+    strategy = top_tracks_strategy()
+    return {
+        "active": strategy,
+        "active_label": STRATEGY_LABELS.get(strategy, strategy),
+        "supported": top_tracks_supported(),
+        "strategies": [
+            {
+                "key": key,
+                "label": label,
+                "active": key == strategy,
+                "available": key in ("native", "off") or key == "lastfm" and top_tracks_supported(),
+            }
+            for key, label in STRATEGY_LABELS.items()
+        ],
+    }
 
 
 # SYSTEM CHECK FEATURE - START

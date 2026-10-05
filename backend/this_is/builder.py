@@ -129,6 +129,9 @@ def _artist_name_for(
     if artist_name:
         return artist_name
 
+    if request is not None and getattr(request, "artist_name", None):
+        return request.artist_name
+
     if request is not None and getattr(request, "artist_ids", None):
         return request.artist_ids[0]
 
