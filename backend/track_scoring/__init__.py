@@ -1,11 +1,11 @@
 """Smart track scoring & filtering for "This Is" / "Genre Mix" playlists.
 
-The public entry point ``filter_tracks_for_this_is_playlist`` is re-exported here so
-existing ``from .track_scoring import filter_tracks_for_this_is_playlist`` imports keep
+The public entry point ``filter_tracks_for_genre_mix_playlist`` is re-exported here so
+existing ``from .track_scoring import filter_tracks_for_genre_mix_playlist`` imports keep
 working. The implementation is split into ``engagement`` (scoring/threshold) and
 ``diversity`` (artist/album caps) helper modules.
 """
-from .filtering import filter_tracks_for_this_is_playlist
+from .filtering import filter_tracks_for_genre_mix_playlist
 from .engagement import (
     score_tracks_by_user_engagement,
     calculate_filter_threshold,
@@ -20,7 +20,7 @@ from .diversity import (
 
 
 __all__ = [
-    "filter_tracks_for_this_is_playlist",
+    "filter_tracks_for_genre_mix_playlist",
     "score_tracks_by_user_engagement",
     "calculate_filter_threshold",
     "should_apply_smart_filtering",

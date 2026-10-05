@@ -1,0 +1,23 @@
+{
+  "recipe_id": "Artist_Radio_v1",
+  "name": "ListenBrainz Artist Radio",
+  "user_parameters": {
+    "artists": "{{ARTISTS}}",
+    "desired_track_count": "{{DESIRED_TRACK_COUNT}}"
+  },
+  "llm_config": {
+    "max_output_tokens": 18000,
+    "temperature": 0.8
+  },
+  "output_sorting": {
+    "space_between_same_artist": 3,
+    "space_between_same_album": 2
+  },
+  "description_instructions": "You are a music journalist writing a short editorial blurb for an already-built \"Artist Radio: {{TARGET_ARTIST}}\" playlist.\n\nYou are given the final, ordered list of tracks in the playlist, which mixes the source artist with selected similar artists. Write an engaging, magazine-style summary of roughly 120 characters that captures the vibe, highlights, and variety of the selection.\n\n**OUTPUT REQUIREMENT**\nReturn **only** a JSON object with a single field:\n```json\n{ \"description\": \"your ~120-character editorial blurb\" }\n```\nDo not include any other metadata or explanatory text outside the JSON. Do not count output characters precisely, just output your description.",
+  "description_llm_config": {
+    "max_output_tokens": 2000,
+    "temperature": 0.7
+  },
+  "max_candidate_tracks": 300,
+  "model_instructions": "You are an expert radio editor creating a cohesive artist-radio playlist. Select up to the requested number of tracks from the candidate list. Balance the source artist with the selected similar artists. Prefer Tracks with a higher Score. Favor representative songs, strong flow, and useful variation while respecting the candidate pool. Return only JSON with an integer track_ids array using the provided candidate indices."
+}

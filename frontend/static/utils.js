@@ -80,6 +80,7 @@ async function runSystemChecks() {
 
         // Display check results
         displaySystemChecks(data.checks);
+        displayListenBrainzCard(data.checks);
 
         // Show appropriate banner and buttons
         if (data.all_passed) {
@@ -98,6 +99,9 @@ async function runSystemChecks() {
             </div>
         `;
         errorBanner.classList.remove('hidden');
+
+        const lbBadge = document.getElementById('listenbrainz-badge');
+        if (lbBadge) lbBadge.textContent = 'Not checked';
     } finally {
         rerunBtn.disabled = false;
         rerunBtn.innerHTML = 'Re-run Checks';
@@ -144,6 +148,58 @@ function displaySystemChecks(checks) {
             </div>
         `;
     }).join('');
+}
+
+// ListenBrainz integration card (only rendered when using the Navidrome backend)
+function displayListenBrainzCard(checks) {
+    const card = document.getElementById('listenbrainz-card');
+    if (!card) return;
+
+    const check = (checks || []).find(c => c.name === 'ListenBrainz API');
+    const iconEl = document.getElementById('listenbrainz-icon');
+    const statusEl = document.getElementById('listenbrainz-status');
+    const suggestionEl = document.getElementById('listenbrainz-suggestion');
+    const badgeEl = document.getElementById('listenbrainz-badge');
+
+    card.classList.remove('hidden');
+
+    if (!check) {
+        // Backend did not run the ListenBrainz check at all
+        iconEl.innerHTML = getStatusIcon('warning');
+        statusEl.textContent = 'ListenBrainz check was not run.';
+        statusEl.className = 'text-sm text-yellow-700 dark:text-yellow-400 mt-1';
+        badgeEl.textContent = 'Not checked';
+        badgeEl.className = 'flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300';
+        suggestionEl.classList.add('hidden');
+        return;
+    }
+
+    const statusIcon = getStatusIcon(check.status);
+    const statusColor = getStatusColor(check.status);
+    iconEl.innerHTML = statusIcon;
+
+    if (check.status === 'success') {
+        statusEl.textContent = check.message || 'ListenBrainz Labs is reachable.';
+        statusEl.className = 'text-sm text-gray-600 dark:text-gray-300 mt-1';
+        badgeEl.textContent = 'Connected';
+        badgeEl.className = 'flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
+    } else {
+        statusEl.textContent = check.message || getStatusText(check.status);
+        statusEl.className = `text-sm ${statusColor} mt-1`;
+        badgeEl.textContent = check.status === 'warning' ? 'Unavailable' : 'Error';
+        badgeEl.className = `flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+            check.status === 'warning'
+                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
+                : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+        }`;
+    }
+
+    if (check.suggestion) {
+        suggestionEl.textContent = check.suggestion;
+        suggestionEl.classList.remove('hidden');
+    } else {
+        suggestionEl.classList.add('hidden');
+    }
 }
 
 // Helper function to format dates in friendly format (e.g., "5 Oct 2025 10:12am")

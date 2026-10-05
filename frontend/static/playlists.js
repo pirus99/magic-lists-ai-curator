@@ -31,6 +31,37 @@
     window.App.playlists = playlists;
 })(window);
 
+function setupNavidromeTopTracksControls(prefix) {
+    const input = document.getElementById(`${prefix}-top-tracks-count`);
+    const output = document.getElementById(`${prefix}-top-tracks-count-value`);
+    const controls = input?.closest('.navidrome-top-tracks-controls');
+    const serverIsNavidrome = document.body?.dataset.serverType === 'navidrome';
+    if (!input || !controls) return;
+    controls.classList.toggle('hidden', !serverIsNavidrome);
+    const sync = () => {
+        const maxCount = Number(input.max) || 10;
+        const count = Math.max(0, Math.min(maxCount, Number(input.value) || 0));
+        input.value = String(count);
+        if (output) output.textContent = String(count);
+        input.disabled = !serverIsNavidrome;
+    };
+    if (!serverIsNavidrome) input.value = '0';
+    input.addEventListener('input', sync);
+    sync();
+}
+
+document.querySelectorAll('.navidrome-top-tracks-controls').forEach(control => {
+    const input = control.querySelector('input[type="range"]');
+    if (input) setupNavidromeTopTracksControls(input.id.replace(/-top-tracks-count$/, ''));
+});
+
+function topTracksPayload(prefix) {
+    const input = document.getElementById(`${prefix}-top-tracks-count`);
+    const maxCount = Number(input?.max) || 10;
+    const count = Math.max(0, Math.min(maxCount, Number(input?.value) || 0));
+    return { top_tracks_enabled: count > 0, top_tracks_count: count };
+}
+
 // Handle artist selection change
 function handleArtistSelection(e) {
     selectedArtistId = e.target.value;
@@ -84,7 +115,8 @@ async function createArtistPlaylist() {
                 artist_ids: [selectedArtistId],
                 refresh_frequency: refreshFrequency,
                 playlist_length: parseInt(playlistLength),
-                library_ids: selectedLibraryIds
+                library_ids: selectedLibraryIds,
+                ...topTracksPayload('this-is')
             })
         });
 
@@ -362,8 +394,8 @@ function renderPlaylists(playlists) {
 
     container.innerHTML = playlists.map(playlist => {
         return `
-            <div class="flex items-start justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg mb-4">
-                <div class="flex-grow">
+            <div class="flex flex-col md:flex-row md:items-start md:justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg mb-4">
+                <div class="flex-grow w-full md:w-auto min-w-0">
                     <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">${playlist.playlist_name}</h3>
                     <div class="text-sm text-gray-600 dark:text-gray-300 mb-2 space-y-1">
                         <p class="mb-0">
@@ -378,12 +410,12 @@ function renderPlaylists(playlists) {
                     </div>
                     ${playlist.description ? `<p class="text-sm text-gray-600 dark:text-gray-400 m-0 mt-2 italic">${truncateText(playlist.description, 140)}</p>` : ''}
                 </div>
-                <div class="flex-none flex flex-col items-end gap-1">
-                    <div class="flex items-center gap-1">
+                <div class="flex-none md:flex-none flex flex-row md:flex-col items-start md:items-end gap-1 mt-3 md:mt-0 w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 border-gray-200 dark:border-gray-700/60">
+                    <div class="flex items-center flex-wrap gap-1 w-full md:w-auto">
                         <button
                             data-action="refresh"
                             data-playlist-id="${playlist.id}"
-                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1"
+                            class="inline-flex flex-1 md:flex-none items-center justify-center md:justify-start gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-2"
                         >
                             <svg data-refresh-icon="${playlist.id}" class="size-3.5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 19v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/></svg>
                             <span data-refresh-label="${playlist.id}">Refresh</span>
@@ -392,7 +424,7 @@ function renderPlaylists(playlists) {
                         <button
                             data-action="edit"
                             data-playlist-id="${playlist.id}"
-                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1"
+                            class="inline-flex flex-1 md:flex-none items-center justify-center md:justify-start gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-2"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M12 20h9"/>
@@ -405,7 +437,7 @@ function renderPlaylists(playlists) {
                             data-action="delete"
                             data-playlist-id="${playlist.id}"
                             data-playlist-name="${playlist.playlist_name.replace(/"/g, '&quot;').replace(/'/g, "\\'")}"
-                            class="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 px-2 py-1"
+                            class="inline-flex flex-1 md:flex-none items-center justify-center md:justify-start gap-1 text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 px-2 py-2"
                         >
                             <svg class="size-3.5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h6c1 0 2 1 2 2v2M8 10v10M12 10v10M16 10v10"/></svg>
                             <span>Delete</span>
@@ -418,7 +450,7 @@ function renderPlaylists(playlists) {
 }
 
 async function deletePlaylist(playlistId, playlistName) {
-    if (!confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your Navidrome library.`)) {
+    if (!confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your media server.`)) {
         return;
     }
 
@@ -436,8 +468,9 @@ async function deletePlaylist(playlistId, playlistName) {
         loadPlaylists();
         updatePlaylistCount();
 
-        // Show success toast - note that the backend may only delete locally if Navidrome deletion fails
-        showToast('success', 'Playlist deleted from local database (check Navidrome if it still appears there)');
+        // Deletion is idempotent server-side: a playlist already removed in
+        // Navidrome/Jellyfin is simply cleaned up locally as well.
+        showToast('success', 'Playlist deleted from Magic Lists and your media server');
 
     } catch (error) {
         console.error('Error deleting playlist:', error);
@@ -526,4 +559,136 @@ async function savePlaylistSettings(regenerate) {
         saveBtn.disabled = false;
         refreshBtn.disabled = false;
     }
+}
+
+// Artist Radio page event handlers
+const artistRadioSource = document.getElementById('artist-radio-source');
+if (artistRadioSource) artistRadioSource.addEventListener('change', () => {
+    updateArtistRadioMbidVisibility();
+    if (!document.getElementById('artist-radio-listenbrainz-enabled')?.checked) populateArtistRadioSelects([]);
+});
+const artistRadioListenbrainzEnabled = document.getElementById('artist-radio-listenbrainz-enabled');
+if (artistRadioListenbrainzEnabled) {
+    artistRadioListenbrainzEnabled.addEventListener('change', () => {
+        const enabled = artistRadioListenbrainzEnabled.checked;
+        document.getElementById('artist-radio-listenbrainz-controls')?.classList.toggle('hidden', !enabled);
+        document.getElementById('artist-radio-fetch-btn')?.classList.toggle('hidden', !enabled);
+        document.getElementById('artist-radio-recommendation-field')?.classList.toggle('hidden', !enabled);
+        if (!enabled) populateArtistRadioSelects([]);
+    });
+}
+const artistRadioScore = document.getElementById('artist-radio-score');
+if (artistRadioScore) artistRadioScore.addEventListener('input', () => document.getElementById('artist-radio-score-value').textContent = artistRadioScore.value);
+const artistRadioFetch = document.getElementById('artist-radio-fetch-btn');
+if (artistRadioFetch) artistRadioFetch.addEventListener('click', fetchArtistRadioRecommendations);
+const artistRadioForm = document.getElementById('artist-radio-form');
+if (artistRadioForm) artistRadioForm.addEventListener('submit', createArtistRadioPlaylist);
+
+async function fetchArtistRadioRecommendations() {
+    const source = document.getElementById('artist-radio-source');
+    if (!source?.value || !checkLibrarySelection()) return;
+    const listenbrainzEnabled = document.getElementById('artist-radio-listenbrainz-enabled').checked;
+    if (!listenbrainzEnabled) {
+        populateArtistRadioSelects([]);
+        showToast('info', 'ListenBrainz is disabled. Choose artists manually below.');
+        return;
+    }
+    const sourceArtist = allArtists.find(artist => artist.id === source.value);
+    const mbid = sourceArtist?.mbid || document.getElementById('artist-radio-mbid').value.trim();
+    if (!mbid) return showToast('error', 'A MusicBrainz artist ID is required.');
+    showToast('loading', 'Fetching similar artists...', 0);
+    try {
+        const response = await fetch('/api/artist-radio/recommendations/local?' + selectedLibraryIds.map(id => `library_id=${encodeURIComponent(id)}`).join('&'), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                artist_id: source.value, source_mbid: mbid,
+                algorithm: document.getElementById('artist-radio-algorithm').value,
+                minimum_score: Number(document.getElementById('artist-radio-score').value), library_ids: selectedLibraryIds
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Failed to fetch recommendations');
+        populateArtistRadioSelects(data);
+        showToast('success', `Found ${data.length} similar artists in your library`);
+    } catch (error) { showToast('error', error.message); }
+}
+
+async function createArtistRadioPlaylist(event) {
+    if (event) event.preventDefault();
+    const submitBtn = document.getElementById('create-artist-radio-btn');
+    if (!checkLibrarySelection()) return;
+    const source = document.getElementById('artist-radio-source');
+    if (!source?.value) return showToast('error', 'Select a source artist.');
+    const sourceArtist = allArtists.find(artist => artist.id === source.value);
+    const listenbrainzEnabled = document.getElementById('artist-radio-listenbrainz-enabled').checked;
+    const sourceMbid = listenbrainzEnabled
+        ? (sourceArtist?.mbid || document.getElementById('artist-radio-mbid').value.trim())
+        : null;
+    if (listenbrainzEnabled && !sourceMbid) return showToast('error', 'A MusicBrainz artist ID is required.');
+
+    const selected = element => Array.from(element.selectedOptions).map(option => option.value);
+    const minFormat = document.getElementById('artist-radio-min-format').value;
+    const minBitrate = document.getElementById('artist-radio-min-bitrate').value;
+    const minBitDepth = document.getElementById('artist-radio-min-bitdepth').value;
+
+    showToast('loading', 'Creating your Artist Radio playlist...', 0);
+    submitBtn.disabled = true;
+    try {
+        const response = await fetch('/api/create_artist_radio', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                artist_id: source.value, artist_name: sourceArtist.name, source_mbid: sourceMbid,
+                algorithm: document.getElementById('artist-radio-algorithm').value,
+                listenbrainz_enabled: listenbrainzEnabled,
+                minimum_score: Number(document.getElementById('artist-radio-score').value),
+                recommendation_ids: selected(document.getElementById('artist-radio-recommendations')),
+                manual_artist_ids: selected(document.getElementById('artist-radio-manual')),
+                refetch_listenbrainz: false,
+                year_start: valueOrNull('artist-radio-year-start'), year_end: valueOrNull('artist-radio-year-end'),
+                diversity_enabled: document.getElementById('artist-radio-diversity-enabled').checked,
+                max_tracks_per_album: Number(document.getElementById('artist-radio-album-cap').value),
+                max_tracks_per_artist: Number(document.getElementById('artist-radio-artist-cap').value),
+                min_format: minFormat || null,
+                min_bitrate: minFormat === 'flac' ? null : (minBitrate ? Number(minBitrate) : null),
+                min_bit_depth: minFormat === 'flac' ? (minBitDepth ? Number(minBitDepth) : null) : null,
+                playlist_length: Number(document.querySelector('input[name="artist-radio-playlist-length"]:checked').value),
+                refresh_frequency: document.querySelector('input[name="artist-radio-refresh-frequency"]:checked').value,
+                library_ids: selectedLibraryIds,
+                ...topTracksPayload('artist-radio')
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Failed to create playlist');
+        showToast('success', `Artist Radio playlist created with ${data.songs ? data.songs.length : 0} tracks`);
+        updatePlaylistCount();
+    } catch (error) {
+        showToast('error', error.message);
+    } finally {
+        submitBtn.disabled = false;
+    }
+}
+
+function valueOrNull(id) { const value = document.getElementById(id).value; return value ? Number(value) : null; }
+
+const artistRadioDiversity = document.getElementById('artist-radio-diversity-enabled');
+if (artistRadioDiversity) {
+    const inputs = document.getElementById('artist-radio-diversity-inputs');
+    const sync = () => {
+        inputs.querySelectorAll('input').forEach(input => input.disabled = !artistRadioDiversity.checked);
+        inputs.style.opacity = artistRadioDiversity.checked ? '1' : '0.5';
+    };
+    artistRadioDiversity.addEventListener('change', sync);
+    sync();
+}
+const artistRadioFormat = document.getElementById('artist-radio-min-format');
+if (artistRadioFormat) {
+    const syncQuality = () => {
+        const isFlac = artistRadioFormat.value === 'flac';
+        document.getElementById('artist-radio-bitrate-wrap').classList.toggle('hidden', isFlac);
+        document.getElementById('artist-radio-bitdepth-wrap').classList.toggle('hidden', !isFlac);
+        document.getElementById('artist-radio-min-bitrate').disabled = isFlac;
+        document.getElementById('artist-radio-min-bitdepth').disabled = !isFlac;
+    };
+    artistRadioFormat.addEventListener('change', syncQuality);
+    syncQuality();
 }

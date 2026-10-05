@@ -235,6 +235,53 @@ class _DatabasePlaylistsMixin:
         
             await db.commit()
             return cursor.rowcount > 0
+
+    async def delete_playlists_by_server_ids(self, server_ids: List[str]) -> List[int]:
+        """Delete local playlists (and their schedules) by media-server playlist ID.
+
+        Used by the reconciliation pass to drop playlists that were deleted
+        directly in Navidrome/Jellyfin.
+
+        Args:
+            server_ids: The `navidrome_playlist_id` values that no longer exist
+                on the media server.
+
+        Returns:
+            The list of local playlist IDs that were removed.
+        """
+        if not server_ids:
+            return []
+
+        await self.init_db()
+
+        removed_ids: List[int] = []
+        async with aiosqlite.connect(self.db_path) as db:
+            placeholders = ",".join("?" for _ in server_ids)
+            params = list(server_ids)
+
+            async with db.execute(
+                f"SELECT id FROM playlists WHERE navidrome_playlist_id IN ({placeholders})",
+                params
+            ) as cursor:
+                rows = await cursor.fetchall()
+                removed_ids = [row[0] for row in rows]
+
+            if not removed_ids:
+                return []
+
+            # Drop the matching schedules so the scheduler stops refreshing
+            # playlists that no longer exist on the server.
+            await db.execute(
+                f"DELETE FROM scheduled_playlists WHERE navidrome_playlist_id IN ({placeholders})",
+                params
+            )
+            await db.execute(
+                f"DELETE FROM playlists WHERE navidrome_playlist_id IN ({placeholders})",
+                params
+            )
+            await db.commit()
+
+        return removed_ids
     
 
     async def update_playlist_songs(self, playlist_id: int, songs: List[str]) -> bool:

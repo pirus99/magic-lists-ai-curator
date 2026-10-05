@@ -1,8 +1,52 @@
 import httpx
-from typing import List
+from typing import List, Set
+
+# Subsonic error code 70 = "The requested data was not found". Navidrome returns
+# it when deleting a playlist that no longer exists.
+_SUBSONIC_NOT_FOUND = 70
 
 
 class _PlaylistsMixin:
+    async def get_playlist_ids(self) -> Set[str]:
+        """Return the set of playlist IDs that currently exist on the server.
+
+        Used to reconcile Magic Lists' local database with the media server so
+        playlists deleted outside of Magic Lists can be cleaned up.
+        """
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            response = await self.client.get(
+                f"{self.base_url}/rest/getPlaylists.view",
+                params=params
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(
+                    f"Failed to list playlists: {error.get('message', 'Unknown error')}"
+                )
+
+            return {
+                str(entry.get("id"))
+                for entry in subsonic_response.get("playlists", {}).get("playlist", [])
+                if entry.get("id")
+            }
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error listing playlists: {e}")
+
+    async def playlist_exists(self, playlist_id: str) -> bool:
+        """Return True if the given playlist still exists on the server."""
+        return str(playlist_id) in await self.get_playlist_ids()
+
     async def create_playlist(self, name: str, track_ids: List[str], comment: str = None) -> str:
         """Create a new playlist in Navidrome using Subsonic API
     
@@ -234,12 +278,16 @@ class _PlaylistsMixin:
 
     async def delete_playlist(self, playlist_id: str) -> bool:
         """Delete a playlist from Navidrome
-    
+
+        Deleting an already-deleted playlist is a no-op and returns True, so
+        callers can reconcile state after the user removed the playlist
+        directly in Navidrome.
+
         Args:
             playlist_id: ID of the playlist to delete
-        
+
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if the playlist was deleted or did not exist, False otherwise
         """
         try:
             await self._ensure_authenticated()
@@ -268,6 +316,10 @@ class _PlaylistsMixin:
                 error_message = error.get('message', 'Unknown error')
                 error_code = error.get('code', 'Unknown code')
                 print(f"❌ Subsonic API error: {error_message} (code: {error_code})")
+                # "Not found" means the playlist is already gone -> success.
+                if error_code == _SUBSONIC_NOT_FOUND:
+                    print(f"ℹ️ Playlist {playlist_id} no longer exists in Navidrome, treating as already deleted")
+                    return True
                 raise Exception(f"Failed to delete playlist: {error_message} (code: {error_code})")
         
             print(f"✅ Successfully deleted playlist {playlist_id} from Navidrome")
@@ -278,8 +330,10 @@ class _PlaylistsMixin:
             raise Exception(f"Network error connecting to Navidrome: {e}")
         except httpx.HTTPStatusError as e:
             print(f"🚨 HTTP error deleting playlist: {e.response.status_code} - {e.response.text}")
-            raise Exception(f"HTTP error from Navidrome: {e.response.status_code} - {e.response.text}")
-        except Exception as e:
+            # Navidrome answers 404 for missing playlists on some versions.
+            if e.response.status_code == 404:
+                print(f"ℹ️ Playlist {playlist_id} returned 404, treating as already deleted")
+                return True
             print(f"💥 Unexpected error deleting playlist: {e}")
             raise Exception(f"Unexpected error deleting playlist: {e}")
     

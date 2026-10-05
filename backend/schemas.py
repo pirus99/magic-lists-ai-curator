@@ -1,13 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class Artist(BaseModel):
-    """Schema for Navidrome artist"""
+    """Schema for a music-server artist."""
     id: str
     name: str
     album_count: int = 0
     song_count: int = 0
+    mbid: Optional[str] = None
 
 class CreatePlaylistRequest(BaseModel):
     """Request schema for creating a playlist"""
@@ -16,6 +17,42 @@ class CreatePlaylistRequest(BaseModel):
     refresh_frequency: str = "none"  # "none", "daily", "weekly", "monthly"
     playlist_length: int = 25  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
+    top_tracks_enabled: bool = False
+    top_tracks_count: int = Field(default=0, ge=0, le=20)
+
+class ArtistRadioRecommendationRequest(BaseModel):
+    """Request schema for fetching ListenBrainz recommendations."""
+    source_mbid: str
+    algorithm: str = "5Y Balanced"
+    minimum_score: int = 50
+    artist_id: Optional[str] = None
+    library_ids: List[str] = []
+
+class ArtistRadioRequest(BaseModel):
+    """Request schema for a ListenBrainz-backed artist radio playlist."""
+    artist_id: str
+    artist_name: Optional[str] = None
+    source_mbid: Optional[str] = None
+    listenbrainz_enabled: bool = True
+    algorithm: str = "5Y Balanced"
+    minimum_score: int = 142
+    recommendation_ids: List[str] = []
+    manual_artist_ids: List[str] = []
+    refetch_listenbrainz: bool = False
+    playlist_name: Optional[str] = None
+    refresh_frequency: str = "none"
+    playlist_length: int = 25
+    library_ids: List[str] = []
+    year_start: Optional[int] = None
+    year_end: Optional[int] = None
+    diversity_enabled: bool = True
+    max_tracks_per_album: int = 4
+    max_tracks_per_artist: int = 8
+    min_bitrate: Optional[int] = None
+    min_format: Optional[str] = None
+    min_bit_depth: Optional[int] = None
+    top_tracks_enabled: bool = False
+    top_tracks_count: int = Field(default=0, ge=0, le=10)
 
 class CreateGenrePlaylistRequest(BaseModel):
     """Request schema for creating a genre mix playlist"""

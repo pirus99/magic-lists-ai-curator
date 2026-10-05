@@ -77,10 +77,14 @@ from .core.scheduler import (
 from .this_is.routes import router as this_is_router
 from .genre_mix.routes import router as genre_mix_router
 from .rediscover.routes import router as rediscover_router
+from .artist_radio.routes import router as artist_radio_router
 from .this_is.builder import refresh_this_is_playlist
 from .genre_mix.builder import refresh_genre_playlist
 from .rediscover.builder import refresh_rediscover_playlist
+from .artist_radio.builder import refresh_artist_radio_playlist
 from .recipe_manager import recipe_manager
+from .services.top_tracks_service import top_tracks_settings
+from .services.playlist_sync_service import reconcile_playlists_with_server
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
@@ -113,6 +117,7 @@ async def startup_event():
     register_refresh_handler("genre_mix", refresh_genre_playlist)
     register_refresh_handler("rediscover", refresh_rediscover_playlist)
     register_refresh_handler("rediscover_weekly_v2", refresh_rediscover_playlist)
+    register_refresh_handler("artist_radio", refresh_artist_radio_playlist)
 
     schedule_playlist_refresh()
     scheduler_logger.info("Cron job auto-started on application startup")
@@ -178,6 +183,14 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 templates = Jinja2Templates(directory="frontend/templates")
 
 
+def template_context(request: Request):
+    """Return shared template context for the active media server."""
+    return {
+        "request": request,
+        "server_type": os.getenv("SERVER_TYPE", "navidrome").lower(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
@@ -186,14 +199,14 @@ async def read_root(request: Request):
     """Serve the main HTML page"""
     if not system_check_passed:
         return RedirectResponse(url="/system-check", status_code=302)
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", template_context(request))
 
 
 # SYSTEM CHECK FEATURE - START
 @app.get("/system-check", response_class=HTMLResponse)
 async def system_check_page(request: Request):
     """Serve the system check page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", template_context(request))
 # SYSTEM CHECK FEATURE - END
 
 
@@ -298,8 +311,14 @@ async def get_health_check():
 # ---------------------------------------------------------------------------
 @app.get("/api/playlists")
 async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
-    """Get all playlists with scheduling information"""
+    """Get all playlists with scheduling information.
+
+    Runs a reconciliation pass first so playlists deleted directly in
+    Navidrome/Jellyfin disappear from Magic Lists instead of showing up as
+    stale entries that can no longer be deleted.
+    """
     try:
+        await reconcile_playlists_with_server(db)
         playlists = await db.get_all_playlists_with_schedule_info()
         for playlist in playlists:
             songs = playlist.get("songs", [])
@@ -307,6 +326,23 @@ async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
         return playlists
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlists: {str(e)}")
+
+
+@app.post("/api/playlists/reconcile")
+async def reconcile_playlists(db: DatabaseManager = Depends(get_db)):
+    """Manually reconcile local playlist records against the media server.
+
+    Removes local playlists (and their schedules) whose media-server playlist
+    no longer exists. Safe to call repeatedly; it is a no-op when everything
+    is in sync.
+    """
+    try:
+        result = await reconcile_playlists_with_server(db)
+        return {"message": "Reconciliation complete", **result}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to reconcile playlists: {str(e)}"
+        )
 
 
 @app.get("/api/playlists/{playlist_id}")
@@ -325,7 +361,12 @@ async def get_playlist_detail(playlist_id: int, db: DatabaseManager = Depends(ge
 
 @app.delete("/api/playlists/{playlist_id}")
 async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
-    """Delete a playlist from the configured server and the local database."""
+    """Delete a playlist from the configured server and the local database.
+
+    Deletion is idempotent: if the playlist was already removed in
+    Navidrome/Jellyfin, the local records (playlist + schedule) are still
+    cleaned up and the request succeeds.
+    """
     try:
         playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
         if not playlist:
@@ -339,6 +380,9 @@ async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db
                 f"(ID: {navidrome_playlist_id})"
             )
             try:
+                # The clients treat an already-missing playlist as deleted and
+                # return True, so an externally deleted playlist no longer
+                # blocks removing the local records.
                 await server_client.delete_playlist(navidrome_playlist_id)
             except Exception as delete_error:
                 scheduler_logger.warning(
@@ -381,6 +425,18 @@ async def update_playlist_settings(
         if not playlist:
             raise HTTPException(status_code=404, detail="Playlist not found")
 
+        curation_settings = dict(request.curation_settings)
+        if playlist.get("playlist_type") in ("artist_radio", "this_is"):
+            max_count = 20 if playlist.get("playlist_type") == "this_is" else 10
+            curation_settings.update(top_tracks_settings(
+                curation_settings.get("top_tracks_enabled"),
+                curation_settings.get("top_tracks_count"),
+                max_count=max_count,
+            ))
+        else:
+            curation_settings.pop("top_tracks_enabled", None)
+            curation_settings.pop("top_tracks_count", None)
+
         navidrome_playlist_id = playlist.get("navidrome_playlist_id")
         if not navidrome_playlist_id:
             raise HTTPException(status_code=400, detail="Playlist has no media server ID")
@@ -411,10 +467,10 @@ async def update_playlist_settings(
                 is_public=request.is_public if request.is_public is not None else playlist.get("is_public"),
             )
 
-        new_length = request.curation_settings.get("playlist_length")
+        new_length = curation_settings.get("playlist_length")
         await db.update_playlist_settings(
             playlist_id=playlist_id,
-            curation_settings=request.curation_settings,
+            curation_settings=curation_settings,
             playlist_length=new_length if new_length is not None else None
         )
 
@@ -483,6 +539,8 @@ async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depe
 
         if playlist_type == "genre_mix":
             await refresh_genre_playlist(playlist, db)
+        elif playlist_type == "artist_radio":
+            await refresh_artist_radio_playlist(playlist, db)
         elif playlist_type in ("rediscover", "rediscover_weekly_v2"):
             await refresh_rediscover_playlist(scheduled, db)
         else:
@@ -629,6 +687,7 @@ async def track_library_size(db: DatabaseManager = Depends(get_db)):
 app.include_router(this_is_router)
 app.include_router(genre_mix_router)
 app.include_router(rediscover_router)
+app.include_router(artist_radio_router)
 
 
 # ---------------------------------------------------------------------------
@@ -637,11 +696,11 @@ app.include_router(rediscover_router)
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_router(request: Request, path: str):
     """Handle SPA routing - serve app for known paths, redirect unknown paths"""
-    spa_paths = ["this-is", "re-discover", "playlists", "terms"]
+    spa_paths = ["this-is", "artist-radio", "re-discover", "playlists", "terms"]
     if path in spa_paths:
         if not system_check_passed:
             return RedirectResponse(url="/system-check", status_code=302)
-        return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse("index.html", template_context(request))
     return RedirectResponse(url="/", status_code=302)
 
 
