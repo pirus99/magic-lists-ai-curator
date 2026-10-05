@@ -1,7 +1,20 @@
 <div id="genre-mix-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
     <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">Genre Mix</h1>
-        <p class="text-gray-600 dark:text-gray-300">Create a curated mix playlist for specific genres from your library. Get a diverse selection of tracks that represent the best of these genres, fine tune your playlist with the available filters.</p>
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">Genre Mix</h1>
+                <p class="text-gray-600 dark:text-gray-300">Create a curated mix playlist for specific genres from your library. Get a diverse selection of tracks that represent the best of these genres, fine tune your playlist with the available filters.</p>
+            </div>
+            <button type="button" data-help-type="genre_mix"
+                class="shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                    <path d="M12 17h.01" />
+                </svg>
+                How this works
+            </button>
+        </div>
     </div>
 
     <form id="genre-mix-form" class="space-y-6">
