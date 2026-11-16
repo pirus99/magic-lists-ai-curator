@@ -17,15 +17,15 @@ Navidrome and Jellyfin users already own their music. MagicLists brings modern c
 
 ## What's that Fork?
 This repo is a fork of Ricky Synnot's [magic-lists-for-navidrome](https://github.com/rsynnot/magic-lists-for-navidrome).  
-It is an improved version with many bug fixes and more features, including, e.g., Jellyfin implementation, genre mix with advanced filters, dark mode, no usage tracking and many more features...
+It is an improved version with many bug fixes and more features, including, e.g., Jellyfin implementation, artist radio, genre mix with advanced filters, dark mode, no usage tracking and many more features...
 
 
 ## Screenshots
-![Artist Radio UI](assets/images/artist-playlist.png)
+![This Is UI](assets/images/artist-playlist.png)
 
 _Creating a 'This is (Artist)' playlist_ 
 
-![Artist Radio UI](assets/images/genremix-playlist.png)
+![Genre Mix UI](assets/images/genremix-playlist.png)
 
 _Creating a 'Genre Mix' playlist_ 
 
@@ -33,294 +33,109 @@ _Creating a 'Genre Mix' playlist_
 ## What’s still a work in progress?
 ### Some features are still barely or not at all tested, including:
  - Jellyfin Server Client
+   - Artist Radio Similarity Check
    - Playlist Generation Quality
-   - Schedule of Playlists
    - Support for Big Music Libraries
-   - Editing of Playlists
- - Multi‑library support
 
 Please contribute to the project and report your testing and experience with this application on the Issues tab.
 
 ## What’s next
 Upcoming features include:
-- Discovery-focused lists
 - An updated scheduling for regeneration of Playlists
 - What is on your mind? Open an issue to tell me.
 
 
-# Installation
+# 📖 Documentation Index
 
-### Recommended: Add to Your Existing Docker Compose
+All setup and troubleshooting instructions now live in the [`docs/`](docs/) folder. Pick the path that matches your setup and jump straight to it.
 
-**Why this method?** Your MagicLists container will be on the same network as Navidrome, making connection simple and reliable. This also enables future features like audio analysis that require local file access. You also could use this compose to spin up a Szandalone Container.
+## 🚀 Installation
 
-1. **Add MagicLists to your existing `docker-compose.yml`** (the one that runs Navidrome):
+| I want to… | Guide |
+|---|---|
+| **Add MagicLists to my existing Docker Compose (recommended)** | **[`docs/DOCKER.md`](docs/DOCKER.md)** |
+| Run a standalone container with `docker run` | **[`docs/DOCKER.md` → Standalone Docker Run](docs/DOCKER.md#standalone-docker-run)** |
+| Compare install methods / not sure where to start | **[`docs/INSTALLATION.md`](docs/INSTALLATION.md)** |
+| Develop or contribute from source | **[`docs/RUNNING_LOCALLY.md`](docs/RUNNING_LOCALLY.md)** |
+
+> **Recommended: Docker Compose.** Your MagicLists container joins the **same network** as Navidrome/Jellyfin, so the connection is simple and reliable — no host ports, no `host.docker.internal`. It's also the only setup that unlocks future features needing local file access, such as audio analysis, and a single-service compose file doubles as a clean standalone stack.
+
+## 🎵 Server Setup
+
+| My server | Guide |
+|---|---|
+| **Navidrome** | **[`docs/NAVIDROME.md`](docs/NAVIDROME.md)** |
+| **Jellyfin** | **[`docs/JELLYFIN.md`](docs/JELLYFIN.md)** |
+
+## 🤖 AI Configuration
+
+| I want to… | Guide |
+|---|---|
+| **Choose an AI provider (start here)** | **[`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md)** |
+| ⭐ **Recommended setup** | Google AI Studio — `AI_PROVIDER=google`, `AI_MODEL=gemini-3.1-flash-lite`, `DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it` |
+| Run fully local & private | [Ollama](docs/AI_PROVIDERS.md#option-2--local-llm-ollama) |
+| Use a different cloud provider | [OpenRouter](docs/AI_PROVIDERS.md#option-4--openrouter) · [Groq](docs/AI_PROVIDERS.md#option-5--groq) |
+
+> **Why Google?** The free tier is generous, **no credit card is required**, and one API key is all you need. `gemini-3.1-flash-lite` is fast and handles large track lists comfortably; `gemma-4-26b-a4b-it` is small and quick, used only for playlist descriptions.
+
+## 🔧 Reference & Help
+
+| I need… | Guide |
+|---|---|
+| Look up an environment variable | **[`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md)** |
+| Fix something that isn't working | **[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)** |
+| Tune the AI prompt recipes | **[`recipes/README.md`](recipes/README.md)** |
+| Use the REST API | **[`docs/API.md`](docs/API.md)** |
+
+## ⚡ The 60-second version (Docker Compose)
+
 ```yaml
-   services:
-     navidrome:
-       # ... your existing Navidrome or Jellyfin config ...
-     
-     magiclists:
-       image: pirus999/magic-lists-ai-curator:latest
-       container_name: magiclists
-       ports:
-         - "4545:8000"
-       environment:
-         - SERVER_TYPE=navidrome # or jellyfin
-         - NAVIDROME_URL=http://navidrome:4533 # for Jellyfin use: JELLYFIN_URL=http://jellyfin:8096
-         - NAVIDROME_USERNAME=your_username # for Jellyfin use: JELLYFIN_USERNAME or JELLYFIN_API_KEY
-         - NAVIDROME_PASSWORD=your_password # for Jellyfin use: JELLYFIN_PASSWORD or JELLYFIN_API_KEY
-         - DATABASE_PATH=/app/data/magiclists.db # Required: Database location
-           - AI_PROVIDER=google            # Optional: openrouter, groq, google, ollama
-           - AI_API_KEY=your_google_api_key  # Optional, for OpenRouter/Groq/Google
-           - AI_MODEL=gemini-3.5-flash # Select one from your AI provider
-           - DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it # Optional, select a smaller model for Playlist descriptions
-       volumes:
-         - ./magiclists-data:/app/data          # Persist configuration
-       restart: unless-stopped
+services:
+  magiclists:
+    image: pirus999/magic-lists-ai-curator:latest
+    container_name: magiclists
+    ports:
+      - "4545:8000"
+    environment:
+      - SERVER_TYPE=navidrome                  # or: jellyfin
+      - NAVIDROME_URL=http://navidrome:4533   # Jellyfin: JELLYFIN_URL=http://jellyfin:8096
+      - NAVIDROME_USERNAME=your_username       # Jellyfin: JELLYFIN_USERNAME or JELLYFIN_API_KEY
+      - NAVIDROME_PASSWORD=your_password       # Jellyfin: JELLYFIN_PASSWORD or JELLYFIN_API_KEY
+      - DATABASE_PATH=/app/data/magiclists.db # Required: database location
+      - AI_PROVIDER=google                     # openrouter, groq, google, ollama
+      - AI_API_KEY=your_google_api_key
+      - AI_MODEL=gemini-3.1-flash-lite
+      - DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it
+    volumes:
+      - ./magiclists-data:/app/data           # Persist database + settings
+    restart: unless-stopped
 ```
-2. Update the environment variables with your Navidrome credentials
-3. Start the stack:
-```bash
-   docker-compose up -d
-```
-4. Access MagicLists at http://localhost:4545
-
-Note: The NAVIDROME_URL uses the container name (navidrome) as the hostname. If your Navidrome service has a different name in your compose file, update this accordingly.
-
-### Alternative: Standalone Docker Run Container
-Use this if you can't or don't want to modify your existing Docker Compose setup.
-
-**Docker Run If Navidrome is publicly accessible:**
-Use your public Navidrome URL (e.g., https://music.yourdomain.com):
-```bash
-   docker run -d \
-      --name magiclists \
-      -p 4545:8000 \
-      -e NAVIDROME_URL=https://music.yourdomain.com \
-      -e NAVIDROME_USERNAME=your_username \
-      -e NAVIDROME_PASSWORD=your_password \
-      -e DATABASE_PATH=/app/data/magiclists.db \
-      -e AI_PROVIDER=openrouter \
-      -e AI_API_KEY=your_openrouter_api_key \
-      -e AI_MODEL=dots-studio/dots-3-note-preview:free \
-      -v ./magiclists-data:/app/data \
-      pirus999/magic-lists-ai-curator:latest
-```
-
-
-## Running Without Docker
-Use this method if you prefer to run Python directly or want to contribute to development.
-
-1. Clone the repository:
-```bash
-   git clone https://github.com/pirus99/magic-lists-ai-curator
-   cd magic-lists-ai-curator
-```
-2. Install dependencies:
-```bash
-   pip install -r requirements.txt
-```
-3. Create your environment file:
-```bash
-   cp .env.example .env
-```
-4. Edit `.env` with your Navidrome details:
-```bash
-   NAVIDROME_URL=http://localhost:4533
-   NAVIDROME_USERNAME=your_username
-   NAVIDROME_PASSWORD=your_password
-    DATABASE_PATH=./magiclists.db        # Required: Database location
-    AI_PROVIDER=google              # Optional: openrouter, groq, google, ollama
-    AI_API_KEY=your_google_ai_studio_api_key  # for OpenRouter/Groq/Google
-    AI_MODEL=gemini-3.5-flash # Use a high tier Instruct or low tier Reasoning model for best results
-    DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it # Optional
-```
-5. Run the application:
-```bash
-    python -m uvicorn app.main:app --host 0.0.0.0 --port 4545
-```
-6. Access the application at http://localhost:4545
-To update: Simply `git pull` and restart the application.
-
-
-
-## AI Configuration
-
-MagicLists supports multiple AI providers for enhanced playlist curation:
-
-1. **Fallback-only** (Free) - Uses play count and metadata sorting
-2. **Local LLM** (Free) - Run models locally with Ollama
-3. **OpenRouter** (Free/Paid) - Access to various cloud models including free options
-4. **Google AI** (Free) - Google's Gemini models with generous free quota
-5. **Groq** (Free/Paid) - Fast cloud models with no credit card required
-
-### Option 2: Local LLM (Ollama)
-[Install Ollama](https://ollama.com) and run models locally:
 
 ```bash
-# Install and run a model
-ollama pull llamusic
-ollama serve
-
-# .env configuration
-AI_PROVIDER=ollama
-AI_MODEL=llamusic
-OLLAMA_BASE_URL=http://localhost:11434/v1/chat/completions
-OLLAMA_MAX_TRACKS=180 #Lower when having ai response problems
-# For Docker: OLLAMA_BASE_URL=http://host.docker.internal:11434/v1/chat/completions
-# OLLAMA_TIMEOUT=300  # Increase for slower CPUs (default: 180 seconds)
+mkdir -p magiclists-data
+docker compose up -d
 ```
 
-### Option 3: OpenRouter (Cloud Models)
-Get an API key from [OpenRouter](https://openrouter.ai) ($5 minimum):
+Then open **http://localhost:4545** and verify everything at **http://localhost:4545/system-check**.
+
+👉 Full instructions: **[`docs/DOCKER.md`](docs/DOCKER.md)**
+
+## 🩺 System Check Page
+
+MagicLists validates its configuration on startup. If anything is misconfigured you're redirected to a system check page that validates:
+
+- **Environment Variables** — that required variables are set
+- **Server URL** — that Navidrome or Jellyfin is reachable
+- **Authentication** — that your credentials work
+- **Artists API** — that API access returns results
+- **AI Provider** — that AI features are configured (Google, OpenRouter, Groq, or Ollama)
+- **Library Configuration** — multiple-library setup status
+
+Failed checks come with a suggested fix. You can also visit `/system-check` at any time:
 
 ```bash
-# .env configuration
-AI_PROVIDER=openrouter
-AI_API_KEY=sk-or-v1-your-key-here
-AI_MODEL=dots-studio/dots-3-note-preview:free    # Free model
-# AI_MODEL=tencent/hy3                  # Paid model
-DESCRIPTION_AI_MODEL=google/gemma-4-26b-a4b-it:free
+curl "http://localhost:4545/system-check"
 ```
-
-### Option 4: Google AI (Free & Generous Quota)
-Get a free API key from [Google AI Studio](https://ai.google.dev/) - no credit card required:
-
-```bash
-# .env configuration
-AI_PROVIDER=google
-AI_API_KEY=AIzaSy_your-google-key-here
-AI_MODEL=gemini-3.5-flash               # Fast and capable
-# AI_MODEL=gemini-3.1-pro               # More advanced model
-DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it
-```
-
-### Option 5: Groq (Free/Paid)
-Get a free API key from [Groq](https://console.groq.com/) - no credit card required:
-
-```bash
-# .env configuration
-AI_PROVIDER=groq
-AI_API_KEY=gsk_your-groq-key-here
-AI_MODEL=openai/gpt-oss-20b             # Fast default model
-# AI_MODEL=llama-3.3-70b-versatile      # Alternative model
-DESCRIPTION_AI_MODEL=llama-3.1-8b-instant
-```
-
-**Note:** Without AI configuration, the app falls back to play-count based playlist generation.
-
-
-## Environment 
-
-| Section | Variable | Example / Default | What it does | Required? |
-|--------|----------|-------------------|--------------|-----------|
-| **Server selection** | `SERVER_TYPE` | `navidrome` *(or `jellyfin`)* | Chooses which music server the app talks to. | **Yes** – defaults to `navidrome`. |
-| **Navidrome settings** | `NAVIDROME_URL` | `http://navidrome:4533` | Base URL of the Navidrome instance. | Required **if** `SERVER_TYPE=navidrome`. |
-| | `NAVIDROME_USERNAME` | `your_navidrome_username` | Navidrome user name. | Required **if** Navidrome. |
-| | `NAVIDROME_PASSWORD` | `your_password` | Navidrome password (plain‑text – the container runs in a trusted environment). | Required **if** Navidrome. |
-| **Jellyfin settings** | `JELLYFIN_URL` | `http://jellyfin:8096` | Base URL of the Jellyfin instance. | Required **if** `SERVER_TYPE=jellyfin`. |
-| | `JELLYFIN_USERNAME` | `admin` | Jellyfin user name. | Required **if** Jellyfin. |
-| | `JELLYFIN_PASSWORD` | `password` | Jellyfin password. | Required **if** Jellyfin. |
-| | `JELLYFIN_API_KEY` | *(empty)* | API key for token‑based auth (optional – password auth works too). | Optional. |
-| | `JELLYFIN_VERIFY_SSL` | `true` | Verify TLS certs when using `https`. Set to `false` for self‑signed certs. | Optional. |
-| **ListenBrainz Labs (artist‑radio)** | `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint used for “artist radio” suggestions. |
-| | `LISTENBRAINZ_TOKEN` | *(empty)* | Personal token – only needed when you hit rate‑limits. | Optional. |
-| | `LISTENBRAINZ_TIMEOUT` | `15` (seconds) | HTTP timeout for ListenBrainz calls. | Optional. |
-| **AI Provider** | `AI_PROVIDER` | `google` *(options: `openrouter`, `groq`, `google`, `ollama`)* | Which LLM service to call for playlist curation. | **Yes**. |
-| | `AI_API_KEY` | `your_api_key_here` | Provider‑specific API key (OpenRouter, Groq, Google). Not needed for Ollama. | **Yes** for all non‑Ollama providers. |
-| **LLM Model** | `AI_MODEL` | `gemini-3.5-flash` | The “heavy” model that does the actual playlist generation / reasoning. Choose a model that matches the provider you picked. | **Yes**. |
-| **Description‑only Model** | `DESCRIPTION_AI_MODEL` | `gemma-4-26b-a4b-it` | A cheaper / faster model used **only** for short description generation (e.g., “Genre Mix”, “This is a playlist” text). If left empty, `AI_MODEL` is reused. | Optional. |
-| **Ollama‑specific settings** *(ignored unless `AI_PROVIDER=ollama`)* | `OLLAMA_BASE_URL` | `http://localhost:11434/v1/chat/completions` | URL of the local Ollama server. Adjust when running inside Docker (`host.docker.internal`) or via a separate compose service. | Optional – required for Ollama. |
-| | `OLLAMA_TIMEOUT` | `180` (seconds) | HTTP request timeout for Ollama. Raise for slow CPUs or huge prompts. | Optional. |
-| | `OLLAMA_MAX_TRACKS` | `150` | Hard cap on how many tracks are sent to the LLM (prevents context‑size overflow). Leave empty for the automatic dynamic limit. | Optional. |
-| **Filesystem & persistence** | `DATABASE_PATH` | `/app/data/magiclists.db` | Where the SQLite DB lives inside the container. For Docker you normally mount a volume at `/app/data`. | Yes – defaults to the internal path. |
-| **Logging** | `LOG_LEVEL` | `INFO` *(options: `ERROR`, `INFO`, `DEBUG`)* | Verbosity of the app’s log output. | Optional. |
-| **Navidrome library filter** | `NAVIDROME_LIBRARY_ID` | *(empty)* | If you have multiple Navidrome libraries, set the ID to limit the app to one. | Optional. |
-
-
-## System Check Page 
-
-MagicLists automatically validates your configuration on startup. If any issues are detected, you'll be redirected to a system check page that shows:
-
-- **Environment Variables**: Checks that required variables are set
-- **Navidrome URL**: Verifies your server is reachable  
-- **Navidrome Authentication**: Tests your credentials
-- **Navidrome Artists API**: Confirms API access is working
-- **AI Provider**: Checks if AI features are configured (OpenRouter, Groq, Google AI, or Ollama)
-- **Library Configuration**: Shows multiple library setup status
-
-If checks fail, detailed suggestions are provided to help resolve issues. You can also access the system check at any time via `/system-check`.
-
-
-# Troubleshooting
-
-### Database Write Errors (500 Server Error)
-If system checks pass but playlist creation fails with a 500 error about database write permissions:
-
-**Solution**: Ensure `DATABASE_PATH` environment variable is set:
-- **Docker**: `DATABASE_PATH=/app/data/magiclists.db` (with volume mounted to `/app/data`)
-- **Standalone**: `DATABASE_PATH=./magiclists.db` (in your project directory)
-
-This is **required** for the application to persist playlist data and user settings.
-
-### Connection Issues
-
-Can't connect to Navidrome? The most common issue is an incorrect `NAVIDROME_URL`. Here's how to determine the right value:
-- Same Docker network: Use the container name (e.g., http://navidrome:4533)
-- Same host machine: Use http://host.docker.internal:4533 (Docker Desktop) or http://172.17.0.1:4533 (Linux)
-- Different machine on LAN: Use the local IP (e.g., http://192.168.1.100:4533)
-- Public internet: Use your domain (e.g., https://music.yourdomain.com)
-
-**Check if containers are on the same network:**
-```bash
-   # List Docker networks
-   docker network ls
-
-   # Inspect your network
-   docker network inspect your_network_name
-
-   # Verify both containers are on the same network
-   docker ps --format "table {{.Names}}\t{{.Networks}}"
-```
-
-**No artists found**
-   - Ensure your music library is scanned in Navidrome
-   - Check Navidrome logs for scanning issues
-   - If using multiple libraries, verify the library ID is correct
-
-**Database errors**
-   - Ensure write permissions for database directory
-   - Check disk space
-   - Restart the application if database appears corrupted
-
-**Still having issues?** Check the System Check page in the app after startup - it will test your connection and provide specific guidance.
-
-### AI Response Issues
-
-If AI is responding with its reasoning/context or gives empty responses:
-- Try another model
-- Try selecting a shorter playlist length
-then try:
-1. To add a volume mount for recipes in the Docker container
-```bash
-   volumes:
-      - HOST_PATH_FOR_YOUR_RECIPES:/app/recipes
-```
-2. Edit the maximum Tokens for the required Recipe, or vary with model temperature till you get good results.
-**More Info:** See [README](recipes/README.md) in recipes folder
-
-### Playlist Length Issues
-   - Ensure you have enough tracks for the requested artist/genre
-   - View your logs to ensure your filtering options are not dropping all tracks
-   - Adjust filtering to allow enough tracks to be sent to AI curation
-
-### Issues with Editing Playlists
-   - Make sure you have created the playlist with a version of MagicLists that allows playlist editing (>= 1.1.0).
-   - Delete and recreate the playlist from scratch with a new version of MagicLists to enable editing features for the playlist.
-
-### Other Issues
-   - If you need Help and encounter Bugs or Issues open an Issue on the [Issue](https://github.com/pirus99/magic-lists-ai-curator/issues/new/choose) Tab
 
 ## API
 
@@ -348,7 +163,9 @@ This fork of the Project currently does not use any usage analytics.
 ## Support
 
 For issues and questions:
-- Check the troubleshooting section
+- Run the built-in check at `http://localhost:4545/system-check`
+- Check the [troubleshooting guide](docs/TROUBLESHOOTING.md)
+- Look up your variables in the [environment reference](docs/ENVIRONMENT.md)
 - Review Navidrome or Jellyfin documentation
 - Create an issue in the repository
 
