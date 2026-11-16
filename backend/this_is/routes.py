@@ -21,16 +21,20 @@ async def create_playlist(
     This endpoint supersedes the former ``/api/create_playlist_with_description``
     route: the AI description is always generated and stored, so the separate
     endpoint is no longer needed.
+
+    The artist always comes from ``artist_ids``. The optional ``artist_mbid`` is a
+    Last.fm lookup override: Jellyfin library metadata frequently lacks a MusicBrainz
+    ID, and without one Last.fm cannot resolve top tracks. The override affects the
+    top-tracks request only, never track selection.
     """
     try:
         nav_client = get_server_client()
 
-        # Validate the requested artist exists.
-        all_artists = await nav_client.get_artists()
-        if not getattr(request, "artist_ids", None):
+        if not request.artist_ids:
             raise HTTPException(status_code=400, detail="At least one artist must be selected")
-        first_artist_id = request.artist_ids[0]
-        selected = [a for a in all_artists if a["id"] == first_artist_id]
+
+        all_artists = await nav_client.get_artists()
+        selected = [a for a in all_artists if a["id"] == request.artist_ids[0]]
         if not selected:
             raise HTTPException(status_code=404, detail="Artist not found")
 

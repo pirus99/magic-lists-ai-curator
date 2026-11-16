@@ -164,8 +164,18 @@ class _TracksMixin:
         artist_name: str,
         count: int,
         library_ids: Union[List[str], None] = None,
+        artist_mbid: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Fetch an artist's most popular songs from Subsonic getTopSongs."""
+        """Fetch an artist's most popular songs from Subsonic getTopSongs.
+
+        Args:
+            artist_name: Artist name; Subsonic's getTopSongs keys on name.
+            count: Max number of top tracks to return.
+            library_ids: Optional library scope.
+            artist_mbid: Unused. Accepted so both media-server clients share one
+                signature; Subsonic needs no MBID because it resolves the artist
+                server-side.
+        """
         if count <= 0:
             return []
 

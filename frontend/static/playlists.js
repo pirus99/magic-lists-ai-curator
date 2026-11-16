@@ -31,29 +31,101 @@
     window.App.playlists = playlists;
 })(window);
 
-function setupNavidromeTopTracksControls(prefix) {
+// Short labels for the top-track strategy, mirroring TOP_TRACK_STRATEGY_LABELS in
+// backend/services/lastfm_service.py. Rendered next to the count slider so the user
+// knows where their top tracks come from.
+const TOP_TRACK_STRATEGY_LABELS = {
+    native: 'Native',
+    lastfm: 'Last.fm',
+    hybrid: 'Hybrid',
+    off: 'Off',
+};
+
+function topTracksStrategy() {
+    const strategy = document.body?.dataset.topTracksStrategy || '';
+    if (strategy) return strategy;
+    // Fallback for pages rendered without the strategy in the template context.
+    return document.body?.dataset.serverType === 'navidrome' ? 'native' : 'off';
+}
+
+function topTracksSourceLabel() {
+    const strategy = topTracksStrategy();
+    return TOP_TRACK_STRATEGY_LABELS[strategy] || strategy;
+}
+
+// True when the source can actually service a request right now. Jellyfin without
+// LASTFM_API_KEY is *supported* (the slider stays visible so the feature is
+// discoverable) but not *configured*, so we prompt for setup instead of hiding it.
+function topTracksConfigured() {
+    return document.body?.dataset.lastfmConfigured === 'true'
+        || topTracksStrategy() === 'native';
+}
+
+function setupTopTracksControls(prefix) {
     const input = document.getElementById(`${prefix}-top-tracks-count`);
     const output = document.getElementById(`${prefix}-top-tracks-count-value`);
-    const controls = input?.closest('.navidrome-top-tracks-controls');
-    const serverIsNavidrome = document.body?.dataset.serverType === 'navidrome';
+    const controls = input?.closest('.top-tracks-controls');
+    const supported = topTracksStrategy() !== 'off';
+    const configured = topTracksConfigured();
     if (!input || !controls) return;
-    controls.classList.toggle('hidden', !serverIsNavidrome);
+
+    // Never hide the control just because a key is missing: show it, explain what is
+    // needed, and disable the slider so a stored preference is not silently ignored.
+    controls.classList.remove('hidden');
+    controls.dataset.topTracksSupported = String(supported);
+    controls.dataset.topTracksConfigured = String(configured);
+    controls.classList.toggle('top-tracks-unconfigured', !configured);
+
+    const label = controls.querySelector('[data-top-tracks-source-label]');
+    if (label) label.textContent = topTracksSourceLabel();
+
+    const hint = controls.querySelector('[data-top-tracks-source-hint]');
+    if (hint) {
+        if (!configured) {
+            hint.textContent = 'Add LASTFM_API_KEY to your .env file and restart to enable top tracks. '
+                + 'Playlists fall back to play-count ordering until then.';
+            hint.classList.add('text-amber-600', 'dark:text-amber-400', 'font-medium');
+        } else {
+            hint.textContent = `Popularity source: ${topTracksSourceLabel()}. Fetches up to this many popular songs. Set to 0 to disable.`;
+            hint.classList.remove('text-amber-600', 'dark:text-amber-400', 'font-medium');
+        }
+    }
+
     const sync = () => {
         const maxCount = Number(input.max) || 10;
         const count = Math.max(0, Math.min(maxCount, Number(input.value) || 0));
         input.value = String(count);
         if (output) output.textContent = String(count);
-        input.disabled = !serverIsNavidrome;
+        // Only a genuinely unavailable source disables the slider. An unconfigured
+        // Last.fm keeps the stored value visible so the setting is not silently lost.
+        input.disabled = !supported;
+        // The MBID override only matters while top tracks are switched on.
+        updateThisIsMbidFallback();
     };
-    if (!serverIsNavidrome) input.value = '0';
+    if (!supported) input.value = '0';
     input.addEventListener('input', sync);
     sync();
 }
 
-document.querySelectorAll('.navidrome-top-tracks-controls').forEach(control => {
-    const input = control.querySelector('input[type="range"]');
-    if (input) setupNavidromeTopTracksControls(input.id.replace(/-top-tracks-count$/, ''));
-});
+// Back-compat alias: the old helper name is referenced by inline page scripts.
+const setupNavidromeTopTracksControls = setupTopTracksControls;
+
+// This file is loaded *before* app.js, which declares the shared `let` state
+// (allArtists, selectedArtistId). Touching those bindings while app.js has not run
+// throws a ReferenceError, so every entry point that reads shared state is deferred
+// until DOMContentLoaded, after all scripts have executed.
+function initTopTracksControls() {
+    document.querySelectorAll('.top-tracks-controls').forEach(control => {
+        const input = control.querySelector('input[type="range"]');
+        if (input) setupTopTracksControls(input.id.replace(/-top-tracks-count$/, ''));
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTopTracksControls);
+} else {
+    initTopTracksControls();
+}
 
 function topTracksPayload(prefix) {
     const input = document.getElementById(`${prefix}-top-tracks-count`);
@@ -67,12 +139,76 @@ function handleArtistSelection(e) {
     selectedArtistId = e.target.value;
     const submitBtn = document.getElementById('create-artist-playlist-btn');
 
+    updateThisIsMbidFallback();
+
     if (selectedArtistId) {
         submitBtn.disabled = false;
     } else {
         submitBtn.disabled = true;
     }
 }
+
+// Read the user-supplied Last.fm MBID override, if present.
+function thisIsMbidOverride() {
+    return document.getElementById('this-is-artist-mbid')?.value.trim() || '';
+}
+
+// Resolve the currently selected artist's MusicBrainz ID from the artist dropdown.
+//
+// This deliberately reads the DOM rather than app.js's `allArtists`: playlists.js is
+// loaded *before* app.js, so the `let allArtists` binding is in the temporal dead zone
+// and touching it throws a ReferenceError (a bare `typeof` guard does not help --
+// `typeof` on a not-yet-initialised `let` throws too). The <option> elements are the
+// same data app.js renders, so they are the reliable cross-file source.
+function selectedArtistMbid() {
+    const select = document.getElementById('artist-search-select');
+    const selectedId = select?.value;
+    if (!select || !selectedId) return { id: null, name: null, mbid: null };
+
+    const option = Array.from(select.options).find(o => o.value === selectedId);
+    const name = option?.textContent?.trim() || '';
+    // app.js may attach the MBID to the option; otherwise fall back to a data attribute.
+    const mbid = (option?.dataset?.mbid || option?.dataset?.mbidValue || '').trim();
+    return { id: selectedId, name, mbid };
+}
+
+// Last.fm needs a MusicBrainz ID to resolve top tracks, and Jellyfin library metadata
+// frequently has none. Show the override input only when all of these hold:
+//   - the active source is Last.fm (i.e. Jellyfin + LASTFM_API_KEY),
+//   - an artist is selected,
+//   - top tracks are actually requested,
+//   - that artist has no usable MBID in the library metadata.
+function updateThisIsMbidFallback() {
+    const block = document.getElementById('this-is-artist-mbid-fallback');
+    if (!block) return;
+
+    if (topTracksStrategy() !== 'lastfm') {
+        block.classList.add('hidden');
+        return;
+    }
+
+    const artist = selectedArtistMbid();
+    if (!artist.id) {
+        block.classList.add('hidden');
+        return;
+    }
+
+    const needsMbid = !artist.mbid;
+    const topTracksOn = topTracksPayload('this-is').top_tracks_enabled;
+    const show = needsMbid && topTracksOn;
+    block.classList.toggle('hidden', !show);
+
+    const hint = document.getElementById('this-is-artist-mbid-hint');
+    if (hint) {
+        hint.textContent = topTracksOn
+            ? `No MusicBrainz ID in the library metadata for "${artist.name}". Enter one so Last.fm can find their top tracks.`
+            : `Set the Top Tracks slider above 0 to fetch top tracks for "${artist.name}".`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateThisIsMbidFallback();
+});
 
 // This Is Artist form submission
 document.getElementById('this-is-form').addEventListener('submit', function (e) {
@@ -113,6 +249,8 @@ async function createArtistPlaylist() {
             },
             body: JSON.stringify({
                 artist_ids: [selectedArtistId],
+                // Last.fm lookup override only; ignored unless the source is Last.fm.
+                artist_mbid: thisIsMbidOverride() || null,
                 refresh_frequency: refreshFrequency,
                 playlist_length: parseInt(playlistLength),
                 library_ids: selectedLibraryIds,
