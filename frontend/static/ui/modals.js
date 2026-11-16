@@ -86,12 +86,14 @@ async function openEditModal(playlistId) {
         const rediscoverSection = document.getElementById('edit-rediscover-section');
         const artistRadioSection = document.getElementById('edit-artist-radio-section');
         const artistRadioSource = document.getElementById('edit-artist-radio-source');
+        const songRadioSection = document.getElementById('edit-song-radio-section');
 
         if (thisIsSection) thisIsSection.classList.add('hidden');
         if (genreSection) genreSection.classList.add('hidden');
         if (rediscoverSection) rediscoverSection.classList.add('hidden');
         if (artistRadioSection) artistRadioSection.classList.add('hidden');
         if (artistRadioSource) artistRadioSource.classList.add('hidden');
+        if (songRadioSection) songRadioSection.classList.add('hidden');
 
         if (type === 'genre_mix') {
             if (genreSection) genreSection.classList.remove('hidden');
@@ -115,6 +117,10 @@ async function openEditModal(playlistId) {
             if (artistRadioSource) artistRadioSource.classList.remove('hidden');
             editGenreSettings = null;
             await populateEditArtistRadioModal(settings);
+        } else if (type === 'song_radio') {
+            if (songRadioSection) songRadioSection.classList.remove('hidden');
+            editGenreSettings = null;
+            populateEditSongRadioModal(settings);
         } else {
             // rediscover / rediscover_weekly_v2
             if (rediscoverSection) rediscoverSection.classList.remove('hidden');
@@ -146,6 +152,7 @@ function typeLabel(type) {
         case 'genre_mix': return 'Genre Mix';
         case 'this_is': return 'This Is';
         case 'artist_radio': return 'Artist Radio';
+        case 'song_radio': return 'Song Radio';
         case 'rediscover_weekly_v2': return 'Re-Discover';
         case 'rediscover': return 'Re-Discover';
         default: return type;
@@ -366,6 +373,94 @@ async function populateEditArtistRadioModal(settings) {
     }
 }
 
+function populateEditSongRadioModal(settings = {}) {
+    const set = (id, value) => { const element = document.getElementById(id); if (element) element.value = value ?? ''; };
+    const sourceTrack = settings.source_track || null;
+    const sourceLabel = document.getElementById('edit-song-radio-source');
+    if (sourceLabel) {
+        if (sourceTrack && (sourceTrack.title || sourceTrack.artist)) {
+            sourceLabel.textContent = [sourceTrack.title, sourceTrack.artist].filter(Boolean).join(' — ');
+        } else {
+            sourceLabel.textContent = settings.source_mbid || 'Unknown';
+        }
+    }
+    set('edit-song-radio-source-mbid', settings.source_mbid);
+    set('edit-song-radio-source-track', JSON.stringify(sourceTrack));
+    set('edit-song-radio-library-ids', JSON.stringify(settings.library_ids || []));
+
+    const listenbrainzEnabled = document.getElementById('edit-song-radio-listenbrainz-enabled');
+    const subsonicSimilar = document.getElementById('edit-song-radio-subsonic-similar');
+    const listenbrainzControls = document.getElementById('edit-song-radio-listenbrainz-controls');
+    const algorithm = document.getElementById('edit-song-radio-algorithm');
+    const score = document.getElementById('edit-song-radio-score');
+    const scoreValue = document.getElementById('edit-song-radio-score-value');
+    const repeat = document.getElementById('edit-song-radio-repeat');
+    const repeatValue = document.getElementById('edit-song-radio-repeat-value');
+
+    if (listenbrainzEnabled) listenbrainzEnabled.checked = settings.listenbrainz_enabled !== false;
+    if (subsonicSimilar) subsonicSimilar.checked = Boolean(settings.use_subsonic_similar);
+    set('edit-song-radio-algorithm', settings.algorithm || '5Y Balanced');
+    if (score) score.value = String(settings.minimum_score ?? 20);
+    if (scoreValue) scoreValue.textContent = String(settings.minimum_score ?? 20);
+    if (repeat) repeat.value = String(settings.repeat_limit ?? 6);
+    if (repeatValue) repeatValue.textContent = String(settings.repeat_limit ?? 6);
+
+    set('edit-song-radio-year-start', settings.year_start);
+    set('edit-song-radio-year-end', settings.year_end);
+    set('edit-song-radio-min-format', settings.min_format);
+    set('edit-song-radio-min-bitrate', settings.min_bitrate);
+    set('edit-song-radio-min-bitdepth', settings.min_bit_depth);
+    set('edit-song-radio-album-cap', settings.max_tracks_per_album ?? 4);
+    set('edit-song-radio-artist-cap', settings.max_tracks_per_artist ?? 8);
+
+    const syncListenbrainzControls = () => {
+        const enabled = listenbrainzEnabled?.checked ?? true;
+        listenbrainzControls?.classList.toggle('hidden', !enabled);
+        if (algorithm) algorithm.disabled = !enabled;
+        if (score) score.disabled = !enabled;
+        if (repeat) repeat.disabled = !enabled;
+    };
+    if (listenbrainzEnabled && !listenbrainzEnabled.dataset.bound) {
+        listenbrainzEnabled.dataset.bound = 'true';
+        listenbrainzEnabled.addEventListener('change', syncListenbrainzControls);
+    }
+    syncListenbrainzControls();
+
+    if (score && scoreValue && !score.dataset.bound) {
+        score.dataset.bound = 'true';
+        score.addEventListener('input', () => { scoreValue.textContent = score.value; });
+    }
+    if (repeat && repeatValue && !repeat.dataset.bound) {
+        repeat.dataset.bound = 'true';
+        repeat.addEventListener('input', () => { repeatValue.textContent = repeat.value; });
+    }
+
+    const caps = document.getElementById('edit-song-radio-caps-enabled');
+    const capsInputs = document.getElementById('edit-song-radio-caps-inputs');
+    if (caps) caps.checked = settings.diversity_enabled !== false;
+    if (caps && capsInputs) {
+        if (!caps.dataset.bound) {
+            caps.dataset.bound = 'true';
+            caps.addEventListener('change', () => syncCapsInputs(caps, capsInputs));
+        }
+        syncCapsInputs(caps, capsInputs);
+    }
+
+    const format = document.getElementById('edit-song-radio-min-format');
+    const bitrate = document.getElementById('edit-song-radio-min-bitrate');
+    const bitrateWrap = document.getElementById('edit-song-radio-bitrate-wrap');
+    const bitdepth = document.getElementById('edit-song-radio-min-bitdepth');
+    const bitdepthWrap = document.getElementById('edit-song-radio-bitdepth-wrap');
+    if (format && bitrate && bitrateWrap && bitdepth && bitdepthWrap) {
+        const sync = () => syncQualityInputs(format, bitrateWrap, bitdepthWrap, bitrate, bitdepth);
+        if (!format.dataset.bound) {
+            format.dataset.bound = 'true';
+            format.addEventListener('change', sync);
+        }
+        sync();
+    }
+}
+
 function topTracksPayloadFrom(prefix) {
     const input = document.getElementById(`${prefix}-top-tracks-count`);
     const maxCount = Number(input?.max) || 10;
@@ -455,6 +550,34 @@ function collectEditSettings() {
             min_bit_depth: document.getElementById('edit-artist-radio-min-format').value === 'flac' ? parseIntOrNull(document.getElementById('edit-artist-radio-min-bitdepth').value) : null,
             library_ids: JSON.parse(document.getElementById('edit-artist-radio-library-ids').value || '[]'),
             ...topTracksPayloadFrom('edit-artist-radio')
+        };
+    } else if (type === 'song_radio') {
+        const minFormat = document.getElementById('edit-song-radio-min-format').value;
+        const capsEnabled = document.getElementById('edit-song-radio-caps-enabled').checked;
+        let sourceTrack = null;
+        try {
+            sourceTrack = JSON.parse(document.getElementById('edit-song-radio-source-track').value || 'null');
+        } catch (error) {
+            sourceTrack = null;
+        }
+        curation_settings = {
+            ...curation_settings,
+            source_mbid: document.getElementById('edit-song-radio-source-mbid').value || null,
+            source_track: sourceTrack,
+            listenbrainz_enabled: document.getElementById('edit-song-radio-listenbrainz-enabled').checked,
+            use_subsonic_similar: Boolean(document.getElementById('edit-song-radio-subsonic-similar')?.checked),
+            algorithm: document.getElementById('edit-song-radio-algorithm').value,
+            minimum_score: Number(document.getElementById('edit-song-radio-score').value),
+            repeat_limit: Number(document.getElementById('edit-song-radio-repeat').value),
+            year_start: parseIntOrNull(document.getElementById('edit-song-radio-year-start').value),
+            year_end: parseIntOrNull(document.getElementById('edit-song-radio-year-end').value),
+            diversity_enabled: capsEnabled,
+            max_tracks_per_album: capsEnabled ? Number(document.getElementById('edit-song-radio-album-cap').value) : 0,
+            max_tracks_per_artist: capsEnabled ? Number(document.getElementById('edit-song-radio-artist-cap').value) : 0,
+            min_format: minFormat || null,
+            min_bitrate: minFormat === 'flac' ? null : parseIntOrNull(document.getElementById('edit-song-radio-min-bitrate').value),
+            min_bit_depth: minFormat === 'flac' ? parseIntOrNull(document.getElementById('edit-song-radio-min-bitdepth').value) : null,
+            library_ids: JSON.parse(document.getElementById('edit-song-radio-library-ids').value || '[]')
         };
     } else {
         curation_settings.library_ids = JSON.parse(document.getElementById('edit-rediscover-library-ids').value || '[]');
