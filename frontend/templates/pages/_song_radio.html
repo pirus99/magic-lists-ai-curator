@@ -1,0 +1,174 @@
+<div id="song-radio-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
+    <div class="mb-6">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">Song Radio</h1>
+                <p class="text-gray-600 dark:text-gray-300">Build a radio playlist around a single song. Search your library, resolve its MusicBrainz recording, and let ListenBrainz find similar recordings.</p>
+            </div>
+            <button type="button" data-help-type="song_radio"
+                class="shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                    <path d="M12 17h.01" />
+                </svg>
+                How this works
+            </button>
+        </div>
+    </div>
+
+    <form id="song-radio-form" class="space-y-6 min-w-0">
+        <div>
+            <label for="song-radio-search" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Search your library for a song</label>
+            <div class="flex items-center gap-2">
+                <input id="song-radio-search" type="text" placeholder="Search by title, artist, or album..." class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                <button id="song-radio-search-btn" type="button" class="shrink-0 bg-gray-900 dark:bg-gray-900 text-white dark:text-gray-100 font-bold py-2 px-4 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-700 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors">Search</button>
+            </div>
+        </div>
+
+        <div id="song-radio-results" class="hidden">
+            <label for="song-radio-track" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Select a source track</label>
+            <select id="song-radio-track" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                <option value="">Choose a track</option>
+            </select>
+            <div id="song-radio-mbid-fallback" class="hidden mt-3">
+                <label for="song-radio-mbid" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">MusicBrainz Recording ID (required because this track has no recording MBID in the library metadata)</label>
+                <input id="song-radio-mbid" type="text" placeholder="00000000-0000-0000-0000-000000000000" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500">
+            </div>
+        </div>
+
+        <div class="flex">
+            <input id="song-radio-subsonic-similar" type="checkbox" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+            <label for="song-radio-subsonic-similar" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use Navidrome similar-tracks (Subsonic)</label>
+        </div>
+
+        <div class="flex">
+            <input id="song-radio-listenbrainz-enabled" type="checkbox" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+            <label for="song-radio-listenbrainz-enabled" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use ListenBrainz similarity recommendations</label>
+        </div>
+
+        <div id="song-radio-listenbrainz-controls" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="song-radio-algorithm" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">ListenBrainz Algorithm</label>
+                    <select id="song-radio-algorithm" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        <option>5Y Balanced</option>
+                        <option>20Y+</option>
+                        <option>25Y Deep</option>
+                        <option>3M Recent</option>
+                        <option>20Y Broad</option>
+                        <option>5Y Light</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="song-radio-score" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Minimum Similarity Score</label>
+                    <div class="flex items-center gap-3 h-[38px]">
+                        <input id="song-radio-score" type="range" min="1" max="100" value="20" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <output for="song-radio-score" id="song-radio-score-value" class="min-w-12 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold text-gray-900 dark:text-gray-100">20</output>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label for="song-radio-repeat" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Expansion Rounds</label>
+                <div class="flex items-center gap-3 h-[38px]">
+                    <input id="song-radio-repeat" type="range" min="1" max="6" value="6" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <output for="song-radio-repeat" id="song-radio-repeat-value" class="min-w-12 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold text-gray-900 dark:text-gray-100">6</output>
+                </div>
+            </div>
+        </div>
+
+        <div id="song-radio-pool" class="hidden">
+            <div class="flex items-center justify-between gap-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-4 py-3">
+                <p id="song-radio-pool-count" class="text-sm text-gray-700 dark:text-gray-300"></p>
+                <button type="button" id="song-radio-reset-btn" class="shrink-0 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 underline">Choose another track</button>
+            </div>
+        </div>
+
+        <div id="song-radio-find-btn-wrap" class="hidden">
+            <button type="button" id="song-radio-find-btn" class="w-full md:w-auto bg-gray-900 dark:bg-gray-900 text-white dark:text-gray-100 font-bold py-2 px-4 md:px-6 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-700 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                Find Similar Tracks
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full min-w-0">
+            <div class="w-full min-w-0">
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Year Range</label>
+                <div class="flex items-center gap-2 w-full min-w-0">
+                    <input type="number" id="song-radio-year-start" min="1950" max="2026" class="w-full min-w-0 flex-1 px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Start">
+                    <span class="shrink-0 text-gray-400 dark:text-gray-500 text-sm">–</span>
+                    <input type="number" id="song-radio-year-end" min="1950" max="2026" class="w-full min-w-0 flex-1 px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="End">
+                </div>
+            </div>
+
+            <div class="w-full min-w-0">
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Minimum Quality</label>
+                <div class="grid grid-cols-2 gap-2 w-full min-w-0">
+                    <div id="song-radio-bitrate-wrap">
+                        <select id="song-radio-min-bitrate" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                            <option value="">Any bitrate</option><option value="128">128 kbps</option><option value="192">192 kbps</option><option value="256">256 kbps</option><option value="320">320 kbps</option>
+                        </select>
+                    </div>
+                    <div id="song-radio-bitdepth-wrap" class="hidden">
+                        <select id="song-radio-min-bitdepth" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                            <option value="">Any depth</option><option value="16">16-bit</option><option value="24">24-bit</option>
+                        </select>
+                    </div>
+                    <select id="song-radio-min-format" class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        <option value="">Any format</option><option value="mp3">MP3</option><option value="flac">FLAC</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Playlist Length</label>
+                <div class="space-y-3">
+                    <div class="flex items-center"><input type="radio" id="song-radio-length-25" name="song-radio-playlist-length" value="25" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="song-radio-length-25" class="text-sm text-gray-500 dark:text-gray-400 ms-2">25 tracks</label></div>
+                    <div class="flex items-center"><input type="radio" id="song-radio-length-50" name="song-radio-playlist-length" value="50" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="song-radio-length-50" class="text-sm text-gray-500 dark:text-gray-400 ms-2">50 tracks</label></div>
+                    <div class="flex items-center"><input type="radio" id="song-radio-length-100" name="song-radio-playlist-length" value="100" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="song-radio-length-100" class="text-sm text-gray-500 dark:text-gray-400 ms-2">100 tracks</label></div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Artist & Album Diversity</label>
+                <div class="space-y-3">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="song-radio-diversity-enabled" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+                        <label for="song-radio-diversity-enabled" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use Limits</label>
+                    </div>
+                    <div id="song-radio-diversity-inputs" class="space-y-3">
+                        <div>
+                            <label for="song-radio-album-cap" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per album</label>
+                            <input type="number" id="song-radio-album-cap" value="4" min="0" step="1" class="h-6 w-16 border border-gray-200 dark:border-gray-700 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 pl-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        </div>
+                        <div>
+                            <label for="song-radio-artist-cap" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per artist</label>
+                            <input type="number" id="song-radio-artist-cap" value="8" min="0" step="1" class="h-6 w-16 border border-gray-200 dark:border-gray-700 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 pl-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        </div>
+                        <p class="text-xs text-gray-400 dark:text-gray-500">Limits how many tracks come from the same album or artist.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Refresh Frequency</label>
+                <div class="space-y-3">
+                    <div class="flex items-center"><input type="radio" id="song-radio-freq-none" name="song-radio-refresh-frequency" value="none" checked class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="song-radio-freq-none" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Don't refresh</label></div>
+                    <div class="flex items-center"><input type="radio" id="song-radio-freq-daily" name="song-radio-refresh-frequency" value="daily" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="song-radio-freq-daily" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Daily <span class="text-xs text-gray-500 dark:text-gray-400">(1am)</span></label></div>
+                    <div class="flex items-center"><input type="radio" id="song-radio-freq-weekly" name="song-radio-refresh-frequency" value="weekly" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="song-radio-freq-weekly" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Weekly <span class="text-xs text-gray-500 dark:text-gray-400">(Monday 1am)</span></label></div>
+                    <div class="flex items-center"><input type="radio" id="song-radio-freq-monthly" name="song-radio-refresh-frequency" value="monthly" class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500"><label for="song-radio-freq-monthly" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Monthly <span class="text-xs text-gray-500 dark:text-gray-400">(1st of month 1am)</span></label></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pt-4">
+            <button type="submit" id="create-song-radio-btn" disabled class="w-full md:w-auto bg-gray-900 dark:bg-gray-900 text-white dark:text-gray-100 font-bold py-2 px-4 md:px-6 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-700 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                Create Song Radio Playlist
+            </button>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Find similar tracks first to build the candidate pool, then create the playlist.</p>
+        </div>
+    </form>
+</div>

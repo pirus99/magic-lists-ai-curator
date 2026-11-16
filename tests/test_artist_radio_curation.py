@@ -123,3 +123,115 @@ async def test_curate_radio_fallback_scores_before_recipe_output_sorting(monkeyp
     track_ids, _ = await curate_radio(candidates, 4)
 
     assert track_ids == ["spaced-a1", "spaced-b1", "spaced-a2", "spaced-c1"]
+
+
+@pytest.mark.anyio
+async def test_curate_radio_pins_anchor_track_first(monkeypatch):
+    """The anchor track must be the first entry of the finished playlist."""
+    recipe = {
+        "model_instructions": "Select tracks",
+        "llm_config": {"max_output_tokens": 100, "temperature": 0.6},
+        "output_sorting": {},
+    }
+    monkeypatch.setattr(curation.recipe_manager, "apply_recipe", lambda *args: recipe)
+    ai_client = SimpleNamespace(
+        provider=SimpleNamespace(generate=AsyncMock(return_value='{"track_ids": [1, 2, 3]}'))
+    )
+    candidates = [
+        {"id": "anchor", "title": "Anchor", "artist": "Artist A", "album": "Album A", "year": 2020, "play_count": 1},
+        {"id": "b1", "title": "B1", "artist": "Artist B", "album": "Album B", "year": 2021, "play_count": 1},
+        {"id": "c1", "title": "C1", "artist": "Artist C", "album": "Album C", "year": 2022, "play_count": 1},
+        {"id": "d1", "title": "D1", "artist": "Artist D", "album": "Album D", "year": 2023, "play_count": 1},
+    ]
+
+    track_ids, _ = await curate_radio(candidates, 4, ai_client=ai_client, anchor_track_id="anchor")
+
+    assert track_ids[0] == "anchor"
+    assert len(track_ids) == 4
+    assert len(set(track_ids)) == 4
+
+
+@pytest.mark.anyio
+async def test_curate_radio_anchor_survives_duplicate_removal(monkeypatch):
+    """An anchor returned twice by the AI must still appear exactly once."""
+    recipe = {
+        "model_instructions": "Select tracks",
+        "llm_config": {"max_output_tokens": 100, "temperature": 0.6},
+        "output_sorting": {},
+    }
+    monkeypatch.setattr(curation.recipe_manager, "apply_recipe", lambda *args: recipe)
+    ai_client = SimpleNamespace(
+        provider=SimpleNamespace(generate=AsyncMock(return_value='{"track_ids": [0, 0, 1, 2]}'))
+    )
+    candidates = [
+        {"id": "anchor", "title": "Anchor", "artist": "Artist A", "album": "Album A", "year": 2020, "play_count": 1},
+        {"id": "b1", "title": "B1", "artist": "Artist B", "album": "Album B", "year": 2021, "play_count": 1},
+        {"id": "c1", "title": "C1", "artist": "Artist C", "album": "Album C", "year": 2022, "play_count": 1},
+    ]
+
+    track_ids, _ = await curate_radio(candidates, 3, ai_client=ai_client, anchor_track_id="anchor")
+
+    assert track_ids[0] == "anchor"
+    assert track_ids.count("anchor") == 1
+    assert len(track_ids) == len(set(track_ids))
+
+
+@pytest.mark.anyio
+async def test_curate_radio_anchor_added_when_ai_omits_it(monkeypatch):
+    """The anchor is added even when the AI does not select it."""
+    recipe = {
+        "model_instructions": "Select tracks",
+        "llm_config": {"max_output_tokens": 100, "temperature": 0.6},
+        "output_sorting": {},
+    }
+    monkeypatch.setattr(curation.recipe_manager, "apply_recipe", lambda *args: recipe)
+    ai_client = SimpleNamespace(
+        provider=SimpleNamespace(generate=AsyncMock(return_value='{"track_ids": [1, 2]}'))
+    )
+    candidates = [
+        {"id": "anchor", "title": "Anchor", "artist": "Artist A", "album": "Album A", "year": 2020, "play_count": 1},
+        {"id": "b1", "title": "B1", "artist": "Artist B", "album": "Album B", "year": 2021, "play_count": 1},
+        {"id": "c1", "title": "C1", "artist": "Artist C", "album": "Album C", "year": 2022, "play_count": 1},
+    ]
+
+    track_ids, _ = await curate_radio(candidates, 3, ai_client=ai_client, anchor_track_id="anchor")
+
+    assert track_ids[0] == "anchor"
+    assert "anchor" in track_ids
+
+
+@pytest.mark.anyio
+async def test_curate_radio_anchor_first_in_fallback(monkeypatch):
+    """The fallback selection also starts with the anchor track."""
+    recipe = {"output_sorting": {}}
+    monkeypatch.setattr(curation.recipe_manager, "apply_recipe", lambda *args: recipe)
+    candidates = [
+        {"id": "anchor", "title": "Anchor", "artist": "Artist A", "album": "Album A", "play_count": 1},
+        {"id": "b1", "title": "B1", "artist": "Artist B", "album": "Album B", "play_count": 20},
+    ]
+
+    track_ids, _ = await curate_radio(candidates, 2, anchor_track_id="anchor")
+
+    assert track_ids[0] == "anchor"
+
+
+def test_filter_radio_tracks_protected_track_bypasses_quality_filters():
+    """A protected track is kept even when it fails the quality filters."""
+    tracks = [
+        {"id": "anchor", "format": "mp3", "bit_depth": None, "bit_rate": 128},
+        {"id": "lossless", "format": "flac", "bit_depth": 24, "bit_rate": 900},
+    ]
+
+    result = filter_radio_tracks(
+        tracks,
+        None,
+        None,
+        0,
+        0,
+        min_bitrate=256,
+        min_format="flac",
+        min_bit_depth=16,
+        protected_track_ids={"anchor"},
+    )
+
+    assert {track["id"] for track in result} == {"anchor", "lossless"}

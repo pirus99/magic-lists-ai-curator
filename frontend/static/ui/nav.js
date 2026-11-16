@@ -77,7 +77,7 @@ function setActiveMenuItem(page) {
 // Navigation functionality
 function showContent(contentId) {
     // Hide all content sections
-    const contentSections = ['welcome-content', 'this-is-content', 'artist-radio-content', 'rediscover-content', 'genre-mix-content', 'manage-playlists-content', 'system-check-content', 'terms-content'];
+    const contentSections = ['welcome-content', 'this-is-content', 'artist-radio-content', 'song-radio-content', 'rediscover-content', 'genre-mix-content', 'manage-playlists-content', 'system-check-content', 'terms-content'];
     contentSections.forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -164,6 +164,8 @@ function handlePageNavigation(page) {
         if (selectedLibraryIds.length > 0) {
             setTimeout(() => loadArtistRadioArtists(), 100);
         }
+    } else if (page === 'song-radio') {
+        contentId = 'song-radio-content';
     } else if (page === 're-discover') {
         contentId = 'rediscover-content';
     } else if (page === 'genre-mix') {

@@ -78,10 +78,12 @@ from .this_is.routes import router as this_is_router
 from .genre_mix.routes import router as genre_mix_router
 from .rediscover.routes import router as rediscover_router
 from .artist_radio.routes import router as artist_radio_router
+from .song_radio.routes import router as song_radio_router
 from .this_is.builder import refresh_this_is_playlist
 from .genre_mix.builder import refresh_genre_playlist
 from .rediscover.builder import refresh_rediscover_playlist
 from .artist_radio.builder import refresh_artist_radio_playlist
+from .song_radio.builder import refresh_song_radio_playlist
 from .recipe_manager import recipe_manager
 from .services.top_tracks_service import (
     STRATEGY_LABELS,
@@ -124,6 +126,7 @@ async def startup_event():
     register_refresh_handler("rediscover", refresh_rediscover_playlist)
     register_refresh_handler("rediscover_weekly_v2", refresh_rediscover_playlist)
     register_refresh_handler("artist_radio", refresh_artist_radio_playlist)
+    register_refresh_handler("song_radio", refresh_song_radio_playlist)
 
     schedule_playlist_refresh()
     scheduler_logger.info("Cron job auto-started on application startup")
@@ -231,7 +234,7 @@ async def system_check_page(request: Request):
 @app.get("/help/{help_type}", response_class=HTMLResponse)
 async def get_help_content(help_type: str, request: Request):
     """Serve a help partial for a given playlist type from the Jinja templates folder."""
-    allowed_types = {"this_is", "artist_radio", "genre_mix", "rediscover"}
+    allowed_types = {"this_is", "artist_radio", "genre_mix", "rediscover", "song_radio"}
     if help_type not in allowed_types:
         raise HTTPException(status_code=404, detail="Help content not found")
 
@@ -596,6 +599,8 @@ async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depe
             await refresh_genre_playlist(playlist, db)
         elif playlist_type == "artist_radio":
             await refresh_artist_radio_playlist(playlist, db)
+        elif playlist_type == "song_radio":
+            await refresh_song_radio_playlist(playlist, db)
         elif playlist_type in ("rediscover", "rediscover_weekly_v2"):
             await refresh_rediscover_playlist(scheduled, db)
         else:
@@ -743,6 +748,7 @@ app.include_router(this_is_router)
 app.include_router(genre_mix_router)
 app.include_router(rediscover_router)
 app.include_router(artist_radio_router)
+app.include_router(song_radio_router)
 
 
 # ---------------------------------------------------------------------------
@@ -751,7 +757,7 @@ app.include_router(artist_radio_router)
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_router(request: Request, path: str):
     """Handle SPA routing - serve app for known paths, redirect unknown paths"""
-    spa_paths = ["this-is", "artist-radio", "re-discover", "playlists", "terms"]
+    spa_paths = ["this-is", "artist-radio", "song-radio", "re-discover", "playlists", "terms"]
     if path in spa_paths:
         if not system_check_passed:
             return RedirectResponse(url="/system-check", status_code=302)

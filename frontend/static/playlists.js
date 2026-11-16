@@ -830,3 +830,261 @@ if (artistRadioFormat) {
     artistRadioFormat.addEventListener('change', syncQuality);
     syncQuality();
 }
+
+// Song Radio page event handlers
+const songRadioSearch = document.getElementById('song-radio-search');
+const songRadioTrackSelect = document.getElementById('song-radio-track');
+let songRadioBuiltPool = null; // holds the last built pool so create can reuse it
+if (songRadioSearch && songRadioTrackSelect) {
+    const resultsBox = document.getElementById('song-radio-results');
+    const mbidFallback = document.getElementById('song-radio-mbid-fallback');
+    const mbidInput = document.getElementById('song-radio-mbid');
+    const poolBox = document.getElementById('song-radio-pool');
+    const poolCount = document.getElementById('song-radio-pool-count');
+    const createBtn = document.getElementById('create-song-radio-btn');
+
+    document.getElementById('song-radio-search-btn').addEventListener('click', async () => {
+        const query = songRadioSearch.value.trim();
+        if (!query || !checkLibrarySelection()) return;
+        showToast('loading', 'Searching library...', 0);
+        try {
+            const response = await fetch('/api/song-radio/search', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query, library_ids: selectedLibraryIds, limit: 50 })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Search failed');
+            songRadioTrackSelect.innerHTML = '<option value="">Choose a track</option>';
+            const sortedTracks = [...data].sort((a, b) => {
+                const titleA = (a.title || 'Unknown').toLocaleLowerCase();
+                const titleB = (b.title || 'Unknown').toLocaleLowerCase();
+                return titleA.localeCompare(titleB) || (a.artist || 'Unknown').localeCompare(b.artist || 'Unknown');
+            });
+            sortedTracks.forEach(track => {
+                const option = document.createElement('option');
+                option.value = track.id;
+                option.textContent = `${track.title || 'Unknown'} — ${track.artist || 'Unknown'} (${track.album || 'Unknown'})`;
+                option.dataset.track = JSON.stringify({
+                    id: track.id,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    artist_id: track.artist_id,
+                    recording_mbid: track.recording_mbid || null
+                });
+                songRadioTrackSelect.appendChild(option);
+            });
+            resultsBox.classList.remove('hidden');
+            poolBox.classList.add('hidden');
+            createBtn.disabled = true;
+            songRadioBuiltPool = null;
+            showToast('success', `Found ${data.length} track(s)`);
+        } catch (error) { showToast('error', error.message); }
+    });
+
+    songRadioTrackSelect.addEventListener('change', () => {
+        const option = songRadioTrackSelect.selectedOptions[0];
+        const track = option && option.dataset.track ? JSON.parse(option.dataset.track) : null;
+        if (track && track.recording_mbid) {
+            mbidFallback.classList.add('hidden');
+            mbidInput.value = track.recording_mbid;
+        } else {
+            mbidFallback.classList.remove('hidden');
+            mbidInput.value = '';
+        }
+        // Reset any previously built pool when the source track changes.
+        poolBox.classList.add('hidden');
+        songRadioBuiltPool = null;
+        if (songRadioFindBtn) songRadioFindBtn.disabled = !document.getElementById('song-radio-listenbrainz-enabled').checked || !(option && option.value);
+        // In Subsonic-only mode (ListenBrainz disabled or "use Navidrome
+        // similar-tracks" checked) the pool is built server-side on create, so
+        // the "Find Similar Tracks" step is optional and the Create button can
+        // be enabled as soon as a source track is selected.
+        const subsonicOnly = !document.getElementById('song-radio-listenbrainz-enabled').checked
+            || document.getElementById('song-radio-subsonic-similar').checked;
+        createBtn.disabled = !(option && option.value) || !subsonicOnly;
+    });
+
+    const findBtn = document.getElementById('song-radio-find-btn');
+    if (findBtn) {
+        findBtn.addEventListener('click', async () => {
+            const option = songRadioTrackSelect.selectedOptions[0];
+            if (!option || !option.value) return showToast('error', 'Select a source track first.');
+            const track = option.dataset.track ? JSON.parse(option.dataset.track) : null;
+            const useSubsonic = document.getElementById('song-radio-subsonic-similar').checked;
+            const sourceMbid = track?.recording_mbid || mbidInput.value.trim();
+            if (!sourceMbid && !useSubsonic) return showToast('error', 'A MusicBrainz Recording ID is required.');
+
+            showToast('loading', 'Finding similar tracks...', 0);
+            findBtn.disabled = true;
+            try {
+                const response = await fetch('/api/song-radio/build-pool', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source_mbid: sourceMbid,
+                        source_track: track,
+                        listenbrainz_enabled: document.getElementById('song-radio-listenbrainz-enabled').checked,
+                        use_subsonic_similar: document.getElementById('song-radio-subsonic-similar').checked,
+                        algorithm: document.getElementById('song-radio-algorithm').value,
+                        minimum_score: Number(document.getElementById('song-radio-score').value),
+                        repeat_limit: Number(document.getElementById('song-radio-repeat').value),
+                        library_ids: selectedLibraryIds
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'Failed to build pool');
+                songRadioBuiltPool = data;
+                const n = data.pool_size;
+                poolCount.textContent = n > 0
+                    ? `Found ${n} matching track${n === 1 ? '' : 's'} in your library.`
+                    : 'No matching tracks found in your library.';
+                poolBox.classList.remove('hidden');
+                createBtn.disabled = n === 0;
+                if (n > 0) showToast('success', `Built a pool of ${n} track(s).`);
+                else showToast('info', 'No matches — try another track or lower the score.');
+            } catch (error) {
+                showToast('error', error.message);
+            } finally {
+                findBtn.disabled = false;
+            }
+        });
+    }
+
+    const resetBtn = document.getElementById('song-radio-reset-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            poolBox.classList.add('hidden');
+            createBtn.disabled = true;
+            songRadioBuiltPool = null;
+            songRadioTrackSelect.value = '';
+            songRadioTrackSelect.dispatchEvent(new Event('change'));
+        });
+    }
+}
+const songRadioScore = document.getElementById('song-radio-score');
+if (songRadioScore) songRadioScore.addEventListener('input', () => document.getElementById('song-radio-score-value').textContent = songRadioScore.value);
+const songRadioRepeat = document.getElementById('song-radio-repeat');
+if (songRadioRepeat) songRadioRepeat.addEventListener('input', () => document.getElementById('song-radio-repeat-value').textContent = songRadioRepeat.value);
+const songRadioListenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled');
+const songRadioListenbrainzControls = document.getElementById('song-radio-listenbrainz-controls');
+const songRadioFindBtnWrap = document.getElementById('song-radio-find-btn-wrap');
+const songRadioFindBtn = document.getElementById('song-radio-find-btn');
+if (songRadioListenbrainzEnabled) {
+    const syncListenbrainzUi = () => {
+        const enabled = songRadioListenbrainzEnabled.checked;
+        songRadioListenbrainzControls?.classList.toggle('hidden', !enabled);
+        songRadioFindBtnWrap?.classList.toggle('hidden', !enabled);
+        const option = songRadioTrackSelect.selectedOptions[0];
+        if (songRadioFindBtn) songRadioFindBtn.disabled = !enabled || !(option && option.value);
+        // Re-evaluate whether the Create button can be enabled without the
+        // "Find Similar Tracks" step (Subsonic-only mode).
+        const subsonicOnly = !enabled || document.getElementById('song-radio-subsonic-similar').checked;
+        if (subsonicOnly && option && option.value) {
+            createBtn.disabled = false;
+            poolBox.classList.add('hidden');
+            songRadioBuiltPool = null;
+        } else {
+            createBtn.disabled = true;
+        }
+    };
+    songRadioListenbrainzEnabled.addEventListener('change', syncListenbrainzUi);
+    syncListenbrainzUi();
+}
+const songRadioSubsonicSimilar = document.getElementById('song-radio-subsonic-similar');
+if (songRadioSubsonicSimilar) {
+    songRadioSubsonicSimilar.addEventListener('change', () => {
+        const subsonicOnly = songRadioSubsonicSimilar.checked
+            || !document.getElementById('song-radio-listenbrainz-enabled').checked;
+        const option = songRadioTrackSelect.selectedOptions[0];
+        if (subsonicOnly && option && option.value) {
+            createBtn.disabled = false;
+            poolBox.classList.add('hidden');
+            songRadioBuiltPool = null;
+        } else {
+            createBtn.disabled = true;
+        }
+    });
+}
+const songRadioDiversity = document.getElementById('song-radio-diversity-enabled');
+if (songRadioDiversity) {
+    const inputs = document.getElementById('song-radio-diversity-inputs');
+    const sync = () => {
+        inputs.querySelectorAll('input').forEach(input => input.disabled = !songRadioDiversity.checked);
+        inputs.style.opacity = songRadioDiversity.checked ? '1' : '0.5';
+    };
+    songRadioDiversity.addEventListener('change', sync);
+    sync();
+}
+const songRadioFormat = document.getElementById('song-radio-min-format');
+if (songRadioFormat) {
+    const syncQuality = () => {
+        const isFlac = songRadioFormat.value === 'flac';
+        document.getElementById('song-radio-bitrate-wrap').classList.toggle('hidden', isFlac);
+        document.getElementById('song-radio-bitdepth-wrap').classList.toggle('hidden', !isFlac);
+        document.getElementById('song-radio-min-bitrate').disabled = isFlac;
+        document.getElementById('song-radio-min-bitdepth').disabled = !isFlac;
+    };
+    songRadioFormat.addEventListener('change', syncQuality);
+    syncQuality();
+}
+const songRadioForm = document.getElementById('song-radio-form');
+if (songRadioForm) songRadioForm.addEventListener('submit', createSongRadioPlaylist);
+
+async function createSongRadioPlaylist(event) {
+    if (event) event.preventDefault();
+    const submitBtn = document.getElementById('create-song-radio-btn');
+    if (!checkLibrarySelection()) return;
+    const useSubsonic = document.getElementById('song-radio-subsonic-similar').checked;
+    const listenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled').checked;
+    // When relying on Navidrome's similarity engine the pool is built server-side
+    // on create, so the "Find Similar Tracks" step is not required.
+    if (!songRadioBuiltPool && listenbrainzEnabled && !useSubsonic) {
+        return showToast('error', 'Find similar tracks first to build the pool.');
+    }
+    const trackSelect = document.getElementById('song-radio-track');
+    const option = trackSelect.selectedOptions[0];
+    if (!option || !option.value) return showToast('error', 'Select a source track.');
+    const track = option.dataset.track ? JSON.parse(option.dataset.track) : null;
+    const sourceMbid = track?.recording_mbid || document.getElementById('song-radio-mbid').value.trim();
+    if (!sourceMbid && !useSubsonic) return showToast('error', 'A MusicBrainz Recording ID is required.');
+
+    const minFormat = document.getElementById('song-radio-min-format').value;
+    const minBitrate = document.getElementById('song-radio-min-bitrate').value;
+    const minBitDepth = document.getElementById('song-radio-min-bitdepth').value;
+
+    showToast('loading', 'Creating your Song Radio playlist...', 0);
+    submitBtn.disabled = true;
+    try {
+        const response = await fetch('/api/create_song_radio', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_mbid: sourceMbid,
+                source_track: track,
+                listenbrainz_enabled: document.getElementById('song-radio-listenbrainz-enabled').checked,
+                use_subsonic_similar: document.getElementById('song-radio-subsonic-similar').checked,
+                algorithm: document.getElementById('song-radio-algorithm').value,
+                minimum_score: Number(document.getElementById('song-radio-score').value),
+                repeat_limit: Number(document.getElementById('song-radio-repeat').value),
+                year_start: valueOrNull('song-radio-year-start'),
+                year_end: valueOrNull('song-radio-year-end'),
+                diversity_enabled: document.getElementById('song-radio-diversity-enabled').checked,
+                max_tracks_per_album: Number(document.getElementById('song-radio-album-cap').value),
+                max_tracks_per_artist: Number(document.getElementById('song-radio-artist-cap').value),
+                min_format: minFormat || null,
+                min_bitrate: minFormat === 'flac' ? null : (minBitrate ? Number(minBitrate) : null),
+                min_bit_depth: minFormat === 'flac' ? (minBitDepth ? Number(minBitDepth) : null) : null,
+                playlist_length: Number(document.querySelector('input[name="song-radio-playlist-length"]:checked').value),
+                refresh_frequency: document.querySelector('input[name="song-radio-refresh-frequency"]:checked').value,
+                library_ids: selectedLibraryIds
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Failed to create playlist');
+        showToast('success', `Song Radio playlist created with ${data.songs ? data.songs.length : 0} tracks`);
+        updatePlaylistCount();
+    } catch (error) {
+        showToast('error', error.message);
+    } finally {
+        submitBtn.disabled = false;
+    }
+}

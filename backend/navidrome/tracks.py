@@ -532,6 +532,175 @@ class _TracksMixin:
             return []
 
 
+    async def search_tracks(
+        self,
+        query: str,
+        library_ids: Union[List[str], str, None] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Search the library for tracks by title, artist, or album.
+
+        Uses the Subsonic ``search3`` endpoint so callers can locate a source
+        track for Song Radio without knowing its server ID in advance. The
+        returned tracks carry the same shape as every other track method so the
+        Song Radio pipeline can treat them uniformly.
+        """
+        if not query or not str(query).strip():
+            return []
+
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["query"] = str(query).strip()
+            params["artistCount"] = 0
+            params["albumCount"] = 0
+            params["songCount"] = max(1, int(limit))
+
+            if isinstance(library_ids, list) and library_ids:
+                params["musicFolderId"] = library_ids[0]
+            elif isinstance(library_ids, str) and library_ids:
+                params["musicFolderId"] = library_ids
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/search3.view",
+                params=params,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Subsonic API error: {error.get('message', 'Unknown error')}")
+
+            search_result = subsonic_response.get("searchResult3", {})
+            songs = search_result.get("song", [])
+            if not isinstance(songs, list):
+                songs = [songs] if songs else []
+
+            tracks: List[Dict[str, Any]] = []
+            for song in songs:
+                if not isinstance(song, dict):
+                    continue
+                raw_genres = song.get("genres", song.get("genre"))
+                tracks.append({
+                    "id": song.get("id"),
+                    "title": song.get("title"),
+                    "artist": song.get("artist"),
+                    "album": song.get("album"),
+                    "year": song.get("year"),
+                    "genre": song.get("genre"),
+                    "genres": _normalize_genres(raw_genres),
+                    "play_count": song.get("playCount", 0),
+                    "starred": song.get("starred") is not None,
+                    "rating": song.get("userRating", 0),
+                    "format": song.get("suffix"),
+                    "bit_rate": song.get("bitRate", 0),
+                    "bit_depth": song.get("bitDepth"),
+                    "duration": song.get("duration"),
+                    "track_number": song.get("track"),
+                    "recording_mbid": song.get("musicBrainzId") or song.get("mbid"),
+                })
+
+            deduped = self._deduplicate_tracks(tracks)
+            print(f"🔍 Search '{query}' returned {len(deduped)} track(s)")
+            return deduped
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error searching tracks for '{query}': {e}")
+
+    async def get_similar_tracks(
+        self,
+        track_id: str,
+        count: int = 50,
+        library_ids: Union[List[str], str, None] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch similar tracks for a source track using the Subsonic API.
+
+        Uses ``getSimilarSongs2`` (Navidrome's similarity engine) which returns
+        tracks from the local library that are similar to the given source track.
+        This is the Subsonic-native fallback for ListenBrainz similarity and does
+        not require any external service or MusicBrainz IDs.
+
+        Args:
+            track_id: The ID of the source track.
+            count: Maximum number of similar tracks to return.
+            library_ids: Optional library scope (first library is used).
+
+        Returns:
+            List of tracks in the standard track shape used across the client.
+        """
+        if not track_id:
+            return []
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["id"] = track_id
+            params["count"] = max(1, int(count))
+
+            if isinstance(library_ids, list) and library_ids:
+                params["musicFolderId"] = library_ids[0]
+            elif isinstance(library_ids, str) and library_ids:
+                params["musicFolderId"] = library_ids
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/getSimilarSongs2.view",
+                params=params,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Subsonic API error: {error.get('message', 'Unknown error')}")
+
+            similar = subsonic_response.get("similarSongs2", {})
+            songs = similar.get("song", [])
+            if not isinstance(songs, list):
+                songs = [songs] if songs else []
+
+            tracks: List[Dict[str, Any]] = []
+            for song in songs:
+                if not isinstance(song, dict):
+                    continue
+                raw_genres = song.get("genres", song.get("genre"))
+                tracks.append({
+                    "id": song.get("id"),
+                    "title": song.get("title"),
+                    "artist": song.get("artist"),
+                    "album": song.get("album"),
+                    "year": song.get("year"),
+                    "genre": song.get("genre"),
+                    "genres": _normalize_genres(raw_genres),
+                    "play_count": song.get("playCount", 0),
+                    "starred": song.get("starred") is not None,
+                    "rating": song.get("userRating", 0),
+                    "format": song.get("suffix"),
+                    "bit_rate": song.get("bitRate", 0),
+                    "bit_depth": song.get("bitDepth"),
+                    "duration": song.get("duration"),
+                    "track_number": song.get("track"),
+                    "recording_mbid": song.get("musicBrainzId") or song.get("mbid"),
+                })
+
+            deduped = self._deduplicate_tracks(tracks)
+            print(f"🎯 getSimilarSongs2 returned {len(deduped)} similar track(s) for {track_id}")
+            return deduped
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error fetching similar tracks for '{track_id}': {e}")
+
     async def get_starred(self, library_ids: Union[List[str], str, None] = None) -> List[Dict[str, Any]]:
         """Fetch starred tracks from Navidrome using getStarred API
 
