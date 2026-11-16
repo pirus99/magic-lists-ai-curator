@@ -5,6 +5,73 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-11-16
+
+### Added
+
+- **Last.fm top tracks for Jellyfin** (`backend/services/lastfm_client.py`,
+  `lastfm_service.py`): Jellyfin has no equivalent of Navidrome's `getTopSongs`, so
+  **Top Tracks per Artist** on This Is and Artist Radio now resolves through Last.fm's
+  `artist.getTopTracks`. Returned titles are matched against the artist's local tracks
+  with a normalized, accent- and punctuation-insensitive comparison (ignoring suffixes
+  such as `- Remastered`, `(feat. …)`, `- Live`), so only real library tracks with real
+  Jellyfin item ids end up in the playlist. New env vars: `LASTFM_API_KEY`,
+  `LASTFM_API_URL`, `LASTFM_TIMEOUT`.
+  - New endpoint `GET /api/top-tracks/strategies` reports the active source
+    (`native` / `lastfm`) plus `supported` (the server type has a source at all) and
+    `configured` (it can service a request right now — `lastfm` needs an API key).
+    The short labels (`Native`, `Last.fm`, `Hybrid`, `Off`) come from the backend, so
+    the UI never hard-codes the wording.
+  - The top-tracks control stays **visible on both server types**. Without a key it
+    reads *Source: Last.fm*, shows a setup prompt, and playlists fall back to
+    play-count ordering — the feature never silently disappears.
+- **MusicBrainz ID override for This Is**: Jellyfin artist metadata frequently has no
+  MBID, which Last.fm needs to resolve an artist. `POST /api/create_playlist` accepts an
+  optional `artist_mbid`, and the This Is page shows a *MusicBrainz ID for Last.fm
+  lookup* field when the source is Last.fm, top tracks are enabled and the artist has no
+  MBID. It affects the Last.fm request only — never track selection — and is persisted as
+  `artist_mbid_override` so scheduled refreshes reuse it. Empty values are ignored rather
+  than stored, so they cannot shadow the library's own MBID.
+- **Last.fm connectivity check** on the system-check page (Jellyfin only). It probes
+  `artist.getTopTracks` — the same endpoint playlist builds use — and reports
+  success/warning/error with an actionable suggestion. A missing key is a warning, never
+  a startup failure.
+- **Help system for playlist types** (`frontend/static/ui/help.js`,
+  `frontend/templates/help/`): a *Help* button on each playlist page and in the
+  edit-playlist modal opens per-type help content (This Is, Artist Radio, Genre Mix,
+  Re-Discover) served by the new `GET /help/{help_type}` route.
+- New tests: `test_lastfm_service.py` (title normalization, artist matching, top-track
+  resolution) and `test_this_is_artist_fallback.py`.
+
+### Changed
+
+- `template_context()` now also injects `server_label` (`"Navidrome"` / `"Jellyfin"`) and
+  the top-tracks strategy flags into every Jinja render. Templates must use
+  `{{ server_label }}` instead of hard-coding a server name — the system-check page
+  previously shipped a literal `data-server-type="jellyfin"` and read it back to build its
+  own title, so Navidrome users saw "Jellyfin" there.
+- `GET /help/{help_type}` renders through `template_context(request)`, so help partials
+  have `server_label` available.
+- `.env.example` reorganized and commented: `DATABASE_PATH` and `LOG_LEVEL` documented,
+  Navidrome/Jellyfin blocks split out, Jellyfin auth options (API key vs. user/password)
+  labelled, and the Last.fm block added.
+- `POST /api/create_playlist` validates `artist_ids` before fetching the artist list,
+  avoiding a needless API call on an empty request.
+- Docs updated: `docs/JELLYFIN.md` (top tracks + MBID sections, new limitation),
+  `docs/API.md` (top-tracks endpoint, `artist_mbid`, server-dependent health checks),
+  `docs/ENVIRONMENT.md` (Last.fm variables), `docs/TROUBLESHOOTING.md`, and `README.md`.
+
+### Notes for users
+
+- **Navidrome**: nothing changes — top tracks keep using the native `getTopSongs` endpoint
+  and `LASTFM_API_KEY` is not read.
+- **Jellyfin**: add `LASTFM_API_KEY` (free key from
+  [last.fm/api/account/create](https://www.last.fm/api/account/create)) to `.env` to enable
+  top tracks. Last.fm is rate limited to roughly 5 requests/second and responses are not
+  cached, so a refresh across many artists costs one request per artist.
+- Upgrading is a normal pull + `docker compose up -d --build`; no database migration and no
+  need to re-create existing playlists.
+
 ## [1.2.0] - 2026-10-05
 
 ### Added
