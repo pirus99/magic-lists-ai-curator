@@ -19,6 +19,10 @@ class CreatePlaylistRequest(BaseModel):
     library_ids: List[str] = []  # List of library IDs to filter tracks
     top_tracks_enabled: bool = False
     top_tracks_count: int = Field(default=0, ge=0, le=20)
+    # Last.fm lookup override. Jellyfin metadata frequently lacks a MusicBrainz ID,
+    # which Last.fm needs to resolve top tracks, so the user can supply one. Used only
+    # for the top-tracks request; it never affects which tracks are selected.
+    artist_mbid: Optional[str] = None
 
 class ArtistRadioRecommendationRequest(BaseModel):
     """Request schema for fetching ListenBrainz recommendations."""

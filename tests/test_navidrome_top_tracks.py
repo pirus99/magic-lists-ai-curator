@@ -50,16 +50,30 @@ async def test_get_top_songs_by_artist_uses_artist_name_and_slices(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_top_tracks_service_disables_jellyfin(monkeypatch):
+async def test_top_tracks_service_keeps_jellyfin_enabled(monkeypatch):
+    """Jellyfin is a supported top-track source, so settings are no longer zeroed out.
+
+    Previously the feature was hard-gated to Navidrome, which hid the whole control in
+    the UI. Jellyfin now resolves top tracks via Last.fm instead.
+    """
     monkeypatch.setenv("SERVER_TYPE", "jellyfin")
+    monkeypatch.setenv("LASTFM_API_KEY", "key")
+
+    assert top_tracks_service.top_tracks_settings(True, 5) == {
+        "top_tracks_enabled": True,
+        "top_tracks_count": 5,
+    }
+
+
+@pytest.mark.anyio
+async def test_top_tracks_service_degrades_when_lastfm_unreachable(monkeypatch):
+    """A missing client/failed lookup must yield no top tracks, never an exception."""
+    monkeypatch.setenv("SERVER_TYPE", "jellyfin")
+    monkeypatch.delenv("JELLYFIN_URL", raising=False)
 
     result = await top_tracks_service.fetch_top_tracks(["artist"], [], 5)
 
     assert result == []
-    assert top_tracks_service.top_tracks_settings(True, 5) == {
-        "top_tracks_enabled": False,
-        "top_tracks_count": 0,
-    }
 
 
 def test_this_is_top_tracks_allow_twenty_tracks(monkeypatch):

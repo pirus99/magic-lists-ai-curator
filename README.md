@@ -36,6 +36,7 @@ _Creating a 'Genre Mix' playlist_
    - Artist Radio Similarity Check
    - Playlist Generation Quality
    - Support for Big Music Libraries
+   - LastFm top tracks fetching
 
 Please contribute to the project and report your testing and experience with this application on the Issues tab.
 
@@ -106,6 +107,7 @@ services:
       - AI_API_KEY=your_google_api_key
       - AI_MODEL=gemini-3.1-flash-lite
       - DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it
+      - LASTFM_API_KEY=your_lastfm_key        # Optional: Jellyfin top tracks via Last.fm
     volumes:
       - ./magiclists-data:/app/data           # Persist database + settings
     restart: unless-stopped
@@ -117,6 +119,34 @@ docker compose up -d
 ```
 
 Then open **http://localhost:4545** and verify everything at **http://localhost:4545/system-check**.
+
+### Artist top tracks
+
+The **Top Tracks per Artist** slider on the This Is and Artist Radio pages is powered by a different
+source depending on your server, and the UI shows which one is active:
+
+| Server | Source | Label | Requires |
+|---|---|---|---|
+| Navidrome | Native `getTopSongs` endpoint | `Native` | Nothing |
+| Jellyfin | [Last.fm](https://www.last.fm/api) `artist.getTopTracks` | `Last.fm` | `LASTFM_API_KEY` for full effect |
+
+Jellyfin has no equivalent of Navidrome's top-songs endpoint, so set `LASTFM_API_KEY` to a free key from
+[last.fm/api/account/create](https://www.last.fm/api/account/create) to enable it. Last.fm returns song
+titles rather than server IDs, so MagicLists matches them against the artist's tracks already in your
+library; only matched tracks are used.
+
+The slider is **always visible** on both server types. Without a key it still reads *Source: Last.fm*
+but shows a setup prompt, and playlists are built with play-count ordering instead — so a missing key
+never blocks you, and the feature stays discoverable. `GET /api/top-tracks/strategies` reports this as
+`supported` (the server type can do top tracks) versus `configured` (it can right now).
+
+Last.fm resolves artists by MusicBrainz ID, and Jellyfin metadata often has none. When that happens,
+the This Is page shows a **MusicBrainz ID** field so you can paste one in (from
+[musicbrainz.org](https://musicbrainz.org)); it is used for the Last.fm lookup only and never changes
+which tracks are chosen.
+
+See [docs/JELLYFIN.md](docs/JELLYFIN.md) for details and [docs/API.md](docs/API.md) for
+`GET /api/top-tracks/strategies`.
 
 👉 Full instructions: **[`docs/DOCKER.md`](docs/DOCKER.md)**
 

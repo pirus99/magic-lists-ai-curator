@@ -27,6 +27,25 @@
         </div>
     </div>
 
+    <!-- Last.fm integration card (Jellyfin only, provides artist top tracks) -->
+    <div id="lastfm-card" class="hidden mb-6 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700/40">
+        <div class="p-4 flex items-start justify-between gap-4">
+            <div class="flex items-start">
+                <div id="lastfm-icon" class="flex-shrink-0 mt-0.5">
+                    <!-- Icon injected by JS -->
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">Last.fm Integration</h3>
+                    <p id="lastfm-status" class="text-sm text-gray-600 dark:text-gray-300 mt-1">Checking Last.fm...</p>
+                    <p id="lastfm-suggestion" class="hidden text-sm text-blue-600 dark:text-blue-400 font-medium mt-1"></p>
+                </div>
+            </div>
+            <span id="lastfm-badge" class="flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium">
+                Checking
+            </span>
+        </div>
+    </div>
+
     <div id="system-check-results" class="mt-8">
         <div id="success-banner" class="hidden p-4 mb-4 text-green-800 dark:text-green-300 border border-green-300 dark:border-green-700 rounded-lg bg-green-50 dark:bg-green-900/20">
             <div class="flex">
