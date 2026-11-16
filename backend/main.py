@@ -224,6 +224,16 @@ async def system_check_page(request: Request):
 # SYSTEM CHECK FEATURE - END
 
 
+@app.get("/help/{help_type}", response_class=HTMLResponse)
+async def get_help_content(help_type: str, request: Request):
+    """Serve a help partial for a given playlist type from the Jinja templates folder."""
+    allowed_types = {"this_is", "artist_radio", "genre_mix", "rediscover"}
+    if help_type not in allowed_types:
+        raise HTTPException(status_code=404, detail="Help content not found")
+
+    return templates.TemplateResponse(f"help/{help_type}.html", {"request": request})
+
+
 # ---------------------------------------------------------------------------
 # Generic Navidrome data endpoints
 # ---------------------------------------------------------------------------
