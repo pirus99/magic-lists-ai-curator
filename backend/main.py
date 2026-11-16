@@ -192,9 +192,13 @@ templates = Jinja2Templates(directory="frontend/templates")
 def template_context(request: Request):
     """Return shared template context for the active media server."""
     strategy = top_tracks_strategy()
+    server_type = os.getenv("SERVER_TYPE", "navidrome").lower()
     return {
         "request": request,
-        "server_type": os.getenv("SERVER_TYPE", "navidrome").lower(),
+        "server_type": server_type,
+        # Display name for user-facing copy; templates must use this instead of
+        # hard-coding a server name.
+        "server_label": "Jellyfin" if server_type == "jellyfin" else "Navidrome",
         "top_tracks_strategy": strategy,
         "top_tracks_strategy_label": STRATEGY_LABELS.get(strategy, strategy),
         # "supported" = the server type has a source at all (keep the UI visible);
@@ -231,7 +235,7 @@ async def get_help_content(help_type: str, request: Request):
     if help_type not in allowed_types:
         raise HTTPException(status_code=404, detail="Help content not found")
 
-    return templates.TemplateResponse(f"help/{help_type}.html", {"request": request})
+    return templates.TemplateResponse(f"help/{help_type}.html", template_context(request))
 
 
 # ---------------------------------------------------------------------------
