@@ -938,8 +938,6 @@ if (songRadioSearch && songRadioTrackSelect) {
                 songRadioBuiltPool = data;
                 const n = data.pool_size;
                 const listenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled').checked;
-                const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
-                const useSubsonic = Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
                 poolCount.textContent = n > 0
                     ? `Found ${n} matching track${n === 1 ? '' : 's'} in your library.`
                     : listenbrainzEnabled && !useSubsonic
@@ -988,11 +986,13 @@ if (songRadioListenbrainzEnabled) {
         // "Find Similar Tracks" step (Subsonic-only mode).
         const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
         const subsonicOnly = !enabled || Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
-        if (subsonicOnly && option && option.value) {
+        const createBtn = document.getElementById('create-song-radio-btn');
+        const poolBox = document.getElementById('song-radio-pool');
+        if (subsonicOnly && option && option.value && createBtn) {
             createBtn.disabled = false;
-            poolBox.classList.add('hidden');
+            poolBox?.classList.add('hidden');
             songRadioBuiltPool = null;
-        } else {
+        } else if (createBtn) {
             createBtn.disabled = true;
         }
     };
@@ -1005,11 +1005,13 @@ if (songRadioSubsonicSimilar) {
         const subsonicOnly = songRadioSubsonicSimilar.checked
             || !document.getElementById('song-radio-listenbrainz-enabled').checked;
         const option = songRadioTrackSelect.selectedOptions[0];
-        if (subsonicOnly && option && option.value) {
+        const createBtn = document.getElementById('create-song-radio-btn');
+        const poolBox = document.getElementById('song-radio-pool');
+        if (subsonicOnly && option && option.value && createBtn) {
             createBtn.disabled = false;
-            poolBox.classList.add('hidden');
+            poolBox?.classList.add('hidden');
             songRadioBuiltPool = null;
-        } else {
+        } else if (createBtn) {
             createBtn.disabled = true;
         }
     });
