@@ -57,7 +57,7 @@ async function openEditModal(playlistId) {
         // Help button targets the help modal for this playlist type
         const helpBtn = document.getElementById('edit-help-btn');
         if (helpBtn) {
-            const helpType = (type === 'genre_mix' || type === 'this_is' || type === 'artist_radio')
+            const helpType = (type === 'genre_mix' || type === 'this_is' || type === 'artist_radio' || type === 'song_radio')
                 ? type
                 : 'rediscover';
             helpBtn.setAttribute('data-help-type', helpType);
