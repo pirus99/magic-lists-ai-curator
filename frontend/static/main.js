@@ -45,6 +45,17 @@
             if (editSave) editSave.addEventListener('click', function () { try { if (window.savePlaylistSettings) { window.savePlaylistSettings(false); } else if (window.App && window.App.playlists && window.App.playlists.savePlaylistSettings) { window.App.playlists.savePlaylistSettings(false); } } catch (e) { console.error(e); } });
             if (editSaveRefresh) editSaveRefresh.addEventListener('click', function () { try { if (window.savePlaylistSettings) { window.savePlaylistSettings(true); } else if (window.App && window.App.playlists && window.App.playlists.savePlaylistSettings) { window.App.playlists.savePlaylistSettings(true); } } catch (e) { console.error(e); } });
 
+            // Delegated "How this works" help buttons (one per playlist type page)
+            document.addEventListener('click', function (e) {
+                const btn = e.target.closest('[data-help-type]');
+                if (!btn) return;
+                const type = btn.getAttribute('data-help-type');
+                try {
+                    if (window.openHelpModal) window.openHelpModal(type);
+                    else if (window.App && window.App.help && window.App.help.openHelpModal) window.App.help.openHelpModal(type);
+                } catch (err) { console.error(err); }
+            });
+
             // Delegate playlist action clicks (refresh, edit, delete)
             const playlistsContainer = document.getElementById('playlists-container');
             if (playlistsContainer) {

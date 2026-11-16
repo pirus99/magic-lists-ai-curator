@@ -54,6 +54,15 @@ async function openEditModal(playlistId) {
         document.getElementById('edit-modal-type').textContent = typeLabel(type);
         document.getElementById('edit-modal-type-value').value = type;
 
+        // Help button targets the help modal for this playlist type
+        const helpBtn = document.getElementById('edit-help-btn');
+        if (helpBtn) {
+            const helpType = (type === 'genre_mix' || type === 'this_is' || type === 'artist_radio')
+                ? type
+                : 'rediscover';
+            helpBtn.setAttribute('data-help-type', helpType);
+        }
+
         // Common: playlist metadata
         document.getElementById('edit-playlist-name').value = playlist.playlist_name || '';
         document.getElementById('edit-playlist-description').value = playlist.description || '';

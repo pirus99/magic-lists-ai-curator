@@ -1,30 +1,11 @@
-<div id="system-check-content" data-server-type="jellyfin" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
+<div id="system-check-content" data-server-type="{{ server_type or 'navidrome' }}" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
     <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">System Check <span id="server-type-label" class="text-sm font-normal text-gray-500">(Navidrome)</span></h1>
-        <p class="text-gray-600 dark:text-gray-300">Verifying your MagicLists configuration for <span id="server-type-text">Navidrome</span>...</p>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">System Check <span id="server-type-label" class="text-sm font-normal text-gray-500">({{ server_label }})</span></h1>
+        <p class="text-gray-600 dark:text-gray-300">Verifying your MagicLists configuration for <span id="server-type-text">{{ server_label }}</span>...</p>
     </div>
 
     <div id="system-checks-list" class="space-y-4 mb-6">
         <!-- Check items will be dynamically inserted here -->
-    </div>
-
-    <!-- ListenBrainz integration card (Navidrome only) -->
-    <div id="listenbrainz-card" class="hidden mb-6 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700/40">
-        <div class="p-4 flex items-start justify-between gap-4">
-            <div class="flex items-start">
-                <div id="listenbrainz-icon" class="flex-shrink-0 mt-0.5">
-                    <!-- Icon injected by JS -->
-                </div>
-                <div class="ml-3">
-                    <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">ListenBrainz Integration</h3>
-                    <p id="listenbrainz-status" class="text-sm text-gray-600 dark:text-gray-300 mt-1">Checking ListenBrainz Labs...</p>
-                    <p id="listenbrainz-suggestion" class="hidden text-sm text-blue-600 dark:text-blue-400 font-medium mt-1"></p>
-                </div>
-            </div>
-            <span id="listenbrainz-badge" class="flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium">
-                Checking
-            </span>
-        </div>
     </div>
 
     <!-- Last.fm integration card (Jellyfin only, provides artist top tracks) -->
@@ -94,9 +75,15 @@
 </div>
 
 <script>
-    // Dynamic server type replacement for system check page
+    // Dynamic server type replacement for system check page.
+    // The server type is rendered server-side into data-server-type; the body tag
+    // carries the same value, so fall back to it if the attribute is missing.
     (function() {
-        const serverType = document.getElementById('system-check-content').getAttribute('data-server-type') || 'navidrome';
+        const content = document.getElementById('system-check-content');
+        if (!content) return;
+        const serverType = content.getAttribute('data-server-type')
+            || document.body?.dataset.serverType
+            || 'navidrome';
         const displayName = serverType === 'jellyfin' ? 'Jellyfin' : 'Navidrome';
         document.querySelectorAll('#server-type-label, #server-type-text').forEach(el => {
             el.textContent = displayName;
