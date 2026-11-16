@@ -900,8 +900,9 @@ if (songRadioSearch && songRadioTrackSelect) {
         // similar-tracks" checked) the pool is built server-side on create, so
         // the "Find Similar Tracks" step is optional and the Create button can
         // be enabled as soon as a source track is selected.
+        const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
         const subsonicOnly = !document.getElementById('song-radio-listenbrainz-enabled').checked
-            || document.getElementById('song-radio-subsonic-similar').checked;
+            || Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
         createBtn.disabled = !(option && option.value) || !subsonicOnly;
     });
 
@@ -911,7 +912,8 @@ if (songRadioSearch && songRadioTrackSelect) {
             const option = songRadioTrackSelect.selectedOptions[0];
             if (!option || !option.value) return showToast('error', 'Select a source track first.');
             const track = option.dataset.track ? JSON.parse(option.dataset.track) : null;
-            const useSubsonic = document.getElementById('song-radio-subsonic-similar').checked;
+            const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+            const useSubsonic = Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
             const sourceMbid = track?.recording_mbid || mbidInput.value.trim();
             if (!sourceMbid && !useSubsonic) return showToast('error', 'A MusicBrainz Recording ID is required.');
 
@@ -924,7 +926,7 @@ if (songRadioSearch && songRadioTrackSelect) {
                         source_mbid: sourceMbid,
                         source_track: track,
                         listenbrainz_enabled: document.getElementById('song-radio-listenbrainz-enabled').checked,
-                        use_subsonic_similar: document.getElementById('song-radio-subsonic-similar').checked,
+                        use_subsonic_similar: Boolean(subsonicSimilarInput && subsonicSimilarInput.checked),
                         algorithm: document.getElementById('song-radio-algorithm').value,
                         minimum_score: Number(document.getElementById('song-radio-score').value),
                         repeat_limit: Number(document.getElementById('song-radio-repeat').value),
@@ -935,12 +937,18 @@ if (songRadioSearch && songRadioTrackSelect) {
                 if (!response.ok) throw new Error(data.detail || 'Failed to build pool');
                 songRadioBuiltPool = data;
                 const n = data.pool_size;
+                const listenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled').checked;
+                const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+                const useSubsonic = Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
                 poolCount.textContent = n > 0
                     ? `Found ${n} matching track${n === 1 ? '' : 's'} in your library.`
-                    : 'No matching tracks found in your library.';
+                    : listenbrainzEnabled && !useSubsonic
+                        ? 'ListenBrainz found no matching tracks.'
+                        : 'No matching tracks found in your library.';
                 poolBox.classList.remove('hidden');
                 createBtn.disabled = n === 0;
                 if (n > 0) showToast('success', `Built a pool of ${n} track(s).`);
+                else if (listenbrainzEnabled && !useSubsonic) showToast('info', 'ListenBrainz found no matching tracks.');
                 else showToast('info', 'No matches — try another track or lower the score.');
             } catch (error) {
                 showToast('error', error.message);
@@ -978,7 +986,8 @@ if (songRadioListenbrainzEnabled) {
         if (songRadioFindBtn) songRadioFindBtn.disabled = !enabled || !(option && option.value);
         // Re-evaluate whether the Create button can be enabled without the
         // "Find Similar Tracks" step (Subsonic-only mode).
-        const subsonicOnly = !enabled || document.getElementById('song-radio-subsonic-similar').checked;
+        const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+        const subsonicOnly = !enabled || Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
         if (subsonicOnly && option && option.value) {
             createBtn.disabled = false;
             poolBox.classList.add('hidden');
@@ -1034,7 +1043,8 @@ async function createSongRadioPlaylist(event) {
     if (event) event.preventDefault();
     const submitBtn = document.getElementById('create-song-radio-btn');
     if (!checkLibrarySelection()) return;
-    const useSubsonic = document.getElementById('song-radio-subsonic-similar').checked;
+    const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+    const useSubsonic = Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
     const listenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled').checked;
     // When relying on Navidrome's similarity engine the pool is built server-side
     // on create, so the "Find Similar Tracks" step is not required.
@@ -1061,7 +1071,7 @@ async function createSongRadioPlaylist(event) {
                 source_mbid: sourceMbid,
                 source_track: track,
                 listenbrainz_enabled: document.getElementById('song-radio-listenbrainz-enabled').checked,
-                use_subsonic_similar: document.getElementById('song-radio-subsonic-similar').checked,
+                use_subsonic_similar: Boolean(document.getElementById('song-radio-subsonic-similar') && document.getElementById('song-radio-subsonic-similar').checked),
                 algorithm: document.getElementById('song-radio-algorithm').value,
                 minimum_score: Number(document.getElementById('song-radio-score').value),
                 repeat_limit: Number(document.getElementById('song-radio-repeat').value),
