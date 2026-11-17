@@ -182,94 +182,86 @@ THIS_IS_CONFIG = PlaylistTypeConfig(
 )
 
 
-async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager) -> None:
-    """Refresh a specific This Is playlist (scheduler dispatch entry point)."""
-    try:
-        scheduler_logger.info(
-            f"🔄 Starting refresh for This Is playlist ID: {scheduled_playlist.navidrome_playlist_id} "
-            f"(frequency: {scheduled_playlist.refresh_frequency})"
+async def refresh_this_is_playlist(playlist: Dict[str, Any], db: DatabaseManager) -> int:
+    """Refresh a specific This Is playlist (scheduler dispatch entry point).
+
+    Args:
+        playlist: Playlist row from ``get_playlist_by_navidrome_id_with_schedule_info``.
+        db: Database manager.
+
+    Returns:
+        The number of tracks written to the playlist.
+
+    Raises:
+        ValueError: If no tracks or no curated selection could be produced.
+    """
+    navidrome_playlist_id = playlist.get("navidrome_playlist_id")
+    scheduler_logger.info(f"🔄 Starting refresh for This Is playlist ID: {navidrome_playlist_id}")
+
+    nav_client = get_server_client()
+    settings = playlist.get("curation_settings") or {}
+    artist_id = settings.get("artist_id") or playlist["artist_id"]
+    library_ids = settings.get("library_ids") or []
+    original_length = settings.get("playlist_length") or playlist.get("playlist_length", 25)
+    scheduler_logger.info(f"🎯 ENFORCING original playlist length: {original_length}")
+
+    tracks = await fetch_this_is_tracks(
+        library_ids=library_ids,
+        playlist=playlist,
+        settings=settings,
+    )
+    if not tracks:
+        raise ValueError(f"No tracks found for artist {artist_id}")
+    if len(tracks) < original_length:
+        scheduler_logger.warning(
+            f"⚠️ Artist only has {len(tracks)} tracks, but user requested {original_length}. Using all available tracks."
         )
-        nav_client = get_server_client()
-        playlists = await db.get_all_playlists_with_schedule_info()
-        original_playlist = next(
-            (p for p in playlists if p.get("navidrome_playlist_id") == scheduled_playlist.navidrome_playlist_id),
-            None,
+        original_length = len(tracks)
+
+    curated_track_ids, description = await curate_this_is_wrapper(
+        candidate_tracks=tracks,
+        num_tracks=original_length,
+        ai_client=get_ai_client(),
+        playlist=playlist,
+        settings=settings,
+    )
+
+    if not curated_track_ids:
+        raise ValueError("No curated tracks generated")
+
+    if len(curated_track_ids) < original_length and len(tracks) >= original_length:
+        scheduler_logger.warning(
+            f"⚠️ AI returned only {len(curated_track_ids)} tracks but user requested {original_length}. Using fallback to fill gap."
         )
-        if not original_playlist:
-            scheduler_logger.error(f"❌ Could not find original playlist data for {scheduled_playlist.navidrome_playlist_id}")
-            return
+        used_ids = set(curated_track_ids)
+        remaining_tracks = [t for t in tracks if t["id"] not in used_ids]
+        additional_needed = original_length - len(curated_track_ids)
+        curated_track_ids.extend([t["id"] for t in remaining_tracks[:additional_needed]])
 
-        settings = original_playlist.get("curation_settings") or {}
-        artist_id = settings.get("artist_id") or original_playlist["artist_id"]
-        library_ids = settings.get("library_ids") or []
-        original_length = settings.get("playlist_length") or original_playlist.get("playlist_length", 25)
-        scheduler_logger.info(f"🎯 ENFORCING original playlist length: {original_length}")
+    scheduler_logger.info(f"🎯 Final track count: {len(curated_track_ids)} (requested: {original_length})")
 
-        tracks = await fetch_this_is_tracks(
-            library_ids=library_ids,
-            playlist=original_playlist,
-            settings=settings,
-        )
-        if not tracks:
-            scheduler_logger.warning(f"⚠️ No tracks found for artist in playlist {scheduled_playlist.navidrome_playlist_id}")
-            return
-        if len(tracks) < original_length:
-            scheduler_logger.warning(
-                f"⚠️ Artist only has {len(tracks)} tracks, but user requested {original_length}. Using all available tracks."
-            )
-            original_length = len(tracks)
+    refresh_description = _resolve_description(playlist, description)
+    await nav_client.update_playlist(
+        playlist_id=navidrome_playlist_id,
+        track_ids=curated_track_ids,
+        comment=refresh_description,
+    )
 
-        curated_track_ids, description = await curate_this_is_wrapper(
-            candidate_tracks=tracks,
-            num_tracks=original_length,
-            ai_client=get_ai_client(),
-            playlist=original_playlist,
-            settings=settings,
-        )
+    track_id_to_title = {track["id"]: track["title"] for track in tracks}
+    track_titles = [
+        track_id_to_title[track_id]
+        for track_id in curated_track_ids
+        if track_id in track_id_to_title
+    ]
 
-        if curated_track_ids:
-            if len(curated_track_ids) < original_length and len(tracks) >= original_length:
-                scheduler_logger.warning(
-                    f"⚠️ AI returned only {len(curated_track_ids)} tracks but user requested {original_length}. Using fallback to fill gap."
-                )
-                used_ids = set(curated_track_ids)
-                remaining_tracks = [t for t in tracks if t["id"] not in used_ids]
-                additional_needed = original_length - len(curated_track_ids)
-                curated_track_ids.extend([t["id"] for t in remaining_tracks[:additional_needed]])
+    await db.update_playlist_content(
+        navidrome_playlist_id=navidrome_playlist_id,
+        songs=track_titles,
+        description=refresh_description,
+    )
 
-            scheduler_logger.info(f"🎯 Final track count: {len(curated_track_ids)} (requested: {original_length})")
-
-            refresh_description = _resolve_description(original_playlist, description)
-            await nav_client.update_playlist(
-                playlist_id=scheduled_playlist.navidrome_playlist_id,
-                track_ids=curated_track_ids,
-                comment=refresh_description,
-            )
-
-            track_titles = []
-            track_id_to_title = {track["id"]: track["title"] for track in tracks}
-            for track_id in curated_track_ids:
-                if track_id in track_id_to_title:
-                    track_titles.append(track_id_to_title[track_id])
-
-            await db.update_playlist_content(
-                navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
-                songs=track_titles,
-                description=refresh_description,
-            )
-
-            from ..core.scheduler import calculate_next_refresh
-
-            next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
-            await db.update_scheduled_playlist_next_refresh(scheduled_playlist.id, next_refresh)
-            scheduler_logger.info(
-                f"✅ Successfully refreshed This Is playlist {scheduled_playlist.navidrome_playlist_id}. "
-                f"Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-        else:
-            scheduler_logger.warning(f"⚠️ No curated tracks generated for This Is playlist {scheduled_playlist.navidrome_playlist_id}")
-    except Exception as e:
-        scheduler_logger.error(f"❌ Error refreshing This Is playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
+    scheduler_logger.info(f"✅ Successfully refreshed This Is playlist {navidrome_playlist_id}")
+    return len(track_titles)
 
 
 def _resolve_description(original_playlist: Dict[str, Any], generated_description: str) -> str:

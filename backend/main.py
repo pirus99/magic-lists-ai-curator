@@ -57,7 +57,7 @@ logging.getLogger('httpcore').setLevel(logging.WARNING)
 # ---------------------------------------------------------------------------
 # Core / type package imports
 # ---------------------------------------------------------------------------
-from .database import DatabaseManager, get_db
+from .database import DatabaseManager, get_db, get_database_path
 from .schemas import (
     CreatePlaylistRequest,
     CreateGenrePlaylistRequest,
@@ -70,10 +70,17 @@ from .core.dependencies import get_ai_client
 from .core.server_router import get_server_client
 import backend.core.scheduler as scheduler_module
 from .core.scheduler import (
-    schedule_playlist_refresh,
-    refresh_scheduled_playlists,
+    build_schedule_payload,
+    enqueue_all_due,
+    enqueue_manual_refresh,
+    get_job_info,
+    get_next_run_times,
     register_refresh_handler,
+    rehydrate_jobs,
+    sync_playlist_job,
 )
+from .core.refresh_queue import get_refresh_queue
+from .core.schedule_spec import ScheduleSpec, describe_schedule, spec_from_frequency
 from .this_is.routes import router as this_is_router
 from .genre_mix.routes import router as genre_mix_router
 from .rediscover.routes import router as rediscover_router
@@ -120,7 +127,7 @@ async def startup_event():
     scheduler_logger.info("Scheduler started successfully")
 
     # Register per-type refresh handlers with the shared scheduler registry so
-    # refresh_scheduled_playlists can dispatch without importing the type packages.
+    # the refresh queue can dispatch without importing the type packages.
     register_refresh_handler("this_is", refresh_this_is_playlist)
     register_refresh_handler("genre_mix", refresh_genre_playlist)
     register_refresh_handler("rediscover", refresh_rediscover_playlist)
@@ -128,8 +135,15 @@ async def startup_event():
     register_refresh_handler("artist_radio", refresh_artist_radio_playlist)
     register_refresh_handler("song_radio", refresh_song_radio_playlist)
 
-    schedule_playlist_refresh()
-    scheduler_logger.info("Cron job auto-started on application startup")
+    # Start the throttled refresh queue (one refresh at a time by default).
+    get_refresh_queue().start()
+
+    # Rebuild one APScheduler job per scheduled playlist from the database.
+    try:
+        startup_db = DatabaseManager(get_database_path())
+        await rehydrate_jobs(startup_db)
+    except Exception as e:
+        scheduler_logger.error(f"Failed to rehydrate playlist refresh jobs: {e}")
 
     # SYSTEM CHECK FEATURE - START
     try:
@@ -178,8 +192,12 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup scheduler on app shutdown"""
+    """Cleanup scheduler and refresh queue on app shutdown"""
     global scheduler
+    try:
+        await get_refresh_queue().stop()
+    except Exception as e:
+        scheduler_logger.warning(f"Refresh queue shutdown failed: {e}")
     if scheduler:
         scheduler.shutdown()
         scheduler_logger.info("Scheduler shutdown completed")
@@ -378,9 +396,15 @@ async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
     try:
         await reconcile_playlists_with_server(db)
         playlists = await db.get_all_playlists_with_schedule_info()
+        next_runs = get_next_run_times()
         for playlist in playlists:
             songs = playlist.get("songs", [])
             playlist["track_count"] = len(songs) if isinstance(songs, list) else 0
+            # The APScheduler trigger is authoritative; fall back to the stored
+            # value only when no job is registered (e.g. paused schedules).
+            live_next_run = next_runs.get(str(playlist.get("navidrome_playlist_id")))
+            if live_next_run:
+                playlist["next_refresh"] = live_next_run.isoformat()
         return playlists
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlists: {str(e)}")
@@ -410,6 +434,23 @@ async def get_playlist_detail(playlist_id: int, db: DatabaseManager = Depends(ge
         playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
         if not playlist:
             raise HTTPException(status_code=404, detail="Playlist not found")
+
+        # Attach the structured schedule so the edit modal can prefill its
+        # scheduler section without a second request.
+        server_id = playlist.get("navidrome_playlist_id")
+        if server_id:
+            schedule_row = await db.get_schedule_by_navidrome_id(server_id)
+            payload = build_schedule_payload(schedule_row)
+            playlist["schedule"] = payload.get("schedule")
+            playlist["schedule_enabled"] = payload.get("enabled", False)
+            playlist["schedule_description"] = payload.get("schedule_description")
+            playlist["upcoming"] = payload.get("upcoming", [])
+            if payload.get("next_run"):
+                playlist["next_refresh"] = payload["next_run"]
+        else:
+            playlist["schedule"] = None
+            playlist["schedule_enabled"] = False
+
         return playlist
     except HTTPException:
         raise
@@ -469,6 +510,10 @@ class UpdatePlaylistSettingsRequest(BaseModel):
     playlist_name: Optional[str] = None
     description: Optional[str] = None
     is_public: Optional[bool] = None
+    # Structured schedule. When provided it takes precedence over
+    # ``refresh_frequency``; ``None`` means "leave the schedule unchanged".
+    schedule: Optional[ScheduleSpec] = None
+    schedule_enabled: Optional[bool] = None
 
 
 @app.put("/api/playlists/{playlist_id}/settings")
@@ -532,29 +577,39 @@ async def update_playlist_settings(
             playlist_length=new_length if new_length is not None else None
         )
 
-        frequency = request.refresh_frequency if request.refresh_frequency is not None else playlist.get("refresh_frequency")
-        frequency = frequency or "none"
-        existing = await db.get_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
+        # Reconcile the refresh schedule. A structured ``schedule`` wins over the
+        # legacy ``refresh_frequency`` string; omitting both leaves it unchanged.
+        existing = await db.get_schedule_by_navidrome_id(navidrome_playlist_id)
+        playlist_type = playlist.get("playlist_type") or "this_is"
 
-        if frequency in ("none", "never"):
+        spec: Optional[ScheduleSpec] = request.schedule
+        if spec is None and request.refresh_frequency is not None:
+            spec = spec_from_frequency(request.refresh_frequency)
+
+        if spec is None:
+            # No schedule requested: remove any existing one.
             if existing:
                 await db.delete_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
+                scheduler_module.remove_playlist_job(existing["id"])
                 scheduler_logger.info(f"Removed schedule for playlist {navidrome_playlist_id}")
         else:
-            from .core.scheduler import calculate_next_refresh
-            next_refresh = calculate_next_refresh(frequency)
-            if existing:
-                await db.update_scheduled_playlist_frequency(existing.id, frequency, next_refresh)
-                scheduler_logger.info(f"Updated schedule for {navidrome_playlist_id} -> {frequency}")
-            else:
-                await db.create_scheduled_playlist(
-                    playlist_type=playlist.get("playlist_type") or "this_is",
-                    navidrome_playlist_id=navidrome_playlist_id,
-                    refresh_frequency=frequency,
-                    next_refresh=next_refresh
-                )
-                schedule_playlist_refresh()
-                scheduler_logger.info(f"Created schedule for {navidrome_playlist_id} -> {frequency}")
+            from .core.scheduler import next_run_for_spec
+
+            enabled = request.schedule_enabled if request.schedule_enabled is not None else True
+            next_refresh = next_run_for_spec(spec)
+            schedule_row = await db.upsert_schedule(
+                playlist_type=playlist_type,
+                navidrome_playlist_id=navidrome_playlist_id,
+                refresh_frequency=request.refresh_frequency or "custom",
+                next_refresh=next_refresh,
+                schedule_json=spec.model_dump_json(),
+                enabled=enabled,
+            )
+            sync_playlist_job(schedule_row)
+            scheduler_logger.info(
+                f"Updated schedule for {navidrome_playlist_id} -> {describe_schedule(spec)}"
+                f"{'' if enabled else ' (paused)'}"
+            )
 
         updated = await db.get_playlist_by_id_with_schedule_info(playlist_id)
         updated["track_count"] = len(updated.get("songs", []) or [])
@@ -565,18 +620,15 @@ async def update_playlist_settings(
         raise HTTPException(status_code=500, detail=f"Failed to update playlist settings: {str(e)}")
 
 
-class _RefreshTarget:
-    """Lightweight stand-in for a ScheduledPlaylist used by manual refresh dispatch."""
-    def __init__(self, navidrome_playlist_id: str, refresh_frequency: str, playlist_type: str, scheduled_id: int = 0):
-        self.navidrome_playlist_id = navidrome_playlist_id
-        self.refresh_frequency = refresh_frequency
-        self.playlist_type = playlist_type
-        self.id = scheduled_id
-
-
-@app.post("/api/playlists/{playlist_id}/refresh")
+@app.post("/api/playlists/{playlist_id}/refresh", status_code=202)
 async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depends(get_db)):
-    """Manually regenerate a playlist from its saved curation settings"""
+    """Queue a manual refresh of a playlist.
+
+    The refresh runs through the shared throttled queue so it can never collide
+    with a scheduled refresh (or another manual one) and cannot trip AI-provider
+    rate limits. Returns ``202 Accepted`` immediately; poll
+    ``/api/scheduler/overview`` for progress.
+    """
     try:
         playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
         if not playlist:
@@ -584,40 +636,31 @@ async def refresh_playlist_endpoint(playlist_id: int, db: DatabaseManager = Depe
 
         navidrome_playlist_id = playlist.get("navidrome_playlist_id")
         if not navidrome_playlist_id:
-            raise HTTPException(status_code=400, detail="Playlist has no Navidrome ID")
+            raise HTTPException(status_code=400, detail="Playlist has no media server ID")
 
         playlist_type = playlist.get("playlist_type") or "this_is"
-        frequency = playlist.get("refresh_frequency") or "none"
-
-        scheduled = _RefreshTarget(
-            navidrome_playlist_id=navidrome_playlist_id,
-            refresh_frequency=frequency,
-            playlist_type=playlist_type
+        queued = await enqueue_manual_refresh(
+            navidrome_playlist_id,
+            playlist_type,
+            playlist.get("playlist_name"),
         )
 
-        if playlist_type == "genre_mix":
-            await refresh_genre_playlist(playlist, db)
-        elif playlist_type == "artist_radio":
-            await refresh_artist_radio_playlist(playlist, db)
-        elif playlist_type == "song_radio":
-            await refresh_song_radio_playlist(playlist, db)
-        elif playlist_type in ("rediscover", "rediscover_weekly_v2"):
-            await refresh_rediscover_playlist(scheduled, db)
-        else:
-            await refresh_this_is_playlist(scheduled, db)
+        if not queued:
+            return {
+                "status": "already_queued",
+                "message": "This playlist is already queued or refreshing",
+                "playlist_id": navidrome_playlist_id,
+            }
 
-        await db.update_playlist_last_refreshed(navidrome_playlist_id)
-
-        existing = await db.get_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
-        if existing and frequency not in ("none", "never"):
-            from .core.scheduler import calculate_next_refresh
-            await db.update_scheduled_playlist_next_refresh(existing.id, calculate_next_refresh(frequency))
-
-        return {"message": "Playlist refreshed successfully", "playlist_id": navidrome_playlist_id}
+        return {
+            "status": "queued",
+            "message": "Playlist refresh queued",
+            "playlist_id": navidrome_playlist_id,
+        }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to refresh playlist: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue playlist refresh: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
@@ -652,51 +695,158 @@ async def validate_recipes():
 
 @app.get("/api/scheduler/status")
 async def get_scheduler_status():
-    """Get scheduler status and active jobs"""
+    """Get scheduler status, per-playlist jobs, and refresh-queue state"""
     try:
+        queue_state = get_refresh_queue().snapshot()
         if scheduler:
-            jobs = list(scheduler.get_jobs())
-            job_info = []
-            for job in jobs:
-                job_info.append({
-                    "id": job.id,
-                    "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
-                    "func": job.func.__name__ if hasattr(job, 'func') else str(job.func)
-                })
+            jobs = get_job_info()
             return {
                 "scheduler_running": scheduler.running,
                 "active_jobs": len(jobs),
-                "jobs": job_info,
-                "scheduler_state": str(scheduler.state)
+                "jobs": jobs,
+                "scheduler_state": str(scheduler.state),
+                "queue": queue_state,
             }
-        return {"scheduler_running": False, "error": "Scheduler not initialized"}
+        return {
+            "scheduler_running": False,
+            "error": "Scheduler not initialized",
+            "queue": queue_state,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get scheduler status: {str(e)}")
 
 
+@app.get("/api/scheduler/overview")
+async def get_scheduler_overview(
+    include_unscheduled: bool = Query(
+        False,
+        description="Include playlists that have no active refresh schedule",
+    ),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return one tile per playlist with schedule, last run, and live state.
+
+    This powers the Refresh Schedule page. By default only playlists that
+    actually have an enabled refresh schedule are included; pass
+    ``include_unscheduled=true`` to also list manual-only and paused playlists.
+    Each entry combines:
+      * playlist identity (name, type, id),
+      * the schedule spec + human-readable description + upcoming runs,
+      * the most recent refresh outcome from ``refresh_history``,
+      * live queue state (queued / running).
+    """
+    try:
+        playlists = await db.get_all_playlists_with_schedule_info()
+        latest = await db.get_latest_refresh_per_playlist()
+        queue_state = get_refresh_queue().snapshot()
+
+        running_id = (queue_state.get("running") or {}).get("navidrome_playlist_id")
+        queued_ids = {
+            job["navidrome_playlist_id"] for job in queue_state.get("queued", [])
+        }
+
+        tiles = []
+        for playlist in playlists:
+            server_id = playlist.get("navidrome_playlist_id")
+            if not server_id:
+                continue
+
+            schedule_row = await db.get_schedule_by_navidrome_id(server_id)
+            schedule_payload = build_schedule_payload(schedule_row)
+            is_scheduled = bool(
+                schedule_payload.get("enabled") and schedule_payload.get("schedule")
+            )
+
+            # Default view lists only playlists with an active schedule.
+            if not is_scheduled and not include_unscheduled:
+                continue
+
+            last_run = latest.get(server_id)
+
+            if server_id == running_id:
+                state = "running"
+            elif server_id in queued_ids:
+                state = "queued"
+            else:
+                state = "idle"
+
+            tiles.append({
+                "id": playlist.get("id"),
+                "navidrome_playlist_id": server_id,
+                "playlist_name": playlist.get("playlist_name"),
+                "playlist_type": playlist.get("playlist_type"),
+                "track_count": len(playlist.get("songs") or []),
+                "last_refreshed": playlist.get("last_refreshed"),
+                "state": state,
+                "is_scheduled": is_scheduled,
+                **schedule_payload,
+                "last_run": last_run,
+            })
+
+        # Soonest upcoming refresh first; unscheduled playlists last.
+        tiles.sort(key=lambda tile: (tile.get("next_run") is None, tile.get("next_run") or ""))
+
+        return {
+            "tiles": tiles,
+            "queue": queue_state,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build scheduler overview: {str(e)}")
+
+
+@app.get("/api/scheduler/history")
+async def get_scheduler_history(
+    playlist_id: Optional[str] = Query(None, description="Media-server playlist ID"),
+    limit: int = Query(20, ge=1, le=100),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return refresh history for one playlist, or the latest run per playlist."""
+    try:
+        if playlist_id:
+            return {"history": await db.get_recent_refreshes(playlist_id, limit=limit)}
+        return {"latest": await db.get_latest_refresh_per_playlist()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch refresh history: {str(e)}")
+
+
+@app.delete("/api/scheduler/history")
+async def clear_scheduler_history(
+    playlist_id: Optional[str] = Query(None, description="Limit clearing to one playlist"),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Clear refresh history, either for one playlist or entirely."""
+    try:
+        removed = await db.clear_refresh_history(playlist_id)
+        return {"message": "Refresh history cleared", "removed": removed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear refresh history: {str(e)}")
+
+
 @app.post("/api/scheduler/trigger")
-async def trigger_scheduler_check():
-    """Manually trigger the scheduler to check for playlists due for refresh"""
+async def trigger_scheduler_check(db: DatabaseManager = Depends(get_db)):
+    """Queue every playlist whose scheduled refresh time has passed."""
     try:
         scheduler_logger.info("Manual scheduler trigger requested via API")
-        await refresh_scheduled_playlists()
-        return {"message": "Scheduler check completed successfully"}
+        queued = await enqueue_all_due(db)
+        return {
+            "message": "Scheduler check completed",
+            "queued": queued,
+        }
     except Exception as e:
         scheduler_logger.error(f"Error in manual scheduler trigger: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to trigger scheduler: {str(e)}")
 
 
 @app.post("/api/scheduler/start")
-async def start_scheduler_job():
-    """Manually start the recurring scheduler job"""
+async def start_scheduler_job(db: DatabaseManager = Depends(get_db)):
+    """Re-register all per-playlist refresh jobs from the database."""
     try:
-        schedule_playlist_refresh()
-        jobs = list(scheduler.get_jobs()) if scheduler else []
-        scheduler_logger.info(f"Scheduler job registration requested. Active jobs: {len(jobs)}")
+        registered = await rehydrate_jobs(db)
+        scheduler_logger.info(f"Scheduler rehydration requested. Active jobs: {registered}")
         return {
-            "message": "Scheduler job started",
-            "active_jobs": len(jobs),
-            "jobs": [{"id": job.id, "next_run": job.next_run_time.isoformat() if job.next_run_time else None} for job in jobs]
+            "message": "Scheduler jobs registered",
+            "active_jobs": registered,
+            "jobs": get_job_info(),
         }
     except Exception as e:
         scheduler_logger.error(f"Error starting scheduler job: {e}")

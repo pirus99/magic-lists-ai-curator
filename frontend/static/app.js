@@ -210,6 +210,9 @@ function updateURL(page) {
         case 'playlists':
             url = '/playlists';
             break;
+        case 'scheduler':
+            url = '/scheduler';
+            break;
         case 'system-check':
             url = '/system-check';
             break;
@@ -256,6 +259,9 @@ function getPageFromURL(pathname) {
             break;
         case '/playlists':
             page = 'playlists';
+            break;
+        case '/scheduler':
+            page = 'scheduler';
             break;
         case '/system-check':
             page = 'system-check';

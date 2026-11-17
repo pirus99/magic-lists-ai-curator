@@ -1,0 +1,66 @@
+<!-- Schedule detail modal: full refresh history + upcoming runs for one playlist -->
+<div id="scheduler-detail-overlay"
+    class="hidden fixed inset-0 z-[60] bg-black bg-opacity-50 dark:bg-black dark:bg-opacity-70 transition-opacity duration-300">
+</div>
+<div id="scheduler-detail-panel" class="hidden fixed inset-0 z-[61] flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-900 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg shadow-xl">
+        <div class="flex items-start justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="min-w-0">
+                <h3 id="scheduler-detail-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">Playlist</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    <span id="scheduler-detail-type">this_is</span> •
+                    <span id="scheduler-detail-schedule">Manual only</span>
+                </p>
+            </div>
+            <button id="scheduler-detail-close" type="button"
+                class="flex-none flex justify-center items-center size-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
+                <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                </svg>
+                <span class="sr-only">Close</span>
+            </button>
+        </div>
+
+        <div class="p-4 space-y-6">
+            <!-- Summary -->
+            <dl class="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Tracks</dt>
+                    <dd id="scheduler-detail-tracks" class="text-gray-900 dark:text-gray-100 font-medium">—</dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd id="scheduler-detail-status" class="text-gray-900 dark:text-gray-100 font-medium">—</dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Last refresh</dt>
+                    <dd id="scheduler-detail-last" class="text-gray-900 dark:text-gray-100 font-medium">—</dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Next refresh</dt>
+                    <dd id="scheduler-detail-next" class="text-gray-900 dark:text-gray-100 font-medium">—</dd>
+                </div>
+            </dl>
+
+            <div>
+                <h4 class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">Upcoming refreshes</h4>
+                <ul id="scheduler-detail-upcoming" class="space-y-1 text-sm text-gray-600 dark:text-gray-300"></ul>
+            </div>
+
+            <div>
+                <h4 class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">Recent refreshes</h4>
+                <div id="scheduler-detail-history" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
+            <button id="scheduler-detail-refresh" type="button"
+                class="px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">Refresh now</button>
+            <button id="scheduler-detail-edit" type="button"
+                class="px-4 py-2 bg-gray-900 dark:bg-blue-600 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-blue-700">Edit schedule</button>
+        </div>
+    </div>
+</div>

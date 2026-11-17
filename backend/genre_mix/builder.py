@@ -172,72 +172,81 @@ GENRE_MIX_CONFIG = PlaylistTypeConfig(
 )
 
 
-async def refresh_genre_playlist(playlist: Dict[str, Any], db: DatabaseManager) -> None:
-    """Refresh a Genre Mix playlist using its saved curation settings."""
-    try:
-        scheduler_logger.info(f"🔄 Starting refresh for Genre Mix playlist ID: {playlist.get('navidrome_playlist_id')}")
-        nav_client = get_server_client()
-        ai_client = get_ai_client()
+async def refresh_genre_playlist(playlist: Dict[str, Any], db: DatabaseManager) -> int:
+    """Refresh a Genre Mix playlist using its saved curation settings.
 
-        settings = playlist.get("curation_settings") or {}
-        genres = settings.get("genres") or [g.strip() for g in playlist.get("artist_id", "").split(",") if g.strip()]
-        if not genres:
-            scheduler_logger.error("❌ No genres found for Genre Mix refresh")
-            return
+    Args:
+        playlist: Playlist row from ``get_playlist_by_navidrome_id_with_schedule_info``.
+        db: Database manager.
 
-        library_ids = settings.get("library_ids") or []
-        playlist_length = settings.get("playlist_length") or playlist.get("playlist_length") or 25
+    Returns:
+        The number of tracks written to the playlist.
 
-        all_tracks = await nav_client.get_tracks_by_genres(genres, library_ids)
-        scheduler_logger.info(f"🎵 Found {len(all_tracks)} total tracks for genres '{', '.join(genres)}'")
-        if not all_tracks:
-            scheduler_logger.warning(f"⚠️ No tracks found for genres: {', '.join(genres)}")
-            return
+    Raises:
+        ValueError: If no genres, no tracks, or no curated selection could be produced.
+    """
+    navidrome_playlist_id = playlist.get("navidrome_playlist_id")
+    scheduler_logger.info(f"🔄 Starting refresh for Genre Mix playlist ID: {navidrome_playlist_id}")
 
-        filtered_tracks, filter_metadata = await apply_genre_mix_filter(
-            source_tracks=all_tracks,
-            target_playlist_size=playlist_length,
-            nav_client=nav_client,
-            ai_client=ai_client,
-            settings=settings,
-        )
+    nav_client = get_server_client()
+    ai_client = get_ai_client()
 
-        curated_track_ids, description = await curate_genre_mix_wrapper(
-            candidate_tracks=filtered_tracks,
-            num_tracks=playlist_length,
-            ai_client=ai_client,
-            playlist=playlist,
-            settings=settings,
-        )
+    settings = playlist.get("curation_settings") or {}
+    genres = settings.get("genres") or [g.strip() for g in playlist.get("artist_id", "").split(",") if g.strip()]
+    if not genres:
+        raise ValueError("No genres found for Genre Mix refresh")
 
-        if not curated_track_ids:
-            scheduler_logger.warning(f"⚠️ No curated tracks generated for Genre Mix {playlist.get('navidrome_playlist_id')}")
-            return
+    library_ids = settings.get("library_ids") or []
+    playlist_length = settings.get("playlist_length") or playlist.get("playlist_length") or 25
 
-        from ..playlist_metadata import resolve_refresh_description
+    all_tracks = await nav_client.get_tracks_by_genres(genres, library_ids)
+    scheduler_logger.info(f"🎵 Found {len(all_tracks)} total tracks for genres '{', '.join(genres)}'")
+    if not all_tracks:
+        raise ValueError(f"No tracks found for genres: {', '.join(genres)}")
 
-        comment_to_use = resolve_refresh_description(
-            existing_description=playlist.get("description"),
-            generated_description=description,
-            metadata_overrides={"description": bool(playlist.get("description"))},
-        )
-        await nav_client.update_playlist(
-            playlist_id=playlist.get("navidrome_playlist_id"),
-            track_ids=curated_track_ids,
-            comment=comment_to_use,
-        )
+    filtered_tracks, filter_metadata = await apply_genre_mix_filter(
+        source_tracks=all_tracks,
+        target_playlist_size=playlist_length,
+        nav_client=nav_client,
+        ai_client=ai_client,
+        settings=settings,
+    )
 
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
-        for track_id in curated_track_ids:
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
+    curated_track_ids, description = await curate_genre_mix_wrapper(
+        candidate_tracks=filtered_tracks,
+        num_tracks=playlist_length,
+        ai_client=ai_client,
+        playlist=playlist,
+        settings=settings,
+    )
 
-        await db.update_playlist_content(
-            navidrome_playlist_id=playlist.get("navidrome_playlist_id"),
-            songs=track_titles,
-            description=comment_to_use,
-        )
-        scheduler_logger.info(f"✅ Successfully refreshed Genre Mix playlist {playlist.get('navidrome_playlist_id')}")
-    except Exception as e:
-        scheduler_logger.error(f"❌ Error refreshing Genre Mix playlist {playlist.get('navidrome_playlist_id')}: {e}")
+    if not curated_track_ids:
+        raise ValueError("No curated tracks generated")
+
+    from ..playlist_metadata import resolve_refresh_description
+
+    comment_to_use = resolve_refresh_description(
+        existing_description=playlist.get("description"),
+        generated_description=description,
+        metadata_overrides={"description": bool(playlist.get("description"))},
+    )
+    await nav_client.update_playlist(
+        playlist_id=navidrome_playlist_id,
+        track_ids=curated_track_ids,
+        comment=comment_to_use,
+    )
+
+    track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
+    track_titles = [
+        track_id_to_title[track_id]
+        for track_id in curated_track_ids
+        if track_id in track_id_to_title
+    ]
+
+    await db.update_playlist_content(
+        navidrome_playlist_id=navidrome_playlist_id,
+        songs=track_titles,
+        description=comment_to_use,
+    )
+    scheduler_logger.info(f"✅ Successfully refreshed Genre Mix playlist {navidrome_playlist_id}")
+    return len(track_titles)

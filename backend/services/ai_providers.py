@@ -142,29 +142,72 @@ class AIProvider:
                         await asyncio.sleep(retry_delay)
                         continue
         else:
-            # OpenRouter and Groq - single attempt with standard timeout
+            # OpenRouter and Groq - retry with exponential backoff on 429/5xx.
+            # Rate limits are the most likely failure mode when several playlists
+            # refresh in a row, so a 429 must not kill the whole refresh.
             timeout = 30.0
-            response = await self.client.post(
-                self.base_url,
-                json=payload,
-                headers=headers,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            # Safely extract content with error handling
-            try:
-                content = result["choices"][0]["message"]["content"]
-                if content is None:
-                    print(f"⚠️  AI service returned None content in response")
-                    return ""
-                return content.strip()
-            except (KeyError, AttributeError, TypeError) as e:
-                print(f"⚠️  Failed to extract content from AI response: {e}")
-                print(f"📋 Response structure: {result}")
-                return ""
+            max_retries = int(os.getenv("AI_MAX_RETRIES", "4"))
+            base_delay = float(os.getenv("AI_RETRY_BASE_DELAY", "5"))
+
+            for attempt in range(max_retries):
+                try:
+                    response = await self.client.post(
+                        self.base_url,
+                        json=payload,
+                        headers=headers,
+                        timeout=timeout
+                    )
+                    response.raise_for_status()
+
+                    result = response.json()
+
+                    # Safely extract content with error handling
+                    try:
+                        content = result["choices"][0]["message"]["content"]
+                        if content is None:
+                            print(f"⚠️  AI service returned None content in response")
+                            return ""
+                        return content.strip()
+                    except (KeyError, AttributeError, TypeError) as e:
+                        print(f"⚠️  Failed to extract content from AI response: {e}")
+                        print(f"📋 Response structure: {result}")
+                        return ""
+
+                except httpx.HTTPStatusError as e:
+                    status = e.response.status_code
+                    retryable = status == 429 or 500 <= status < 600
+                    if not retryable or attempt == max_retries - 1:
+                        raise
+
+                    # Honour Retry-After when the provider sends one.
+                    retry_after = e.response.headers.get("retry-after")
+                    if retry_after:
+                        try:
+                            delay = float(retry_after)
+                        except ValueError:
+                            delay = base_delay * (2 ** attempt)
+                    else:
+                        delay = base_delay * (2 ** attempt)
+
+                    print(
+                        f"🔄 AI provider returned {status} "
+                        f"(attempt {attempt + 1}/{max_retries}), retrying in {delay:.0f}s..."
+                    )
+                    import asyncio
+                    await asyncio.sleep(delay)
+                    continue
+
+                except (httpx.TimeoutException, httpx.TransportError) as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    delay = base_delay * (2 ** attempt)
+                    print(
+                        f"🔄 AI request failed ({type(e).__name__}, "
+                        f"attempt {attempt + 1}/{max_retries}), retrying in {delay:.0f}s..."
+                    )
+                    import asyncio
+                    await asyncio.sleep(delay)
+                    continue
     
     async def _generate_google(self, system_prompt: str, user_prompt: str, max_tokens: int = 16000, temperature: float = 0.7) -> Union[str, NoReturn]:  # type: ignore
         """Handle Google AI's specific API format with controlled generation for JSON using Google AI SDK"""

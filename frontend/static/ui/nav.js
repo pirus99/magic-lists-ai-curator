@@ -77,7 +77,7 @@ function setActiveMenuItem(page) {
 // Navigation functionality
 function showContent(contentId) {
     // Hide all content sections
-    const contentSections = ['welcome-content', 'this-is-content', 'artist-radio-content', 'song-radio-content', 'rediscover-content', 'genre-mix-content', 'manage-playlists-content', 'system-check-content', 'terms-content'];
+    const contentSections = ['welcome-content', 'this-is-content', 'artist-radio-content', 'song-radio-content', 'rediscover-content', 'genre-mix-content', 'manage-playlists-content', 'scheduler-content', 'system-check-content', 'terms-content'];
     contentSections.forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -178,6 +178,10 @@ function handlePageNavigation(page) {
         contentId = 'manage-playlists-content';
         // Load playlists when navigating to manage page
         setTimeout(() => loadPlaylists(), 100);
+    } else if (page === 'scheduler') {
+        contentId = 'scheduler-content';
+        // Load the refresh overview when navigating to the scheduler page
+        setTimeout(() => { if (window.loadSchedulerOverview) window.loadSchedulerOverview(); }, 100);
     } else if (page === 'system-check') {
         contentId = 'system-check-content';
         // Auto-run system checks when navigating to system check page

@@ -11,6 +11,7 @@ from .schedules import _SchedulesMixin
 from .cache import _CacheMixin
 from .config import _ConfigMixin
 from .analytics import _AnalyticsMixin
+from .history import _HistoryMixin
 
 
 class DatabaseManager(
@@ -20,6 +21,7 @@ class DatabaseManager(
     _CacheMixin,
     _ConfigMixin,
     _AnalyticsMixin,
+    _HistoryMixin,
 ):
     """SQLite database manager for storing playlists and related data."""
 

@@ -7,15 +7,21 @@ from ..schemas import ScheduledPlaylist
 
 class _SchedulesMixin:
     async def create_scheduled_playlist(self, playlist_type: str, navidrome_playlist_id: str,
-                                      refresh_frequency: str, next_refresh: datetime) -> ScheduledPlaylist:
-        """Create a new scheduled playlist"""
+                                      refresh_frequency: str, next_refresh: datetime,
+                                      schedule_json: Optional[str] = None) -> ScheduledPlaylist:
+        """Create a new scheduled playlist
+
+        Args:
+            schedule_json: Serialized ``ScheduleSpec``. When omitted, the caller
+                is expected to have derived it from ``refresh_frequency``.
+        """
         await self.init_db()
 
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-                INSERT INTO scheduled_playlists (playlist_type, navidrome_playlist_id, refresh_frequency, next_refresh)
-                VALUES (?, ?, ?, ?)
-            """, (playlist_type, navidrome_playlist_id, refresh_frequency, next_refresh.isoformat()))
+                INSERT INTO scheduled_playlists (playlist_type, navidrome_playlist_id, refresh_frequency, next_refresh, schedule_json)
+                VALUES (?, ?, ?, ?, ?)
+            """, (playlist_type, navidrome_playlist_id, refresh_frequency, next_refresh.isoformat(), schedule_json))
 
             scheduled_id = cursor.lastrowid
             await db.commit()
@@ -120,20 +126,118 @@ class _SchedulesMixin:
         return None
 
 
-    async def update_scheduled_playlist_frequency(self, scheduled_id: int, refresh_frequency: str, next_refresh: datetime) -> bool:
+    async def update_scheduled_playlist_frequency(self, scheduled_id: int, refresh_frequency: str, next_refresh: datetime,
+                                                  schedule_json: Optional[str] = None) -> bool:
         """Update the refresh frequency and next refresh time for a scheduled playlist"""
         await self.init_db()
-    
+
         async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute("""
-                UPDATE scheduled_playlists 
-                SET refresh_frequency = ?, next_refresh = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (refresh_frequency, next_refresh.isoformat(), scheduled_id))
-        
+            if schedule_json is None:
+                cursor = await db.execute("""
+                    UPDATE scheduled_playlists 
+                    SET refresh_frequency = ?, next_refresh = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (refresh_frequency, next_refresh.isoformat(), scheduled_id))
+            else:
+                cursor = await db.execute("""
+                    UPDATE scheduled_playlists 
+                    SET refresh_frequency = ?, next_refresh = ?, schedule_json = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (refresh_frequency, next_refresh.isoformat(), schedule_json, scheduled_id))
+
             await db.commit()
             return cursor.rowcount > 0
-    
+
+
+    async def get_all_schedules(self) -> List[Dict]:
+        """Return every scheduled playlist row as a dict (used to rehydrate jobs).
+
+        The owning playlist's name is joined in so callers can log and display a
+        human-readable label instead of the media-server ID.
+        """
+        await self.init_db()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT sp.id, sp.playlist_type, sp.navidrome_playlist_id, sp.refresh_frequency,
+                       sp.next_refresh, sp.schedule_json, sp.enabled, sp.created_at, sp.updated_at,
+                       p.playlist_name
+                FROM scheduled_playlists sp
+                LEFT JOIN playlists p ON p.navidrome_playlist_id = sp.navidrome_playlist_id
+                ORDER BY sp.id ASC
+            """) as cursor:
+                rows = await cursor.fetchall()
+
+        return [dict(row) for row in rows]
+
+
+    async def get_schedule_by_navidrome_id(self, navidrome_playlist_id: str) -> Optional[Dict]:
+        """Return the schedule row for a playlist as a dict, or ``None``."""
+        await self.init_db()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT sp.id, sp.playlist_type, sp.navidrome_playlist_id, sp.refresh_frequency,
+                       sp.next_refresh, sp.schedule_json, sp.enabled, sp.created_at, sp.updated_at,
+                       p.playlist_name
+                FROM scheduled_playlists sp
+                LEFT JOIN playlists p ON p.navidrome_playlist_id = sp.navidrome_playlist_id
+                WHERE sp.navidrome_playlist_id = ?
+                LIMIT 1
+            """, (navidrome_playlist_id,)) as cursor:
+                row = await cursor.fetchone()
+
+        return dict(row) if row else None
+
+
+    async def upsert_schedule(self, playlist_type: str, navidrome_playlist_id: str,
+                              refresh_frequency: str, next_refresh: datetime,
+                              schedule_json: Optional[str] = None,
+                              enabled: bool = True) -> Dict:
+        """Create or update the schedule for a playlist and return the stored row.
+
+        This is the single write path used by the settings API so a playlist can
+        never end up with two competing schedule rows.
+        """
+        await self.init_db()
+
+        existing = await self.get_schedule_by_navidrome_id(navidrome_playlist_id)
+        if existing:
+            await self.update_scheduled_playlist_frequency(
+                existing["id"], refresh_frequency, next_refresh, schedule_json
+            )
+            await self.set_schedule_enabled(existing["id"], enabled)
+        else:
+            await self.create_scheduled_playlist(
+                playlist_type=playlist_type,
+                navidrome_playlist_id=navidrome_playlist_id,
+                refresh_frequency=refresh_frequency,
+                next_refresh=next_refresh,
+                schedule_json=schedule_json,
+            )
+            created = await self.get_schedule_by_navidrome_id(navidrome_playlist_id)
+            if created:
+                await self.set_schedule_enabled(created["id"], enabled)
+
+        return await self.get_schedule_by_navidrome_id(navidrome_playlist_id) or {}
+
+
+    async def set_schedule_enabled(self, scheduled_id: int, enabled: bool) -> bool:
+        """Enable or disable a schedule without deleting it."""
+        await self.init_db()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                UPDATE scheduled_playlists
+                SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (1 if enabled else 0, scheduled_id))
+
+            await db.commit()
+            return cursor.rowcount > 0
+
 
     async def delete_scheduled_playlist_by_navidrome_id(self, navidrome_playlist_id: str) -> bool:
         """Delete a scheduled playlist by Navidrome playlist ID"""

@@ -1,6 +1,7 @@
 """Song Radio playlist builder and persistence settings."""
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..database import DatabaseManager
 from ..core.playlist_builder import PlaylistTypeConfig
 from ..core.server_router import get_server_client
 from ..services.listenbrainz_service import ListenBrainzService
@@ -338,27 +339,24 @@ def extra_song_radio_settings(request: Any = None, source_track: Optional[Dict[s
     }
 
 
-async def refresh_song_radio_playlist(playlist_or_scheduled, db) -> None:
-    """Refresh a Song Radio playlist using its stored source recording MBID."""
-    from ..core.scheduler import calculate_next_refresh
-    from ..database import DatabaseManager
+async def refresh_song_radio_playlist(playlist: Dict[str, Any], db: DatabaseManager) -> int:
+    """Refresh a Song Radio playlist using its stored source recording MBID.
 
-    if isinstance(playlist_or_scheduled, dict):
-        playlist = playlist_or_scheduled
-        scheduled = None
-    else:
-        scheduled = playlist_or_scheduled
-        rows = await db.get_all_playlists_with_schedule_info()
-        playlist = next(
-            (row for row in rows if row.get("navidrome_playlist_id") == scheduled.navidrome_playlist_id),
-            None,
-        )
-    if not playlist:
-        return
+    Args:
+        playlist: Playlist row from ``get_playlist_by_navidrome_id_with_schedule_info``.
+        db: Database manager.
 
+    Returns:
+        The number of tracks written to the playlist.
+
+    Raises:
+        ValueError: If no tracks or no curated selection could be produced.
+    """
+    navidrome_playlist_id = playlist.get("navidrome_playlist_id")
     settings = playlist.get("curation_settings") or {}
     library_ids = settings.get("library_ids") or playlist.get("library_ids") or []
     target_length = settings.get("playlist_length") or playlist.get("playlist_length", 25)
+
     tracks = await fetch_song_radio_tracks(
         library_ids=library_ids,
         playlist=playlist,
@@ -366,7 +364,8 @@ async def refresh_song_radio_playlist(playlist_or_scheduled, db) -> None:
         playlist_length=target_length,
     )
     if not tracks:
-        return
+        raise ValueError("No tracks found for Song Radio refresh")
+
     selected_ids, description = await curate_song_radio_wrapper(
         candidate_tracks=tracks,
         num_tracks=target_length,
@@ -374,24 +373,23 @@ async def refresh_song_radio_playlist(playlist_or_scheduled, db) -> None:
         source_track=settings.get("source_track"),
     )
     if not selected_ids:
-        return
+        raise ValueError("No curated tracks generated")
+
     server_client = get_server_client()
     await server_client.update_playlist(
-        playlist_id=playlist["navidrome_playlist_id"],
+        playlist_id=navidrome_playlist_id,
         track_ids=selected_ids,
         comment=description,
     )
+
     titles = {track["id"]: track.get("title", "") for track in tracks}
+    track_titles = [titles[track_id] for track_id in selected_ids if track_id in titles]
     await db.update_playlist_content(
-        navidrome_playlist_id=playlist["navidrome_playlist_id"],
-        songs=[titles[track_id] for track_id in selected_ids if track_id in titles],
+        navidrome_playlist_id=navidrome_playlist_id,
+        songs=track_titles,
         description=description,
     )
-    if scheduled is not None and scheduled.refresh_frequency not in ("none", "never"):
-        await db.update_scheduled_playlist_next_refresh(
-            scheduled.id,
-            calculate_next_refresh(scheduled.refresh_frequency),
-        )
+    return len(track_titles)
 
 
 def _resolve_song_radio_artist_id(request: Any = None, playlist_name: str = "") -> str:

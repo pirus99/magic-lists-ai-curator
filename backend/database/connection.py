@@ -193,10 +193,80 @@ class _ConnectionMixin:
                 CREATE INDEX IF NOT EXISTS idx_api_cache_expires ON api_cache(expires_at)
             """)
 
+            # Structured per-playlist schedule (JSON ScheduleSpec) and an enable
+            # toggle. Added for existing databases via ALTER below.
+            try:
+                await db.execute("ALTER TABLE scheduled_playlists ADD COLUMN schedule_json TEXT")
+            except Exception:
+                pass
+
+            try:
+                await db.execute("ALTER TABLE scheduled_playlists ADD COLUMN enabled INTEGER DEFAULT 1")
+            except Exception:
+                pass
+
+            # Minimal, bounded refresh history used by the scheduler overview page.
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS refresh_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    navidrome_playlist_id TEXT NOT NULL,
+                    playlist_name TEXT,
+                    playlist_type TEXT,
+                    trigger TEXT NOT NULL DEFAULT 'scheduled',
+                    status TEXT NOT NULL,
+                    started_at TIMESTAMP NOT NULL,
+                    finished_at TIMESTAMP,
+                    duration_seconds REAL,
+                    track_count INTEGER,
+                    error TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_refresh_history_playlist
+                ON refresh_history(navidrome_playlist_id, started_at DESC)
+            """)
+
             await db.commit()
 
             # Backfill the authoritative playlist_type column for existing rows
             await self._backfill_playlist_types()
+
+            # Backfill schedule_json for rows created before structured schedules
+            await self._backfill_schedule_json()
+
+    async def _backfill_schedule_json(self):
+        """Populate ``schedule_json`` for legacy rows from ``refresh_frequency``.
+
+        Best-effort and idempotent: only rows with a NULL/empty ``schedule_json``
+        are touched, and failures never block startup.
+        """
+        try:
+            from ..core.schedule_spec import spec_from_frequency
+
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT id, refresh_frequency
+                    FROM scheduled_playlists
+                    WHERE schedule_json IS NULL OR schedule_json = ''
+                """) as cursor:
+                    rows = await cursor.fetchall()
+
+                for row in rows:
+                    schedule_id, frequency = row[0], row[1]
+                    spec = spec_from_frequency(frequency)
+                    if spec is None:
+                        continue
+                    await db.execute(
+                        "UPDATE scheduled_playlists SET schedule_json = ? WHERE id = ?",
+                        (spec.model_dump_json(), schedule_id),
+                    )
+
+                await db.commit()
+        except Exception:
+            # Backfill is best-effort; never block startup on it
+            pass
 
 
     async def _backfill_playlist_types(self):

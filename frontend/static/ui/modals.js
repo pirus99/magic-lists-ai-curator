@@ -74,11 +74,8 @@ async function openEditModal(playlistId) {
             r.checked = (parseInt(r.value, 10) === parseInt(length, 10));
         });
 
-        // Common: refresh frequency
-        const freq = settings.refresh_frequency || playlist.refresh_frequency || 'none';
-        document.querySelectorAll('input[name="edit-refresh-frequency"]').forEach(r => {
-            r.checked = (r.value === freq);
-        });
+        // Common: refresh schedule
+        populateScheduleFields(playlist);
 
         // Type-specific sections
         const thisIsSection = document.getElementById('edit-this-is-section');
@@ -479,16 +476,215 @@ function setTopTracksFields(prefix, settings = {}) {
     input.dispatchEvent(new Event('input'));
 }
 
+// ---------------------------------------------------------------------------
+// Refresh schedule editor
+// ---------------------------------------------------------------------------
+const SCHEDULE_KIND_FIELDS = {
+    none: [],
+    daily: ['time'],
+    weekly: ['time', 'weekdays'],
+    monthly: ['time', 'day'],
+    interval: ['interval'],
+    cron: ['cron'],
+};
+
+function selectedWeekdays() {
+    return Array.from(document.querySelectorAll('.schedule-weekday[data-active="true"]'))
+        .map(btn => parseInt(btn.getAttribute('data-weekday'), 10))
+        .sort((a, b) => a - b);
+}
+
+function setSelectedWeekdays(days) {
+    const wanted = new Set((days || []).map(Number));
+    document.querySelectorAll('.schedule-weekday').forEach(btn => {
+        const day = parseInt(btn.getAttribute('data-weekday'), 10);
+        const active = wanted.has(day);
+        btn.setAttribute('data-active', active ? 'true' : 'false');
+        btn.classList.toggle('bg-blue-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('border-blue-600', active);
+        btn.classList.toggle('text-gray-700', !active);
+        btn.classList.toggle('dark:text-gray-300', !active);
+    });
+}
+
+function updateScheduleFieldVisibility() {
+    const kindEl = document.getElementById('edit-schedule-kind');
+    if (!kindEl) return;
+    const kind = kindEl.value;
+    const visible = SCHEDULE_KIND_FIELDS[kind] || [];
+
+    const wraps = {
+        time: document.getElementById('edit-schedule-time-wrap'),
+        weekdays: document.getElementById('edit-schedule-weekdays-wrap'),
+        day: document.getElementById('edit-schedule-day-wrap'),
+        interval: document.getElementById('edit-schedule-interval-wrap'),
+        cron: document.getElementById('edit-schedule-cron-wrap'),
+    };
+    Object.entries(wraps).forEach(([key, el]) => {
+        if (!el) return;
+        el.classList.toggle('hidden', !visible.includes(key));
+    });
+
+    const enabledEl = document.getElementById('edit-schedule-enabled');
+    if (enabledEl) enabledEl.disabled = (kind === 'none');
+
+    updateSchedulePreview();
+}
+
+function describeScheduleFromForm() {
+    const kindEl = document.getElementById('edit-schedule-kind');
+    if (!kindEl) return 'Manual only';
+    const kind = kindEl.value;
+    if (kind === 'none') return 'Manual only';
+
+    const time = document.getElementById('edit-schedule-time')?.value || '01:00';
+    if (kind === 'daily') return `Daily at ${time}`;
+    if (kind === 'weekly') {
+        const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const days = selectedWeekdays();
+        if (!days.length) return 'Weekly (no days selected)';
+        return `Weekly on ${days.map(d => names[d]).join(', ')} at ${time}`;
+    }
+    if (kind === 'monthly') {
+        const day = document.getElementById('edit-schedule-day')?.value || '1';
+        return `Monthly on day ${day} at ${time}`;
+    }
+    if (kind === 'interval') {
+        const hours = document.getElementById('edit-schedule-interval')?.value || '24';
+        return `Every ${hours} hour${Number(hours) === 1 ? '' : 's'}`;
+    }
+    if (kind === 'cron') {
+        const cron = document.getElementById('edit-schedule-cron')?.value?.trim();
+        return cron ? `Cron: ${cron}` : 'Cron (not set)';
+    }
+    return 'Manual only';
+}
+
+function updateSchedulePreview() {
+    const preview = document.getElementById('edit-schedule-preview');
+    if (!preview) return;
+    const enabledEl = document.getElementById('edit-schedule-enabled');
+    const paused = enabledEl && !enabledEl.checked;
+    preview.textContent = paused
+        ? 'Schedule paused — playlist will only refresh manually.'
+        : describeScheduleFromForm();
+}
+
+function populateScheduleFields(playlist) {
+    const kindEl = document.getElementById('edit-schedule-kind');
+    if (!kindEl) return;
+
+    const schedule = playlist.schedule || null;
+    const enabledEl = document.getElementById('edit-schedule-enabled');
+
+    if (schedule) {
+        kindEl.value = schedule.kind || 'daily';
+        const timeEl = document.getElementById('edit-schedule-time');
+        if (timeEl) timeEl.value = schedule.time || '01:00';
+        setSelectedWeekdays(schedule.weekdays && schedule.weekdays.length ? schedule.weekdays : [0]);
+        const dayEl = document.getElementById('edit-schedule-day');
+        if (dayEl) dayEl.value = schedule.day_of_month || 1;
+        const intervalEl = document.getElementById('edit-schedule-interval');
+        if (intervalEl) intervalEl.value = schedule.interval_hours || 24;
+        const cronEl = document.getElementById('edit-schedule-cron');
+        if (cronEl) cronEl.value = schedule.cron || '';
+        if (enabledEl) enabledEl.checked = playlist.schedule_enabled !== false;
+    } else {
+        // No structured schedule yet: derive from the legacy frequency.
+        const freq = playlist.refresh_frequency || 'none';
+        kindEl.value = ['daily', 'weekly', 'monthly'].includes(freq) ? freq : 'none';
+        const timeEl = document.getElementById('edit-schedule-time');
+        if (timeEl) timeEl.value = '01:00';
+        setSelectedWeekdays([0]);
+        const dayEl = document.getElementById('edit-schedule-day');
+        if (dayEl) dayEl.value = 1;
+        const intervalEl = document.getElementById('edit-schedule-interval');
+        if (intervalEl) intervalEl.value = 24;
+        const cronEl = document.getElementById('edit-schedule-cron');
+        if (cronEl) cronEl.value = '';
+        if (enabledEl) enabledEl.checked = true;
+    }
+
+    updateScheduleFieldVisibility();
+}
+
+function collectSchedulePayload() {
+    const kindEl = document.getElementById('edit-schedule-kind');
+    if (!kindEl) return { schedule: null, schedule_enabled: false };
+
+    const kind = kindEl.value;
+    if (kind === 'none') {
+        return { schedule: null, schedule_enabled: false };
+    }
+
+    const enabledEl = document.getElementById('edit-schedule-enabled');
+    const schedule = {
+        kind,
+        time: document.getElementById('edit-schedule-time')?.value || '01:00',
+        weekdays: selectedWeekdays().length ? selectedWeekdays() : [0],
+        day_of_month: parseInt(document.getElementById('edit-schedule-day')?.value || '1', 10),
+        interval_hours: parseInt(document.getElementById('edit-schedule-interval')?.value || '24', 10),
+        cron: document.getElementById('edit-schedule-cron')?.value?.trim() || null,
+    };
+
+    return {
+        schedule,
+        schedule_enabled: enabledEl ? enabledEl.checked : true,
+    };
+}
+
+function initScheduleEditor() {
+    const kindEl = document.getElementById('edit-schedule-kind');
+    if (!kindEl) return;
+
+    kindEl.addEventListener('change', updateScheduleFieldVisibility);
+
+    document.querySelectorAll('.schedule-weekday').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const active = btn.getAttribute('data-active') === 'true';
+            btn.setAttribute('data-active', active ? 'false' : 'true');
+            btn.classList.toggle('bg-blue-600', !active);
+            btn.classList.toggle('text-white', !active);
+            btn.classList.toggle('border-blue-600', !active);
+            btn.classList.toggle('text-gray-700', active);
+            btn.classList.toggle('dark:text-gray-300', active);
+            updateSchedulePreview();
+        });
+    });
+
+    ['edit-schedule-time', 'edit-schedule-day', 'edit-schedule-interval', 'edit-schedule-cron']
+        .forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', updateSchedulePreview);
+        });
+
+    const enabledEl = document.getElementById('edit-schedule-enabled');
+    if (enabledEl) enabledEl.addEventListener('change', updateSchedulePreview);
+
+    setSelectedWeekdays([0]);
+    updateScheduleFieldVisibility();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initScheduleEditor);
+} else {
+    initScheduleEditor();
+}
+
 // Collect the modal fields into a curation_settings object
 function collectEditSettings() {
     const type = document.getElementById('edit-modal-type-value').value || document.getElementById('edit-modal-type').textContent;
     const lengthEl = document.querySelector('input[name="edit-playlist-length"]:checked');
-    const freqEl = document.querySelector('input[name="edit-refresh-frequency"]:checked');
     const playlist_length = lengthEl ? parseInt(lengthEl.value, 10) : 25;
-    const refresh_frequency = freqEl ? freqEl.value : 'none';
     const playlist_name = document.getElementById('edit-playlist-name').value.trim();
     const description = document.getElementById('edit-playlist-description').value.trim();
     const is_public = document.getElementById('edit-playlist-public').checked;
+
+    // Structured schedule replaces the old frequency radios. The legacy
+    // refresh_frequency is still sent for backwards compatibility.
+    const { schedule, schedule_enabled } = collectSchedulePayload();
+    const refresh_frequency = schedule ? (schedule.kind === 'interval' || schedule.kind === 'cron' ? 'custom' : schedule.kind) : 'none';
 
     let curation_settings = { playlist_length, refresh_frequency };
 
@@ -583,5 +779,5 @@ function collectEditSettings() {
         curation_settings.library_ids = JSON.parse(document.getElementById('edit-rediscover-library-ids').value || '[]');
     }
 
-    return { curation_settings, refresh_frequency, playlist_name, description, is_public };
+    return { curation_settings, refresh_frequency, playlist_name, description, is_public, schedule, schedule_enabled };
 }

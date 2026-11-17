@@ -738,7 +738,13 @@ async function refreshPlaylist(playlistId) {
             throw new Error(errorData.detail || 'Failed to refresh playlist');
         }
 
-        showToast('success', 'Playlist refreshed successfully');
+        // The endpoint queues the refresh and returns 202 immediately.
+        const data = await response.json().catch(() => ({}));
+        if (data.status === 'already_queued') {
+            showToast('info', 'This playlist is already queued or refreshing');
+        } else {
+            showToast('success', 'Refresh queued — it will start shortly');
+        }
         loadPlaylists();
         updatePlaylistCount();
     } catch (error) {
@@ -755,7 +761,7 @@ async function refreshPlaylist(playlistId) {
 async function savePlaylistSettings(regenerate) {
     if (!currentEditPlaylistId) return;
 
-    const { curation_settings, refresh_frequency, playlist_name, description, is_public } = collectEditSettings();
+    const { curation_settings, refresh_frequency, playlist_name, description, is_public, schedule, schedule_enabled } = collectEditSettings();
 
     const saveBtn = document.getElementById('edit-save-btn');
     const refreshBtn = document.getElementById('edit-save-refresh-btn');
@@ -766,7 +772,7 @@ async function savePlaylistSettings(regenerate) {
         const response = await fetch(`/api/playlists/${currentEditPlaylistId}/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ curation_settings, refresh_frequency, playlist_name, description, is_public })
+            body: JSON.stringify({ curation_settings, refresh_frequency, playlist_name, description, is_public, schedule, schedule_enabled })
         });
 
         if (!response.ok) {
