@@ -171,6 +171,33 @@ curl "http://localhost:4545/api/top-tracks/strategies"
 
 ---
 
+## Song Radio Finds No Tracks
+
+Song Radio needs a **MusicBrainz recording ID** for the source track unless you use the Navidrome
+Subsonic engine. If *Find Similar Tracks* reports no matches:
+
+- **No MBID on the track** — the page shows a *MusicBrainz Recording ID* field when the selected
+  track has none in its metadata. Paste the recording ID from
+  [musicbrainz.org](https://musicbrainz.org) and try again.
+- **Score too high** — the minimum similarity score defaults to `20` on a `1`–`100` scale. Lower it
+  and rebuild the pool.
+- **ListenBrainz returned nothing** — the message *"ListenBrainz found no matching tracks"* means the
+  similar recordings it returned are not in your library. Tick *Use Navidrome similar-tracks
+  (Subsonic)* (Navidrome only) to widen the pool from your own collection, or pick a better-known
+  track.
+- **Expansion rounds** — raise the *Expansion Rounds* slider (1–6) to walk further through the
+  similarity graph.
+- **Filters too strict** — a narrow year range or a high bitrate/format floor can remove every
+  candidate. The source track itself is always protected, so an empty result means the *related*
+  tracks were filtered out.
+- **Jellyfin** — the Subsonic option is hidden because Jellyfin has no `getSimilarSongs2`; ListenBrainz
+  is the only source there. See [JELLYFIN.md](JELLYFIN.md).
+
+Check the logs for `⚠️ ListenBrainz similar-recordings failed` or `⚠️ Subsonic similar-tracks failed`,
+which report the underlying reason.
+
+---
+
 ## Issues with Editing Playlists
 
 - Playlists are only editable if created with MagicLists **>= 1.1.0**.

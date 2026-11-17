@@ -69,13 +69,16 @@ Only used when `AI_PROVIDER=ollama`.
 
 ## ListenBrainz Labs
 
-Used for **Artist Radio** similar-artist lookups.
+Used for **Artist Radio** similar-artist lookups and **Song Radio** similar-recording lookups.
 
 | Variable | Default | Description | Required |
 |---|---|---|---|
-| `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint for artist suggestions | No |
+| `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint for artist and recording suggestions | No |
 | `LISTENBRAINZ_TOKEN` | *(empty)* | Personal token — only needed if you hit rate limits | No |
 | `LISTENBRAINZ_TIMEOUT` | `15` (seconds) | HTTP timeout for ListenBrainz calls | No |
+
+No API key is required for either feature. Song Radio additionally works without ListenBrainz on
+Navidrome, using the Subsonic `getSimilarSongs2` similarity engine instead.
 
 ## Last.fm
 

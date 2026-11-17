@@ -150,6 +150,20 @@ The field stays hidden on Navidrome, when top tracks are switched off, and for a
 have an MBID. It is shown on Jellyfin even before `LASTFM_API_KEY` is set, so you can paste the ID in
 ahead of configuring the key.
 
+## Song Radio on Jellyfin
+
+Song Radio works on Jellyfin, but with one difference from Navidrome: Jellyfin has no Subsonic
+`getSimilarSongs2` endpoint, so the **Use Navidrome similar-tracks (Subsonic)** option is hidden and
+ListenBrainz is the only similarity source.
+
+That means:
+
+- The source track needs a **MusicBrainz recording ID**. Jellyfin metadata often has none, so the page
+  shows a field where you can paste one from [musicbrainz.org](https://musicbrainz.org).
+- ListenBrainz needs no API key, so Song Radio works out of the box once an MBID is available.
+- Matching falls back to a normalized title + artist comparison when the library has no recording
+  MBIDs, so tracks can still be found even if only the source track's MBID was supplied.
+
 ## Known limitations
 
 - **Playlist generation quality** — results need more tuning than the Navidrome path.

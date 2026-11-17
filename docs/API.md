@@ -35,6 +35,7 @@ Complete reference of every HTTP endpoint exposed by MagicLists AI Curator.
 - [This Is (artist)](#this-is-artist)
 - [Top tracks](#top-tracks)
 - [Artist Radio & ListenBrainz](#artist-radio--listenbrainz)
+- [Song Radio](#song-radio)
 - [Genre Mix](#genre-mix)
 - [Re-Discover](#re-discover)
 - [Playlist management](#playlist-management)
@@ -59,7 +60,7 @@ System check / health diagnostics page. Rendered by the same SPA shell as `/`.
 
 ### `GET /{path:path}` (SPA fallback)
 
-Catch-all route, **must remain last**. For the known SPA paths `this-is`, `artist-radio`, `re-discover`, `playlists`, and `terms` it serves the app shell (redirecting to `/system-check` if checks failed). Any other path is redirected to `/`.
+Catch-all route, **must remain last**. For the known SPA paths `this-is`, `artist-radio`, `song-radio`, `re-discover`, `playlists`, and `terms` it serves the app shell (redirecting to `/system-check` if checks failed). Any other path is redirected to `/`.
 
 ### `GET /static/*`
 
@@ -356,6 +357,158 @@ Create an Artist Radio playlist. The artist pool is the union of your ListenBrai
 - `Diversity caps cannot be negative`
 - `Source artist is not available in the selected libraries`
 - `One or more selected artists are not available in the selected libraries`
+
+---
+
+## Song Radio
+
+Song Radio expands a **single source track** into a playlist of similar songs. The source track's
+MusicBrainz recording ID is sent to the [ListenBrainz Labs](https://labs.api.listenbrainz.org)
+`similar-recordings` endpoint; returned recordings are matched against your library by recording MBID
+first and by normalized title + artist as a fallback. On Navidrome, the Subsonic `getSimilarSongs2`
+engine can be used instead of, or in addition to, ListenBrainz.
+
+The source track is always pinned to the first position of the finished playlist and is protected from
+the year/quality filters and diversity caps.
+
+**Algorithms** (`algorithm`): `5Y Balanced` (default), `20Y+`, `25Y Deep`, `3M Recent`, `20Y Broad`,
+`5Y Light`. These are the recording-similarity variants — the artist algorithms used by Artist Radio
+are rejected by the recordings endpoint.
+
+**Score range:** `minimum_score` is `1`–`100` (default `20`). Recording similarity scores are much
+smaller than artist similarity scores, so the ranges differ between the two features.
+
+---
+
+### `POST /api/song-radio/search`
+
+Search the library for a candidate source track by title, artist, or album.
+
+**Request body** (`SongRadioSearchRequest`)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `query` | string | **Yes** | — | Free-text search string. |
+| `library_ids` | list of strings | No | `[]` (all) | Libraries to search. |
+| `limit` | int | No | `50` | Maximum number of results. |
+
+**Response:** array of tracks in the standard track shape (`id`, `title`, `artist`, `album`,
+`artist_id`, `recording_mbid`, …)
+
+**Errors:** `502` (media server rejected the search)
+
+---
+
+### `POST /api/song-radio/recommendations`
+
+Fetch raw similar-recording recommendations from ListenBrainz for a source recording.
+
+**Query parameters**
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `source_mbid` | string | **Yes** | — | MusicBrainz recording ID. Must parse as a UUID. |
+| `algorithm` | string | **Yes** | — | One of the recording algorithms listed above. |
+| `minimum_score` | int | No | `1` | Lower bound on the similarity score (`1`–`100`). |
+
+**Example**
+
+```bash
+curl -X POST "http://localhost:4545/api/song-radio/recommendations?source_mbid=9f6a1a4e-6a1c-4a1e-9d1a-1a2b3c4d5e6f&algorithm=5Y%20Balanced&minimum_score=20"
+```
+
+**Errors:** `400` (invalid MBID or unsupported algorithm), `502` (ListenBrainz unreachable)
+
+---
+
+### `POST /api/song-radio/build-pool`
+
+Build the candidate pool for a source track **without** creating a playlist. This is what the
+*Find Similar Tracks* button calls, so you can see how many local matches exist before committing.
+
+**Request body** (`SongRadioPoolRequest`)
+
+| Field | Type | Required | Default | Constraints / description |
+|-------|------|----------|---------|--------------------------|
+| `source_mbid` | string | Conditional | — | **Required** unless `use_subsonic_similar` is `true`. Must be a valid UUID. |
+| `source_track` | object | No | `null` | The library track the radio is based on (`SongRadioTrack`: `id`, `title`, `artist`, `album`, `artist_id`, `recording_mbid`). |
+| `listenbrainz_enabled` | bool | No | `true` | Use ListenBrainz similarity. |
+| `use_subsonic_similar` | bool | No | `false` | Also pull candidates from Navidrome's `getSimilarSongs2`. |
+| `algorithm` | string | No | `"5Y Balanced"` | ListenBrainz recording algorithm. |
+| `minimum_score` | int | No | `20` | `1`–`100`. |
+| `repeat_limit` | int | No | `6` | `1`–`6` expansion rounds through the similarity graph. |
+| `library_ids` | list of strings | No | `[]` (all) | Libraries to match against. |
+| `year_start` | int | No | `null` | Minimum release year. |
+| `year_end` | int | No | `null` | Maximum release year. |
+| `diversity_enabled` | bool | No | `true` | Apply the per-album / per-artist caps. |
+| `max_tracks_per_album` | int | No | `4` | Must be ≥ 0. |
+| `max_tracks_per_artist` | int | No | `8` | Must be ≥ 0. |
+| `min_bitrate` | int | No | `null` | Minimum bitrate in kbps. |
+| `min_format` | string | No | `null` | Minimum format, e.g. `flac`. |
+| `min_bit_depth` | int | No | `null` | Minimum FLAC bit depth (16, 24). |
+
+**Response**
+
+```json
+{
+  "pool_size": 42,
+  "tracks": [ { "id": "…", "title": "…", "artist": "…" } ],
+  "source_mbid": "9f6a1a4e-6a1c-4a1e-9d1a-1a2b3c4d5e6f"
+}
+```
+
+The pool is returned **unfiltered** (the source track itself is not counted), so `pool_size` reflects
+how many related tracks were found before the year/quality filters and diversity caps are applied.
+
+**Validation errors (`400`)**
+
+- `A MusicBrainz recording ID is required`
+- `Minimum score must be between 1 and 100`
+- `Repeat limit must be between 1 and 6`
+
+**Errors:** `500` (pool build failed)
+
+---
+
+### `POST /api/create_song_radio`
+
+Create a Song Radio playlist from a source recording.
+
+**Request body** (`SongRadioRequest`)
+
+| Field | Type | Required | Default | Constraints / description |
+|-------|------|----------|---------|--------------------------|
+| `source_mbid` | string | Conditional | — | **Required** unless `use_subsonic_similar` is `true`. Must be a valid UUID. |
+| `source_track` | object | No | `null` | The source library track (`SongRadioTrack`). Pinned to position 1 and protected from filters. |
+| `listenbrainz_enabled` | bool | No | `true` | Use ListenBrainz similarity. When `false`, the Subsonic engine becomes the primary source. |
+| `use_subsonic_similar` | bool | No | `false` | Add Navidrome `getSimilarSongs2` candidates. |
+| `algorithm` | string | No | `"5Y Balanced"` | ListenBrainz recording algorithm. |
+| `minimum_score` | int | No | `20` | `1`–`100`. |
+| `repeat_limit` | int | No | `6` | `1`–`6` expansion rounds. |
+| `playlist_name` | string | No | `Song Radio: <title>` | Playlist title. |
+| `refresh_frequency` | string | No | `"none"` | `none`, `daily`, `weekly`, `monthly`. |
+| `playlist_length` | int | No | `25` | Number of tracks. |
+| `library_ids` | list of strings | No | `[]` (all) | Libraries to source tracks from. |
+| `year_start` | int | No | `null` | Minimum release year. Must be ≤ `year_end`. |
+| `year_end` | int | No | `null` | Maximum release year. |
+| `diversity_enabled` | bool | No | `true` | Apply the per-album / per-artist caps below. |
+| `max_tracks_per_album` | int | No | `4` | Must be ≥ 0. |
+| `max_tracks_per_artist` | int | No | `8` | Must be ≥ 0. |
+| `min_bitrate` | int | No | `null` | Minimum bitrate in kbps. |
+| `min_format` | string | No | `null` | Minimum format, e.g. `flac`. |
+| `min_bit_depth` | int | No | `null` | Minimum FLAC bit depth (16, 24). |
+
+**Response:** the created `Playlist` object (same shape as [`POST /api/create_playlist`](#post-apicreate_playlist))
+
+**Validation errors (`400`)**
+
+- `A MusicBrainz recording ID is required`
+- `Minimum score must be between 1 and 100`
+- `Year start must not be after year end`
+- `Diversity caps cannot be negative`
+- `Repeat limit must be between 1 and 6`
+
+**Errors:** `500` (playlist creation failed)
 
 ---
 

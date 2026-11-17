@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Song Radio** (`backend/song_radio/`): build a radio playlist around a **single source
+  track**. The track's MusicBrainz recording ID is sent to ListenBrainz's
+  `similar-recordings` endpoint, results are matched against the local library by recording
+  MBID (falling back to normalized title + artist), and the AI curates the final mix. The
+  source track is pinned to position 1 and protected from the year/quality filters and
+  diversity caps.
+  - New endpoints: `POST /api/song-radio/search`, `POST /api/song-radio/recommendations`,
+    `POST /api/song-radio/build-pool` (preview the candidate pool without creating a
+    playlist) and `POST /api/create_song_radio`.
+  - Recording-similarity algorithms (`5Y Balanced`, `20Y+`, `25Y Deep`, `3M Recent`,
+    `20Y Broad`, `5Y Light`) with a `1`–`100` minimum score and 1–6 expansion rounds.
+  - **Song Radio - Subsonic fallback**: on Navidrome, `getSimilarSongs2` can supplement or replace
+    ListenBrainz, requiring no MusicBrainz IDs or external service.
+  - New UI page (`frontend/templates/pages/_song_radio.html`) with library search, MBID
+    fallback field, pool preview, year/quality filters, diversity caps and refresh
+    scheduling; registered with the scheduler as `song_radio`.
+  - New recipe `recipes/song_radio_v1.json`, registered in `recipes/registry.json`.
+- Documentation for Song Radio: `README.md` feature summary and section, a full
+  `docs/API.md` reference, `docs/ENVIRONMENT.md` ListenBrainz notes, server-specific
+  sections in `docs/NAVIDROME.md` and `docs/JELLYFIN.md`, and the recipe-type table in
+  `recipes/README.md`.
+
 ## [1.2.1] - 2026-11-16
 
 ### Added

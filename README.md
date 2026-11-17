@@ -7,6 +7,7 @@ MagicLists adds the kind of curated, evolving playlists you’d expect from Spot
 ## What it does
 - 🎵 **This Is (Artist)** — Builds a definitive playlist for any artist in your library, combining hits, deep cuts, and featured appearances without duplicates.
 - 📻 **Artist Radio** — Automatically search for similar artists for your selected one, then create a distinctive mixed radio playlist from your selection.
+- 🎧 **Song Radio** — Pick a single track from your library and build a radio playlist of similar songs, seeded by ListenBrainz similarity (with a Navidrome Subsonic fallback).
 - 🎸 **Genre Mix** — Creates curated playlists from your complete genre collections, using AI to craft the perfect mix of tracks.
 - 🔄 **Re-Discover** — Rotates tracks you haven't played in a while, helping you fall back in love with your collection.
 - ⏰ **Auto-Refresh** — Keep playlists fresh with daily, weekly, or monthly updates.
@@ -17,7 +18,7 @@ Navidrome and Jellyfin users already own their music. MagicLists brings modern c
 
 ## What's that Fork?
 This repo is a fork of Ricky Synnot's [magic-lists-for-navidrome](https://github.com/rsynnot/magic-lists-for-navidrome).  
-It is an improved version with many bug fixes and more features, including, e.g., Jellyfin implementation, artist radio, genre mix with advanced filters, dark mode, no usage tracking and many more features...
+It is an improved version with many bug fixes and more features, including, e.g., Jellyfin implementation, artist radio, song radio, genre mix with advanced filters, dark mode, no usage tracking and many more features...
 
 
 ## Screenshots
@@ -34,6 +35,7 @@ _Creating a 'Genre Mix' playlist_
 ### Some features are still barely or not at all tested, including:
  - Jellyfin Server Client
    - Artist Radio Similarity Check
+   - Song Radio Similarity Check
    - Playlist Generation Quality
    - Support for Big Music Libraries
    - LastFm top tracks fetching
@@ -149,6 +151,30 @@ See [docs/JELLYFIN.md](docs/JELLYFIN.md) for details and [docs/API.md](docs/API.
 `GET /api/top-tracks/strategies`.
 
 👉 Full instructions: **[`docs/DOCKER.md`](docs/DOCKER.md)**
+
+## 🎧 Song Radio
+
+**Song Radio** turns a single song into a playlist. Search your library for a track, and MagicLists
+resolves its MusicBrainz recording ID, asks [ListenBrainz](https://listenbrainz.org) for similar
+recordings, matches them against your own library, and lets the AI curate the final mix. The source
+track is always pinned to the first position.
+
+| Piece | What it does |
+|---|---|
+| **Source track** | Any track in your library. If its metadata has no recording MBID, the page asks you to paste one from [musicbrainz.org](https://musicbrainz.org). |
+| **ListenBrainz similarity** | Fetches similar recordings using a selectable algorithm (`5Y Balanced`, `20Y+`, `25Y Deep`, `3M Recent`, `20Y Broad`, `5Y Light`) and a minimum similarity score (1–100, default `20`). |
+| **Expansion rounds** | 1–6 rounds (default `6`) that walk the similarity graph to widen the candidate pool. |
+| **Subsonic fallback** | On Navidrome, *Use Navidrome similar-tracks (Subsonic)* pulls candidates from `getSimilarSongs2` instead — no MusicBrainz IDs or external service needed. It is used automatically when ListenBrainz is switched off. |
+| **Filters** | Year range, minimum bitrate/format/bit depth, and per-album / per-artist diversity caps — the same rules as Artist Radio. |
+| **Preview** | *Find Similar Tracks* builds the pool without creating anything, so you can see how many matches exist before committing. |
+
+Matching is done by recording MBID first and falls back to a normalized title + artist lookup, because
+most servers do not expose MusicBrainz recording IDs for every track. ListenBrainz needs no API key;
+the optional `LISTENBRAINZ_TOKEN` only helps if you hit rate limits. Song Radio playlists can also be
+scheduled to refresh daily, weekly, or monthly — the stored source MBID is reused each time.
+
+See [docs/API.md](docs/API.md#song-radio) for the endpoints and [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md#listenbrainz-labs)
+for the ListenBrainz settings.
 
 ## 🩺 System Check Page
 

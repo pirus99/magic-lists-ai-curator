@@ -16,6 +16,7 @@ for curation and the **source-track filtering** applied before the model ever se
 {
   "this_is": "this_is_v2.json",
   "artist_radio": "artist_radio_v1.json",
+  "song_radio": "song_radio_v1.json",
   "genre_mix": "genre_mix_v2.json",
   "re_discover": "re_discover_phase2_v2.json",
   "re_discover_phase1_v2": "re_discover_phase1_v2.json",
@@ -84,19 +85,19 @@ Recipes fall into three distinct categories. The most important difference is **
 calls are made and what the model is asked to do**, which in turn determines which recipe
 fields are used.
 
-| | **This Is** | **Artist Radio** | **Genre Mix** | **Re-Discover** |
-|---|---|---|---|---|
-| **Category** | Single-artist curation | Multi-artist curation | Genre curation | Listening-history analysis |
-| **LLM calls** | 2 (selection + description) | 2 (selection + description) | 2 (selection + description) | 2 phases |
-| **Prompt field** | `model_instructions` | `model_instructions` | `selection_instructions` | `model_instructions` (both phases) |
-| **Description** | `description_instructions` | `description_instructions` | `description_instructions` | returned together with tracks in phase 2 |
-| **`user_parameters`** | `target_artist`, `desired_track_count` | `artists`, `desired_track_count` | `target_genre`, `desired_track_count` | listening stats (phase 1), analysis + candidates (phase 2) |
-| **`source_filtering`** | no | no | yes (engagement-based) | no |
-| **Pre-filters (year/quality/blacklist)** | no | yes | yes | no |
-| **Diversity caps** | no | yes | yes | prompt-level rule |
-| **`output_sorting`** | yes | yes | yes | no |
-| **`max_candidate_tracks`** | `150` | `300` | `600` | n/a (pool comes from the analysis) |
-| **Recipes** | `this_is_v2.json` | `artist_radio_v1.json` | `genre_mix_v2.json` | `re_discover_phase1_v2.json` + `re_discover_phase2_v2.json` |
+| | **This Is** | **Artist Radio** | **Song Radio** | **Genre Mix** | **Re-Discover** |
+|---|---|---|---|---|---|
+| **Category** | Single-artist curation | Multi-artist curation | Single-track similarity curation | Genre curation | Listening-history analysis |
+| **LLM calls** | 2 (selection + description) | 2 (selection + description) | 2 (selection + description) | 2 (selection + description) | 2 phases |
+| **Prompt field** | `model_instructions` | `model_instructions` | `model_instructions` | `selection_instructions` | `model_instructions` (both phases) |
+| **Description** | `description_instructions` | `description_instructions` | `description_instructions` | `description_instructions` | returned together with tracks in phase 2 |
+| **`user_parameters`** | `target_artist`, `desired_track_count` | `artists`, `desired_track_count` | `source_track`, `desired_track_count` | `target_genre`, `desired_track_count` | listening stats (phase 1), analysis + candidates (phase 2) |
+| **`source_filtering`** | no | no | no | yes (engagement-based) | no |
+| **Pre-filters (year/quality/blacklist)** | no | yes | yes | yes | no |
+| **Diversity caps** | no | yes | yes | yes | prompt-level rule |
+| **`output_sorting`** | yes | yes | yes | yes | no |
+| **`max_candidate_tracks`** | `150` | `300` | `300` | `600` | n/a (pool comes from the analysis) |
+| **Recipes** | `this_is_v2.json` | `artist_radio_v1.json` | `song_radio_v1.json` | `genre_mix_v2.json` | `re_discover_phase1_v2.json` + `re_discover_phase2_v2.json` |
 
 ### This Is (`this_is`)
 - LLM-based curation for a **single artist**
@@ -117,6 +118,18 @@ fields are used.
 - Uses `model_instructions` for track selection and a second `description_instructions`
   call (via the description model) for the editorial blurb
 - Recipe: `artist_radio_v1.json`
+
+### Song Radio (`song_radio`)
+- LLM-based curation starting from **one source track**, expanded with ListenBrainz similar recordings
+  (and optionally Navidrome's Subsonic `getSimilarSongs2` engine)
+- The candidate pool is built by `backend/song_radio/builder.py`; the source track is pinned to the
+  first position and protected from the year/quality filters and diversity caps
+- **No** `source_filtering` block: like Artist Radio, the builder applies the year/quality pre-filters
+  and the per-album / per-artist diversity caps before scoring
+- Uses `model_instructions` for track selection and a second `description_instructions` call for the
+  editorial blurb; `temperature` is `0.8` for a free-flowing radio feel
+- `user_parameters` are `source_track` and `desired_track_count`
+- Recipe: `song_radio_v1.json`
 
 ### Genre Mix (`genre_mix`)
 - LLM-based curation across **one or more genres**
