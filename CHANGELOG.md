@@ -30,6 +30,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/API.md` reference, `docs/ENVIRONMENT.md` ListenBrainz notes, server-specific
   sections in `docs/NAVIDROME.md` and `docs/JELLYFIN.md`, and the recipe-type table in
   `recipes/README.md`.
+- **Themed delete-playlist confirmation modal**
+  (`frontend/templates/modals/_delete_playlist_modal.html`): deleting a playlist from the
+  Manage Playlists page no longer uses the browser's native `window.confirm()` dialog.
+  The new modal names the playlist being removed, warns that the action cannot be undone,
+  and states that the playlist is removed from both Magic Lists and the media server
+  (using `{{ server_label }}`, so it reads *Navidrome* or *Jellyfin* correctly).
+  - Supports **light and dark mode** through the same `dark:` Tailwind variants as the
+    edit and help modals, so it follows the app theme instead of the OS/browser chrome.
+  - Dismissible via the Cancel button, the close (×) button, a backdrop click, or
+    <kbd>Esc</kbd>.
+  - Shows a busy state while the request is in flight: the confirm button switches to
+    *Deleting…* with a spinner and all buttons are disabled, preventing double submits.
+  - On failure the modal stays open with the busy state cleared and the error is surfaced
+    as a toast, so the user can retry without re-opening the dialog.
+
+### Fixed
+
+- **Unreadable top-tracks value in dark mode**: the numeric output next to the *Top Tracks
+  per Artist* slider in the edit-playlist modal inherited a dark text color on a dark
+  background.
 
 ## [1.2.1] - 2026-11-16
 
