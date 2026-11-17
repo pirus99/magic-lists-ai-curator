@@ -10,6 +10,19 @@ Every variable MagicLists reads, where it comes from, and whether it's required.
 | `DATABASE_PATH` | internal path | Location of the SQLite database | **Yes** |
 | `LOG_LEVEL` | `INFO` | Log verbosity: `ERROR`, `INFO`, `DEBUG` | No |
 
+## Refresh scheduling
+
+Playlist refreshes run through a single throttled queue so two playlists never
+refresh at the same time. Schedule times are interpreted in the **server's local
+timezone** (set `TZ` on the container if you need a specific one).
+
+| Variable | Default | Description | Required |
+|---|---|---|---|
+| `REFRESH_MAX_CONCURRENCY` | `1` | How many playlists may refresh simultaneously | No |
+| `REFRESH_MIN_GAP_SECONDS` | `45` | Minimum gap between two refresh starts (rate-limit guard) | No |
+| `AI_MAX_RETRIES` | `4` | Retries for AI provider 429/5xx responses | No |
+| `AI_RETRY_BASE_DELAY` | `5` | Base delay (seconds) for exponential backoff | No |
+
 ## Navidrome
 
 Required when `SERVER_TYPE=navidrome`.

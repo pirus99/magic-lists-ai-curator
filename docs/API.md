@@ -606,7 +606,7 @@ Runs a reconciliation pass first (see `POST /api/playlists/reconcile`), so playl
 
 Reconcile locally tracked playlists against the media server. Removes local playlist and schedule records whose media-server playlist no longer exists. No parameters.
 
-This is safe to call repeatedly and is a no-op when everything is in sync. It also runs automatically on `GET /api/playlists` and before each scheduled refresh sweep.
+This is safe to call repeatedly and is a no-op when everything is in sync. It also runs automatically on `GET /api/playlists` and on startup before refresh jobs are rehydrated.
 
 If the media server is unreachable, **nothing is deleted** — a network failure must not drop tracking data for playlists that still exist. The response reports this via `orphaned: true`.
 
@@ -636,6 +636,17 @@ If the media server is unreachable, **nothing is deleted** — a network failure
 ### `GET /api/playlists/{playlist_id}`
 
 Fetch a single playlist with its schedule info and saved curation settings.
+
+The response also includes the structured schedule so the edit modal can prefill its
+scheduler section without a second request:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `schedule` | object \| null | The `ScheduleSpec`, or `null` when the playlist has no schedule. |
+| `schedule_enabled` | bool | Whether the schedule is active (false when paused or absent). |
+| `schedule_description` | string | Human-readable summary, e.g. `Weekly on Mon at 03:00`. |
+| `upcoming` | string[] | The next few fire times (ISO 8601, server-local). |
+| `next_refresh` | string \| null | Next run, taken from the live scheduler job when available. |
 
 | Path param | Type | Required | Description |
 |------------|------|----------|-------------|
@@ -667,7 +678,7 @@ Delete a playlist from both the media server and the local database.
 
 ### `PUT /api/playlists/{playlist_id}/settings`
 
-Update a playlist's saved curation settings, metadata, and refresh schedule. Any of `playlist_name`, `description`, or `is_public` that is present are synced to the media server; `refresh_frequency` reconciles the schedule entry.
+Update a playlist's saved curation settings, metadata, and refresh schedule. Any of `playlist_name`, `description`, or `is_public` that is present are synced to the media server. The refresh schedule is reconciled from `schedule` (preferred) or the legacy `refresh_frequency`.
 
 **Path params**
 
@@ -680,32 +691,51 @@ Update a playlist's saved curation settings, metadata, and refresh schedule. Any
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `curation_settings` | object | **Yes** | — | Free-form settings blob. Must at least support `playlist_length`, `top_tracks_enabled`, and `top_tracks_count`. `top_tracks_count` is clamped to 20 for `this_is` and 10 for `artist_radio` playlists; for other playlist types the top-tracks keys are stripped. |
-| `refresh_frequency` | string | No | `null` | `none`/`never` removes the schedule; otherwise the schedule is created or updated. |
+| `schedule` | object | No | `null` | Structured `ScheduleSpec` (see below). Takes precedence over `refresh_frequency`. Omitting both leaves the schedule unchanged; passing `null` explicitly removes it. |
+| `schedule_enabled` | bool | No | `true` | Pause (`false`) or resume (`true`) the schedule without deleting it. |
+| `refresh_frequency` | string | No | `null` | Legacy shorthand: `none`/`never` removes the schedule; `daily`/`weekly`/`monthly` creates one at 01:00 (weekly = Monday, monthly = 1st). |
 | `playlist_name` | string | No | `null` | New playlist title. |
 | `description` | string | No | `null` | New playlist comment/description. |
 | `is_public` | bool | No | `null` | Public visibility on the media server. |
 
+**`ScheduleSpec` fields**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `kind` | string | `daily` | `daily`, `weekly`, `monthly`, `interval`, or `cron`. |
+| `time` | string | `01:00` | `HH:MM` (24h, server-local) for daily/weekly/monthly. |
+| `weekdays` | int[] | `[0]` | Days for `weekly`, `0`=Monday … `6`=Sunday. |
+| `day_of_month` | int | `1` | Day for `monthly` (1–28). |
+| `interval_hours` | int | `24` | Hours between runs for `interval`. |
+| `cron` | string | `null` | 5-field crontab expression for `cron`. |
+
 **Response:** the updated playlist object, including `track_count`
 
-**Errors:** `400` (playlist has no media server ID), `404` (not found), `502` (media server rejected the metadata update), `500`
+**Errors:** `400` (playlist has no media server ID), `404` (not found), `422` (invalid schedule, e.g. malformed cron), `502` (media server rejected the metadata update), `500`
 
 ---
 
 ### `POST /api/playlists/{playlist_id}/refresh`
 
-Manually regenerate a playlist from its saved curation settings, dispatching to the correct builder based on `playlist_type` (`genre_mix`, `artist_radio`, `rediscover` / `rediscover_weekly_v2`, or `this_is`).
+Queue a manual refresh of a playlist. The refresh runs through the shared
+throttled queue, so it can never collide with a scheduled refresh (or another
+manual one) and cannot trip AI-provider rate limits.
 
 | Path param | Type | Required | Description |
 |------------|------|----------|-------------|
 | `playlist_id` | int | **Yes** | The MagicLists playlist ID. |
 
-**Response**
+**Response:** `202 Accepted`
 
 ```json
-{ "message": "Playlist refreshed successfully", "playlist_id": "pl-987" }
+{ "status": "queued", "message": "Playlist refresh queued", "playlist_id": "pl-987" }
 ```
 
-> `playlist_id` in the response is the **media server** playlist ID.
+If the playlist is already queued or running, the response is `202` with
+`"status": "already_queued"`.
+
+> `playlist_id` in the response is the **media server** playlist ID. Poll
+> `GET /api/scheduler/overview` for progress.
 
 **Errors:** `400` (playlist has no media server ID), `404`, `500`
 
@@ -746,22 +776,107 @@ No parameters.
 
 ## Scheduler
 
+Each scheduled playlist has its own APScheduler job. All refreshes (scheduled
+and manual) run through a single throttled queue, so two playlists never refresh
+at the same time and consecutive refreshes are spaced by
+`REFRESH_MIN_GAP_SECONDS`.
+
 ### `GET /api/scheduler/status`
 
-Report whether the background scheduler is running, its state, and its active jobs.
+Report whether the scheduler is running, its per-playlist jobs, and the refresh
+queue state.
 
 **Response**
 
 ```json
 {
   "scheduler_running": true,
-  "active_jobs": 1,
-  "jobs": [{ "id": "playlist_refresh", "next_run_time": "2026-01-02T03:00:00+00:00", "func": "refresh_scheduled_playlists" }],
-  "scheduler_state": "running"
+  "active_jobs": 2,
+  "jobs": [
+    { "id": "playlist:3", "navidrome_playlist_id": "abc", "playlist_type": "this_is", "next_run_time": "2026-01-05T01:00:00" }
+  ],
+  "scheduler_state": "running",
+  "queue": {
+    "max_concurrency": 1,
+    "min_gap_seconds": 45,
+    "queued": [],
+    "running": null,
+    "in_flight": []
+  }
 }
 ```
 
-If the scheduler is not initialised the response is `{"scheduler_running": false, "error": "Scheduler not initialized"}`.
+**Errors:** `500`
+
+---
+
+### `GET /api/scheduler/overview`
+
+One tile per playlist: schedule description, next run, upcoming runs, last
+refresh outcome, and live queue state. Powers the Refresh Schedule page.
+
+**Query parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `include_unscheduled` | bool | `false` | Also include playlists with no active schedule (manual-only or paused). |
+
+**Response**
+
+```json
+{
+  "tiles": [
+    {
+      "id": 3,
+      "navidrome_playlist_id": "abc",
+      "playlist_name": "This Is: Radiohead",
+      "playlist_type": "this_is",
+      "track_count": 25,
+      "last_refreshed": "2026-01-04 01:00:12",
+      "state": "idle",
+      "enabled": true,
+      "schedule": { "kind": "weekly", "time": "03:00", "weekdays": [0], "day_of_month": 1, "interval_hours": 24, "cron": null },
+      "schedule_description": "Weekly on Mon at 03:00",
+      "refresh_frequency": "weekly",
+      "next_run": "2026-01-05T03:00:00",
+      "upcoming": ["2026-01-05T03:00:00", "2026-01-12T03:00:00"],
+      "last_run": { "status": "success", "finished_at": "…", "duration_seconds": 42.1, "track_count": 25, "error": null }
+    }
+  ],
+  "queue": { "max_concurrency": 1, "min_gap_seconds": 45, "queued": [], "running": null, "in_flight": [] }
+}
+```
+
+`state` is one of `idle`, `queued`, `running`. `is_scheduled` is `false` for
+manual-only or paused playlists (only present when `include_unscheduled=true`).
+
+**Errors:** `500`
+
+---
+
+### `GET /api/scheduler/history`
+
+Refresh history. With `playlist_id`, returns that playlist's recent attempts;
+without it, returns the latest attempt per playlist.
+
+**Query parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `playlist_id` | string | — | Media-server playlist ID |
+| `limit` | int | `20` | Max rows (1–100) |
+
+**Response:** `{"history": [ … ]}` or `{"latest": { "<server_id>": { … } }}`
+
+**Errors:** `500`
+
+---
+
+### `DELETE /api/scheduler/history`
+
+Clear refresh history, either for one playlist (`?playlist_id=…`) or entirely.
+
+**Response:** `{"message": "Refresh history cleared", "removed": 12}`
 
 **Errors:** `500`
 
@@ -769,9 +884,9 @@ If the scheduler is not initialised the response is `{"scheduler_running": false
 
 ### `POST /api/scheduler/trigger`
 
-Run a scheduler pass immediately: refresh every playlist that is due, then return. No parameters.
+Queue every playlist whose scheduled refresh time has passed.
 
-**Response:** `{"message": "Scheduler check completed successfully"}`
+**Response:** `{"message": "Scheduler check completed", "queued": 2}`
 
 **Errors:** `500`
 
@@ -779,12 +894,12 @@ Run a scheduler pass immediately: refresh every playlist that is due, then retur
 
 ### `POST /api/scheduler/start`
 
-Register/start the recurring scheduler job. No parameters.
+Re-register all per-playlist refresh jobs from the database.
 
 **Response**
 
 ```json
-{ "message": "Scheduler job started", "active_jobs": 1, "jobs": [{ "id": "…", "next_run": "…"}] }
+{ "message": "Scheduler jobs registered", "active_jobs": 2, "jobs": [{ "id": "playlist:3", "next_run_time": "…" }] }
 ```
 
 **Errors:** `500`

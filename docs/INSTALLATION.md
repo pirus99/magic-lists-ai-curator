@@ -55,6 +55,7 @@ Then `docker compose up -d` and open <http://localhost:4545>.
 1. Open <http://localhost:4545> and complete the setup form.
 2. Visit <http://localhost:4545/system-check> — every row should be green.
 3. Generate your first playlist: pick a tool (**This Is**, **Artist Radio**, **Song Radio**, **Re-Discover**, **Genre Mix**), choose a track count and refresh interval, and hit generate.
+4. Open **Manage → Refresh Schedule** to see when each playlist will refresh next, review past runs, and fine-tune the exact time in the playlist's edit modal.
 
 ## Next steps
 

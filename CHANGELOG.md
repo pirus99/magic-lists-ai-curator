@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-playlist refresh scheduling** (`backend/core/schedule_spec.py`,
+  `backend/core/scheduler.py`): the single global 12-hour cron job is gone. Every
+  scheduled playlist now gets its own APScheduler job built from a structured
+  `ScheduleSpec` (`daily`, `weekly`, `monthly`, `interval`, or raw `cron`), stored as JSON
+  in `scheduled_playlists.schedule_json`. Legacy `refresh_frequency` values are still
+  accepted and translated, so existing rows and old API clients keep working.
+  - `next_run` is now read from the live APScheduler trigger instead of being written back
+    to the database by each handler. This removes the class of bug where a handler forgot
+    to advance `next_refresh` and the playlist silently stopped refreshing.
+  - Jobs are rehydrated from the database on startup, with a bounded 24-hour catch-up
+    window for refreshes missed while the app was down.
+- **Throttled refresh queue** (`backend/core/refresh_queue.py`): all refreshes — scheduled
+  and manual — run through a single queue so two playlists never refresh at the same time
+  and consecutive refreshes are spaced apart. Configurable via `REFRESH_MAX_CONCURRENCY`
+  (default `1`) and `REFRESH_MIN_GAP_SECONDS` (default `45`). A playlist can never be
+  queued twice, so a manual refresh cannot collide with a scheduled one.
+- **Refresh history** (`backend/database/history.py`): a bounded `refresh_history` table
+  records status, duration, track count, and error message for each attempt (last 20 rows
+  per playlist). Exposed through `GET /api/scheduler/history` and
+  `DELETE /api/scheduler/history`.
+- **Refresh Schedule page** (`frontend/templates/pages/_scheduler.html`,
+  `frontend/static/scheduler.js`): a new sidebar entry under *Manage* listing one compact
+  tile per playlist with its type and next run. A red exclamation mark appears only when
+  the last refresh failed. Clicking a tile opens a detail modal
+  (`frontend/templates/modals/_scheduler_detail_modal.html`) with the full history,
+  upcoming runs, and *Refresh now* / *Edit schedule* actions. A **Show all playlists**
+  toggle reveals manual-only and paused playlists, and **Clear history** opens a themed
+  confirmation modal (`frontend/templates/modals/_clear_history_modal.html`).
+- **Detailed scheduler in the edit modal**: the four-radio *Refresh Frequency* control is
+  replaced by a scheduler section with an enable toggle, frequency select, time picker,
+  weekday chips, day-of-month, hourly interval, and a raw cron field, plus a live
+  human-readable preview. Creation pages keep the simple four-option control.
+- **New scheduler endpoints**: `GET /api/scheduler/overview` (tiles payload),
+  `GET /api/scheduler/history`, `DELETE /api/scheduler/history`. `GET /api/scheduler/status`
+  now reports per-playlist jobs and queue state.
+- **AI provider retry with backoff** (`backend/services/ai_providers.py`): OpenRouter and
+  Groq requests now retry on HTTP 429 and 5xx with exponential backoff, honouring
+  `Retry-After` when present. Configurable via `AI_MAX_RETRIES` and `AI_RETRY_BASE_DELAY`.
+- Documentation for the scheduler: `README.md` *Refresh Scheduling* section,
+  `docs/ENVIRONMENT.md` *Refresh scheduling* variables, `docs/API.md` scheduler endpoints,
+  and a *Scheduler Configuration* block in `.env.example`.
 - **Song Radio** (`backend/song_radio/`): build a radio playlist around a **single source
   track**. The track's MusicBrainz recording ID is sent to ListenBrainz's
   `similar-recordings` endpoint, results are matched against the local library by recording
@@ -45,8 +86,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - On failure the modal stays open with the busy state cleared and the error is surfaced
     as a toast, so the user can retry without re-opening the dialog.
 
+### Changed
+
+- **`POST /api/playlists/{playlist_id}/refresh` now returns `202 Accepted`** and queues the
+  refresh instead of running it inline. Poll `GET /api/scheduler/overview` for progress.
+  The response body is `{"status": "queued", ...}` or `{"status": "already_queued", ...}`.
+- **`PUT /api/playlists/{playlist_id}/settings`** accepts a structured `schedule` object and
+  `schedule_enabled` flag. `refresh_frequency` is still accepted and translated.
+- Refresh handlers now share one signature — `async def refresh_x(playlist: dict, db) -> int`
+  — returning the track count and raising on failure. The queue records the outcome
+  centrally, so per-handler `try/except` blocks and duplicated `next_refresh` updates are
+  gone.
+- Scheduler log messages and the queue summary banner now show the **playlist name**
+  instead of the media-server ID.
+
 ### Fixed
 
+- **Genre Mix scheduled refreshes never ran**: `refresh_genre_playlist` was typed to accept
+  a `dict` but the scheduler passed a `ScheduledPlaylist` model, so every scheduled run
+  raised `AttributeError` and was swallowed by the handler's own `try/except`. It also
+  never advanced `next_refresh`, so it would have been retried on every scan for 7 days.
+  Both are resolved by the normalized handler signature and centralized scheduling.
+- **`TypeError: can't compare offset-naive and offset-aware datetimes` on startup**:
+  APScheduler returns timezone-aware datetimes, which were written to `next_refresh` with a
+  UTC offset and then compared against naive `datetime.now()`. The exception aborted job
+  rehydration, leaving later playlists with no job (shown as *Not scheduled* on the
+  Refresh Schedule page while the detail modal still showed a time). All APScheduler
+  datetimes are now normalized to naive server-local time via `to_naive_local()`, and each
+  schedule row is rehydrated independently so one bad row cannot stop the rest.
 - **Unreadable top-tracks value in dark mode**: the numeric output next to the *Top Tracks
   per Artist* slider in the edit-playlist modal inherited a dark text color on a dark
   background.
