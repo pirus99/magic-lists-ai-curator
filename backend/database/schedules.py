@@ -152,8 +152,9 @@ class _SchedulesMixin:
     async def get_all_schedules(self) -> List[Dict]:
         """Return every scheduled playlist row as a dict (used to rehydrate jobs).
 
-        The owning playlist's name is joined in so callers can log and display a
-        human-readable label instead of the media-server ID.
+        The owning playlist's name and last refresh time are joined in so callers
+        can log a human-readable label and detect schedules that are already
+        satisfied (refreshed after they became due).
         """
         await self.init_db()
 
@@ -162,7 +163,7 @@ class _SchedulesMixin:
             async with db.execute("""
                 SELECT sp.id, sp.playlist_type, sp.navidrome_playlist_id, sp.refresh_frequency,
                        sp.next_refresh, sp.schedule_json, sp.enabled, sp.created_at, sp.updated_at,
-                       p.playlist_name
+                       p.playlist_name, p.last_refreshed
                 FROM scheduled_playlists sp
                 LEFT JOIN playlists p ON p.navidrome_playlist_id = sp.navidrome_playlist_id
                 ORDER BY sp.id ASC

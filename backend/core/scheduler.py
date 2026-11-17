@@ -171,6 +171,38 @@ def remove_playlist_job(schedule_id: int) -> None:
         scheduler_logger.info("Removed refresh job %s", job_id)
 
 
+async def advance_next_refresh(db: DatabaseManager, navidrome_playlist_id: str) -> None:
+    """Persist the next run time for a playlist after a refresh completes.
+
+    The APScheduler trigger is authoritative for *when* a job fires, but the
+    ``next_refresh`` column is what startup catch-up reads. Without this update
+    the column stays frozen at the value written when the schedule was created,
+    so every restart would treat the playlist as overdue and refresh it again.
+
+    Best-effort: a failure here must never fail the refresh itself.
+    """
+    try:
+        schedule_row = await db.get_schedule_by_navidrome_id(navidrome_playlist_id)
+        if not schedule_row:
+            return
+
+        spec = _parse_spec(schedule_row)
+        if spec is None:
+            return
+
+        next_run = next_run_for_spec(spec)
+        await db.update_scheduled_playlist_next_refresh(schedule_row["id"], next_run)
+        scheduler_logger.info(
+            "Next refresh for '%s' set to %s",
+            schedule_row.get("playlist_name") or navidrome_playlist_id,
+            next_run.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+    except Exception as exc:  # noqa: BLE001 - never fail a refresh over bookkeeping
+        scheduler_logger.warning(
+            "Could not advance next_refresh for %s: %s", navidrome_playlist_id, exc
+        )
+
+
 async def rehydrate_jobs(db: DatabaseManager) -> int:
     """Rebuild all per-playlist jobs from the database on startup.
 
@@ -211,6 +243,28 @@ async def rehydrate_jobs(db: DatabaseManager) -> int:
             continue
         if scheduled_time is None or scheduled_time >= now:
             continue
+
+        # Guard against a stale next_refresh: if the playlist was already
+        # refreshed after it became due, the schedule is satisfied and must not
+        # be re-queued. This covers databases written before next_refresh was
+        # advanced after each run.
+        last_refreshed = row.get("last_refreshed")
+        if last_refreshed:
+            try:
+                last_refreshed_at = to_naive_local(datetime.fromisoformat(last_refreshed))
+            except (TypeError, ValueError):
+                last_refreshed_at = None
+            if last_refreshed_at is not None and last_refreshed_at >= scheduled_time:
+                scheduler_logger.info(
+                    "Skipping catch-up for '%s': already refreshed at %s (was due %s)",
+                    label,
+                    last_refreshed_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    scheduled_time.strftime("%Y-%m-%d %H:%M:%S"),
+                )
+                # Bring the stored value forward so the next restart is clean.
+                await advance_next_refresh(db, row.get("navidrome_playlist_id"))
+                continue
+
         if now - scheduled_time > timedelta(hours=CATCHUP_WINDOW_HOURS):
             scheduler_logger.info(
                 "Skipping stale catch-up for '%s' (missed by %.1fh)",
@@ -298,6 +352,19 @@ async def enqueue_all_due(db: DatabaseManager) -> int:
             continue
         if scheduled_time is None or scheduled_time > now:
             continue
+
+        # Same stale-schedule guard as rehydrate_jobs: a playlist refreshed
+        # after it became due is already satisfied.
+        last_refreshed = row.get("last_refreshed")
+        if last_refreshed:
+            try:
+                last_refreshed_at = to_naive_local(datetime.fromisoformat(last_refreshed))
+            except (TypeError, ValueError):
+                last_refreshed_at = None
+            if last_refreshed_at is not None and last_refreshed_at >= scheduled_time:
+                await advance_next_refresh(db, row.get("navidrome_playlist_id"))
+                continue
+
         if await enqueue_scheduled_refresh(
             row.get("navidrome_playlist_id"),
             row.get("playlist_type"),

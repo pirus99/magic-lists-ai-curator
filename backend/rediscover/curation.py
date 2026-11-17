@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 from ..recipe_manager import recipe_manager
 from ..ai_client import parse_ai_track_response
+from ..core.curation_notices import record_ai_failure, record_fallback
 
 
 
@@ -21,6 +22,10 @@ async def curate_rediscover_weekly(
     """Curate a Re-Discover Weekly playlist using AI."""
     if not ai_client.api_key and ai_client.provider.provider_type == "openrouter":
         print(f"❌ No AI API key configured, using fallback curation for Re-Discover Weekly")
+        record_fallback(
+            "No AI API key is configured, so Re-Discover was built with the "
+            "algorithmic scoring fallback instead of AI curation."
+        )
         track_ids = [track["id"] for track in candidate_tracks[:num_tracks]]
         if include_description:
             fallback_description = (
@@ -145,7 +150,15 @@ def _fallback_rediscover_selection(
     include_description: bool = False,
     error_reason: str = "AI service was unavailable",
 ) -> Union[List[str], Tuple[List[str], str]]:
-    """Fallback selection algorithm for rediscover when AI is unavailable."""
+    """Fallback selection algorithm for rediscover when AI is unavailable.
+
+    Every AI failure path funnels through here, so this is where the failure is
+    reported to the refresh queue.
+    """
+    record_ai_failure(
+        f"AI curation failed for Re-Discover ({error_reason}). "
+        f"The playlist was rebuilt with the algorithmic scoring fallback instead."
+    )
     track_ids = [track["id"] for track in candidate_tracks[:num_tracks]]
     if include_description:
         description = (

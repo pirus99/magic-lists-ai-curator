@@ -354,8 +354,12 @@
                     row.track_count ? `${row.track_count} tracks` : null,
                 ].filter(Boolean).join(' • ');
 
-                const error = !ok && row.error
-                    ? `<p class="mt-1 text-xs text-red-600 dark:text-red-400 break-words">${escapeHtml(row.error)}</p>`
+                // A successful run can still carry a note (e.g. a legitimate
+                // fallback was used); a failed run carries the reason.
+                const note = row.error
+                    ? `<p class="mt-1 text-xs break-words ${ok
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-red-600 dark:text-red-400'}">${escapeHtml(row.error)}</p>`
                     : '';
 
                 return `<div class="p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg">
@@ -363,7 +367,7 @@
                         <span class="text-xs text-gray-600 dark:text-gray-300">${escapeHtml(meta)}</span>
                         ${badge}
                     </div>
-                    ${error}
+                    ${note}
                 </div>`;
             }).join('');
         } catch (error) {

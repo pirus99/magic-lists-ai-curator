@@ -4,6 +4,7 @@ import random
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..ai_client import MAX_OVER_RETURN_FACTOR, parse_ai_track_response
+from ..core.curation_notices import record_ai_failure
 from ..output_sorting import space_id_track_list_by_artist_and_album
 from ..recipe_manager import recipe_manager
 from ..services.candidate_limiter import limit_candidates_for_ai
@@ -203,8 +204,12 @@ async def curate_radio(
                     llm_config=description_llm_config,
                 )
                 return final_selection, description
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - fall back to a local ordering
+        print(f"💥 Artist Radio AI curation failed: {exc}")
+        record_ai_failure(
+            f"AI curation failed for Artist Radio ({exc}). "
+            f"The playlist was rebuilt with the local track-score fallback instead."
+        )
 
     ordered = sorted(
         candidate_tracks,

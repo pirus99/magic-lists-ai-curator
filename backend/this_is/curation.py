@@ -15,6 +15,7 @@ from ..ai_client import (
     parse_ai_track_response,
     MAX_OVER_RETURN_FACTOR,
 )
+from ..core.curation_notices import record_ai_failure, record_fallback
 from ..output_sorting import space_id_track_list_by_artist_and_album
 from ..services.candidate_limiter import limit_candidates_for_ai
 from ..services.track_scoring_service import calculate_track_score
@@ -31,6 +32,10 @@ async def curate_this_is(
     """Curate a 'This Is' playlist for a single artist using AI."""
     if not ai_client.api_key and ai_client.provider.provider_type == "openrouter":
         print(f"❌ No AI API key configured, using fallback curation for {artist_name}")
+        record_fallback(
+            f"No AI API key is configured, so '{artist_name}' was built with the "
+            f"play-count fallback instead of AI curation."
+        )
         sorted_tracks = sorted(candidate_tracks, key=lambda x: x.get("play_count", 0), reverse=True)
         track_ids = [track["id"] for track in sorted_tracks[:num_tracks]]
         if include_description:
@@ -203,7 +208,16 @@ def _fallback_this_is(
     include_description: bool = False,
     error_reason: str = "AI service was unavailable",
 ) -> Union[List[str], Tuple[List[str], str]]:
-    """Fallback selection for This Is when AI is unavailable."""
+    """Fallback selection for This Is when AI is unavailable.
+
+    Every AI failure path funnels through here, so this is where the failure is
+    reported to the refresh queue. The playlist is still produced (so the user
+    is not left with nothing), but the refresh is marked as failed.
+    """
+    record_ai_failure(
+        f"AI curation failed for This Is ({error_reason}). "
+        f"The playlist was rebuilt with the play-count fallback instead."
+    )
     sorted_tracks = sorted(candidate_tracks, key=lambda x: x.get("play_count", 0), reverse=True)
     track_ids = [track["id"] for track in sorted_tracks[:num_tracks]]
     if include_description:

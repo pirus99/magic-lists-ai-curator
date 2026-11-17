@@ -138,14 +138,11 @@ async def startup_event():
     # Start the throttled refresh queue (one refresh at a time by default).
     get_refresh_queue().start()
 
-    # Rebuild one APScheduler job per scheduled playlist from the database.
-    try:
-        startup_db = DatabaseManager(get_database_path())
-        await rehydrate_jobs(startup_db)
-    except Exception as e:
-        scheduler_logger.error(f"Failed to rehydrate playlist refresh jobs: {e}")
-
     # SYSTEM CHECK FEATURE - START
+    # Health checks run *before* any refresh job is registered. A broken
+    # configuration (unreachable server, bad credentials, missing AI key) would
+    # only produce a queue of failing refreshes, so automatic refreshes stay
+    # paused until the checks pass.
     try:
         health_service = HealthCheckService()
         system_check_results = await health_service.run_checks()
@@ -188,6 +185,28 @@ async def startup_event():
             }]
         }
     # SYSTEM CHECK FEATURE - END
+
+    # Only register refresh jobs once the configuration is known to be healthy.
+    if not system_check_passed:
+        failed = [
+            check.get("name", "unknown")
+            for check in (system_check_results or {}).get("checks", [])
+            if check.get("status") == "error"
+        ]
+        scheduler_logger.error(
+            "Automatic playlist refreshes are PAUSED: the system check did not pass on "
+            "startup%s. Fix the reported problem and restart, or run the system check "
+            "and use POST /api/scheduler/start to resume.",
+            f" (failed: {', '.join(failed)})" if failed else "",
+        )
+        return
+
+    # Rebuild one APScheduler job per scheduled playlist from the database.
+    try:
+        startup_db = DatabaseManager(get_database_path())
+        await rehydrate_jobs(startup_db)
+    except Exception as e:
+        scheduler_logger.error(f"Failed to rehydrate playlist refresh jobs: {e}")
 
 
 @app.on_event("shutdown")
@@ -839,8 +858,26 @@ async def trigger_scheduler_check(db: DatabaseManager = Depends(get_db)):
 
 @app.post("/api/scheduler/start")
 async def start_scheduler_job(db: DatabaseManager = Depends(get_db)):
-    """Re-register all per-playlist refresh jobs from the database."""
+    """Re-register all per-playlist refresh jobs from the database.
+
+    Refuses to start when the last system check did not pass, so a broken
+    configuration cannot be turned into a queue of failing refreshes.
+    """
     try:
+        if not system_check_passed:
+            failed = [
+                check.get("name", "unknown")
+                for check in (system_check_results or {}).get("checks", [])
+                if check.get("status") == "error"
+            ]
+            detail = (
+                "Automatic refreshes are paused because the system check did not pass"
+                + (f" (failed: {', '.join(failed)})" if failed else "")
+                + ". Fix the reported problem and run the system check again."
+            )
+            scheduler_logger.error(f"Refusing to start scheduler: {detail}")
+            raise HTTPException(status_code=409, detail=detail)
+
         registered = await rehydrate_jobs(db)
         scheduler_logger.info(f"Scheduler rehydration requested. Active jobs: {registered}")
         return {
@@ -848,6 +885,8 @@ async def start_scheduler_job(db: DatabaseManager = Depends(get_db)):
             "active_jobs": registered,
             "jobs": get_job_info(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         scheduler_logger.error(f"Error starting scheduler job: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start scheduler job: {str(e)}")

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ..config import NAVIDROME_URL
+from ..core.curation_notices import record_fallback
 from ..recipe_manager import recipe_manager
 from ..jellyfin import JellyfinClient
 from .curation import curate_rediscover_weekly
@@ -687,7 +688,17 @@ class ReDiscoverV2Processor:
         server_id: str,
         library_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Fallback strategy when insufficient target period tracks are found."""
+        """Fallback strategy when insufficient target period tracks are found.
+
+        This is a *legitimate* fallback, not a failure: there simply is not
+        enough listening history to analyse. The refresh still succeeds, but a
+        notice is recorded so the user knows why the playlist looks different.
+        """
+        record_fallback(
+            "Re-Discover used its fallback strategy because there was not enough "
+            "recent listening history to analyse. The playlist was built from "
+            "starred or popular tracks instead."
+        )
         try:
             starred_tracks = await self.navidrome_client.get_starred()
             if starred_tracks:

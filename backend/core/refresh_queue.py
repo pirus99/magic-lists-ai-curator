@@ -25,6 +25,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..database import DatabaseManager, get_database_path
+from .curation_notices import (
+    has_ai_failure,
+    start_collecting,
+    stop_collecting,
+    summarize,
+)
 
 logger = logging.getLogger("scheduler")
 
@@ -218,6 +224,9 @@ class RefreshQueue:
 
     async def _execute(self, job: RefreshJob, registry: Dict[str, Any]) -> None:
         """Run one refresh and record its outcome in the history table."""
+        # Imported lazily: scheduler imports this module at load time.
+        from .scheduler import advance_next_refresh
+
         db = DatabaseManager(get_database_path())
         started_at = datetime.now()
 
@@ -269,9 +278,15 @@ class RefreshQueue:
             playlist_type,
         )
 
+        # Curation code records notices here (AI failures, fallback usage) so
+        # the outcome can be reported accurately without changing every
+        # curation signature.
+        start_collecting()
+
         try:
             track_count = await handler(playlist, db)
         except Exception as exc:  # noqa: BLE001 - record and continue with the queue
+            notices = stop_collecting()
             finished_at = datetime.now()
             logger.error(
                 "Refresh failed for '%s': %s",
@@ -285,14 +300,41 @@ class RefreshQueue:
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_seconds=(finished_at - started_at).total_seconds(),
-                error=str(exc),
+                error=summarize(notices) or str(exc),
                 playlist_name=playlist_name,
                 playlist_type=playlist_type,
                 trigger=job.trigger,
             )
             return
 
+        notices = stop_collecting()
         finished_at = datetime.now()
+        notice_text = summarize(notices)
+
+        # An AI failure means the playlist was rebuilt by a fallback algorithm
+        # rather than curated. The playlist exists, but the refresh did not do
+        # what was asked, so it is reported as failed.
+        if has_ai_failure(notices):
+            logger.error(
+                "Refresh for '%s' completed with an AI failure: %s",
+                label,
+                notice_text,
+            )
+            await db.record_refresh(
+                navidrome_playlist_id=job.navidrome_playlist_id,
+                status="failed",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=(finished_at - started_at).total_seconds(),
+                track_count=track_count,
+                error=notice_text,
+                playlist_name=playlist_name,
+                playlist_type=playlist_type,
+                trigger=job.trigger,
+            )
+            await advance_next_refresh(db, job.navidrome_playlist_id)
+            return
+
         await db.record_refresh(
             navidrome_playlist_id=job.navidrome_playlist_id,
             status="success",
@@ -300,17 +342,25 @@ class RefreshQueue:
             finished_at=finished_at,
             duration_seconds=(finished_at - started_at).total_seconds(),
             track_count=track_count,
+            # A legitimate fallback (e.g. no listening history) still succeeds,
+            # but the reason is kept so the user can see why.
+            error=notice_text,
             playlist_name=playlist_name,
             playlist_type=playlist_type,
             trigger=job.trigger,
         )
         logger.info(
-            "Finished %s refresh for '%s' (%s tracks in %.1fs)",
+            "Finished %s refresh for '%s' (%s tracks in %.1fs)%s",
             job.trigger,
             label,
             track_count,
             (finished_at - started_at).total_seconds(),
+            f" — {notice_text}" if notice_text else "",
         )
+
+        # Keep the stored next_refresh in step with the schedule so a restart
+        # does not treat this playlist as overdue and refresh it again.
+        await advance_next_refresh(db, job.navidrome_playlist_id)
 
 
 # Module-level singleton, created lazily so importing this module never needs a

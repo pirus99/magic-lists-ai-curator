@@ -12,6 +12,7 @@ from ..ai_client import (
     parse_ai_track_response,
     MAX_OVER_RETURN_FACTOR,
 )
+from ..core.curation_notices import record_ai_failure, record_fallback
 from ..output_sorting import space_id_track_list_by_artist_and_album
 from ..services.candidate_limiter import limit_candidates_for_ai
 
@@ -28,6 +29,10 @@ async def curate_genre_mix(
     if not ai_client.api_key and not ai_client.provider.provider_type == "ollama":
         genre_names = ", ".join(genres)
         print(f"❌ No AI API key configured, using fallback curation for {genre_names}")
+        record_fallback(
+            f"No AI API key is configured, so '{genre_names}' was built with the "
+            f"play-count fallback instead of AI curation."
+        )
         return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description, f"No AI API key configured for {genre_names}")
 
     try:
@@ -173,7 +178,15 @@ def _fallback_genre_mix_selection(
     include_description: bool = False,
     error_reason: str = "AI service was unavailable",
 ) -> Union[List[str], Tuple[List[str], str]]:
-    """Fallback selection algorithm for genre mix when AI is unavailable."""
+    """Fallback selection algorithm for genre mix when AI is unavailable.
+
+    Every AI failure path funnels through here, so this is where the failure is
+    reported to the refresh queue.
+    """
+    record_ai_failure(
+        f"AI curation failed for Genre Mix ({error_reason}). "
+        f"The playlist was rebuilt with the play-count fallback instead."
+    )
     sorted_tracks = sorted(candidate_tracks, key=lambda x: x.get("play_count", 0), reverse=True)
     track_ids = [track["id"] for track in sorted_tracks[:num_tracks]]
     spaced_tracks = space_id_track_list_by_artist_and_album(track_ids, candidate_tracks, artist_spacing=4, album_spacing=3)
