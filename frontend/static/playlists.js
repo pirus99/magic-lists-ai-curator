@@ -587,10 +587,66 @@ function renderPlaylists(playlists) {
     }).join('');
 }
 
-async function deletePlaylist(playlistId, playlistName) {
-    if (!confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your media server.`)) {
+// ---------------------------------------------------------------------------
+// Delete playlist confirmation modal
+// Replaces the native window.confirm() so the dialog follows the app theme
+// (light/dark) and can show a busy state while the request is in flight.
+// ---------------------------------------------------------------------------
+let pendingDeletePlaylistId = null;
+
+function openDeleteModal(playlistId, playlistName) {
+    const overlay = document.getElementById('delete-modal-overlay');
+    const modal = document.getElementById('delete-modal');
+    const nameEl = document.getElementById('delete-modal-playlist-name');
+    if (!overlay || !modal) {
+        // Modal markup missing (e.g. partial page render) — fall back to confirm()
+        if (confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your media server.`)) {
+            performDeletePlaylist(playlistId);
+        }
         return;
     }
+
+    pendingDeletePlaylistId = playlistId;
+    if (nameEl) nameEl.textContent = `"${playlistName || 'this playlist'}"`;
+    setDeleteModalBusy(false);
+
+    overlay.classList.remove('hidden');
+    modal.classList.remove('hidden');
+
+    const confirmBtn = document.getElementById('delete-confirm-btn');
+    if (confirmBtn) confirmBtn.focus();
+}
+
+function closeDeleteModal() {
+    const overlay = document.getElementById('delete-modal-overlay');
+    const modal = document.getElementById('delete-modal');
+    if (overlay) overlay.classList.add('hidden');
+    if (modal) modal.classList.add('hidden');
+    pendingDeletePlaylistId = null;
+    setDeleteModalBusy(false);
+}
+
+function setDeleteModalBusy(busy) {
+    const confirmBtn = document.getElementById('delete-confirm-btn');
+    const cancelBtn = document.getElementById('delete-cancel-btn');
+    const closeBtn = document.getElementById('delete-close-top');
+    const spinner = document.getElementById('delete-confirm-spinner');
+    const label = document.getElementById('delete-confirm-label');
+
+    if (confirmBtn) confirmBtn.disabled = busy;
+    if (cancelBtn) cancelBtn.disabled = busy;
+    if (closeBtn) closeBtn.disabled = busy;
+    if (spinner) spinner.classList.toggle('hidden', !busy);
+    if (label) label.textContent = busy ? 'Deleting...' : 'Delete Playlist';
+}
+
+// Entry point used by the playlist card "Delete" button
+async function deletePlaylist(playlistId, playlistName) {
+    openDeleteModal(playlistId, playlistName);
+}
+
+async function performDeletePlaylist(playlistId) {
+    setDeleteModalBusy(true);
 
     try {
         const response = await fetch(`/api/playlists/${playlistId}`, {
@@ -602,6 +658,8 @@ async function deletePlaylist(playlistId, playlistName) {
             throw new Error(errorData.detail || 'Failed to delete playlist');
         }
 
+        closeDeleteModal();
+
         // Reload the playlists list and update count
         loadPlaylists();
         updatePlaylistCount();
@@ -612,8 +670,46 @@ async function deletePlaylist(playlistId, playlistName) {
 
     } catch (error) {
         console.error('Error deleting playlist:', error);
+        setDeleteModalBusy(false);
         showToast('error', error.message);
     }
+}
+
+// Wire up the delete modal once the DOM is ready (playlists.js loads before
+// main.js, so the markup may still be parsing).
+function initDeleteModal() {
+    const overlay = document.getElementById('delete-modal-overlay');
+    const modal = document.getElementById('delete-modal');
+    if (!overlay || !modal) return;
+
+    overlay.addEventListener('click', closeDeleteModal);
+    modal.addEventListener('click', function (event) {
+        // Close only when clicking the backdrop, not the inner panel
+        if (event.target === modal) closeDeleteModal();
+    });
+
+    const cancelBtn = document.getElementById('delete-cancel-btn');
+    const closeBtn = document.getElementById('delete-close-top');
+    const confirmBtn = document.getElementById('delete-confirm-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeDeleteModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeDeleteModal);
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function () {
+            if (pendingDeletePlaylistId) performDeletePlaylist(pendingDeletePlaylistId);
+        });
+    }
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && !modal.classList.contains('hidden')) {
+            closeDeleteModal();
+        }
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDeleteModal);
+} else {
+    initDeleteModal();
 }
 
 // Manually refresh a playlist from its saved curation settings
