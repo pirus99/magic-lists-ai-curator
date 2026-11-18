@@ -8,6 +8,25 @@
         <!-- Check items will be dynamically inserted here -->
     </div>
 
+    <div id="version-card" class="mb-6 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700/40">
+        <div class="p-4 flex items-start justify-between gap-4">
+            <div class="flex items-start">
+                <div id="version-icon" class="flex-shrink-0 mt-0.5 text-gray-500 dark:text-gray-400">
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M20.59 13.41 11.17 22.83a2 2 0 0 1-2.83 0L1.17 15.66a2 2 0 0 1-.17-2.65L9.59 4.41A2 2 0 0 1 11 4h8a2 2 0 0 1 2 2v6a2 2 0 0 1-.41 1.41Z" />
+                        <circle cx="16.5" cy="7.5" r="1.5" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">Application Version</h3>
+                    <p id="version-status" class="text-sm text-gray-600 dark:text-gray-300 mt-1">Checking for updates...</p>
+                    <a id="version-release-link" href="https://github.com/pirus99/magic-lists-ai-curator/releases" target="_blank" rel="noopener noreferrer" class="hidden text-sm text-blue-600 dark:text-blue-400 font-medium mt-1 inline-block hover:underline">View releases</a>
+                </div>
+            </div>
+            <span id="version-badge" class="flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">Checking</span>
+        </div>
+    </div>
+
     <!-- Last.fm integration card (Jellyfin only, provides artist top tracks) -->
     <div id="lastfm-card" class="hidden mb-6 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700/40">
         <div class="p-4 flex items-start justify-between gap-4">

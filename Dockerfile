@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 COPY recipes/ ./recipes/
+COPY CHANGELOG.md ./CHANGELOG.md
 
 # Create database directory and set permissions
 RUN mkdir -p /app/data && chmod 755 /app/data

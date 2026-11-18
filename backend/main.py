@@ -84,6 +84,7 @@ from .services.top_tracks_service import (
     top_tracks_supported,
 )
 from .services.playlist_sync_service import reconcile_playlists_with_server
+from .services.version_service import get_version_status
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
@@ -400,6 +401,18 @@ async def get_top_track_strategies():
 
 
 # SYSTEM CHECK FEATURE - START
+@app.get("/api/version")
+async def get_version():
+    """Compare the installed CHANGELOG release with the latest GitHub release."""
+    return await get_version_status()
+
+
+@app.get("/api/version/check")
+async def recheck_version():
+    """Force a fresh GitHub release lookup."""
+    return await get_version_status(force_refresh=True)
+
+
 @app.get("/api/health-check")
 async def get_health_check():
     """Get system health check results"""
@@ -930,7 +943,7 @@ async def get_ai_model_info():
             "has_api_key": bool(ai_client_instance.api_key)
         }
     except Exception:
-        return {"provider": "unknown", "model": "unknown", "has_api_key": False}
+        return {"provider": "unknown", "model": "unknown", "has_api_key": False }
 
 
 @app.post("/api/track-library-size")

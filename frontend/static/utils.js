@@ -48,7 +48,62 @@ function parseIntOrNull(v) {
 }
 
 // System Check functionality
+async function loadVersionStatus(forceRefresh = false) {
+    const status = document.getElementById('version-status');
+    const badge = document.getElementById('version-badge');
+    const link = document.getElementById('version-release-link');
+
+    try {
+        const response = await fetch(forceRefresh ? '/api/version/check' : '/api/version');
+        if (!response.ok) throw new Error('Version check failed');
+        const data = await response.json();
+
+        const current = data.current_tag ? `v${data.current_tag}` : 'Unknown';
+        const latest = data.remote_tag ? `v${data.remote_tag}` : 'Unavailable';
+
+        if (status) status.textContent = `Current: ${current} · Latest: ${latest}`;
+        if (link) link.classList.remove('hidden');
+
+        if (badge) {
+            badge.className = 'flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium';
+            if (data.update_available) {
+                badge.textContent = 'Update available';
+                badge.classList.add('bg-amber-100', 'text-amber-800', 'dark:bg-amber-900/30', 'dark:text-amber-300');
+                if (status) status.textContent = `Update available: ${current} → ${latest}`;
+            } else if (data.checked) {
+                badge.textContent = 'Up to date';
+                badge.classList.add('bg-green-100', 'text-green-800', 'dark:bg-green-900/30', 'dark:text-green-300');
+            } else {
+                badge.textContent = 'Check failed';
+                badge.classList.add('bg-red-100', 'text-red-800', 'dark:bg-red-900/30', 'dark:text-red-300');
+                if (status) status.textContent = data.error || `Current: ${current} · Latest: unavailable`;
+            }
+        }
+
+        updateSidebarUpdateNotice(data);
+    } catch (error) {
+        if (status) status.textContent = 'Could not check for updates';
+        if (badge) {
+            badge.textContent = 'Unavailable';
+            badge.className = 'flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+        }
+        updateSidebarUpdateNotice({ update_available: false });
+    }
+}
+
+function updateSidebarUpdateNotice(data) {
+    document.querySelectorAll('[data-update-notice]').forEach((notice) => {
+        notice.classList.toggle('hidden', !data.update_available);
+        if (data.update_available) {
+            notice.querySelector('[data-update-current]').textContent = data.current_tag ? `v${data.current_tag}` : '';
+            notice.querySelector('[data-update-latest]').textContent = data.remote_tag ? `v${data.remote_tag}` : '';
+        }
+    });
+}
+
 async function runSystemChecks() {
+    loadVersionStatus(true);
+
     const listContainer = document.getElementById('system-checks-list');
     const resultsContainer = document.getElementById('system-check-results');
     const successBanner = document.getElementById('success-banner');
