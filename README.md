@@ -136,6 +136,7 @@ services:
       - AI_MODEL=gemini-3.1-flash-lite
       - DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it
       - LASTFM_API_KEY=your_lastfm_key        # Optional: Jellyfin top tracks via Last.fm
+      - TZ=Europe/Berlin                      # Optional: timezone for refresh schedules
     volumes:
       - ./magiclists-data:/app/data           # Persist database + settings
     restart: unless-stopped

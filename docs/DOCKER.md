@@ -46,6 +46,9 @@ services:
       - AI_API_KEY=your_google_api_key
       - AI_MODEL=gemini-3.1-flash-lite
       - DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it
+
+      # --- Optional ---
+      - TZ=Europe/Berlin                      # timezone for refresh schedules
     volumes:
       - ./magiclists-data:/app/data           # persist database + settings
     restart: unless-stopped
@@ -125,6 +128,7 @@ docker run -d \
   -e AI_API_KEY=your_google_api_key \
   -e AI_MODEL=gemini-3.1-flash-lite \
   -e DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it \
+  -e TZ=Europe/Berlin \
   -v ./magiclists-data:/app/data \
   pirus999/magic-lists-ai-curator:latest
 ```
@@ -148,6 +152,7 @@ docker run -d \
   -e AI_API_KEY=your_google_api_key \
   -e AI_MODEL=gemini-3.1-flash-lite \
   -e DESCRIPTION_AI_MODEL=gemma-4-26b-a4b-it \
+  -e TZ=Europe/Berlin \
   -v ./magiclists-data:/app/data \
   pirus999/magic-lists-ai-curator:latest
 ```

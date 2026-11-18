@@ -35,6 +35,7 @@ timezone** (set `TZ` on the container if you need a specific one).
 
 | Variable | Default | Description | Required |
 |---|---|---|---|
+| `TZ` | `UTC` | Container timezone (e.g. `Europe/Berlin`). Schedule times are interpreted in this timezone | No |
 | `REFRESH_MAX_CONCURRENCY` | `1` | How many playlists may refresh simultaneously | No |
 | `REFRESH_MIN_GAP_SECONDS` | `45` | Minimum gap between two refresh starts (rate-limit guard) | No |
 | `AI_MAX_RETRIES` | `4` | Retries for AI provider 429/5xx responses | No |
