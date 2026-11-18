@@ -1,5 +1,4 @@
 """Artist Radio candidate filtering and curation."""
-import json
 import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple

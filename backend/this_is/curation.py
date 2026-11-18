@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ..recipe_manager import recipe_manager
 from ..ai_client import (
-    clean_json_response,
     parse_ai_track_response,
     MAX_OVER_RETURN_FACTOR,
 )

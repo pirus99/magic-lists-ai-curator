@@ -13,7 +13,6 @@ from .engagement import (
     filter_tracks_by_engagement,
 )
 from .diversity import (
-    _split_artists,
     select_diverse_tracks,
     select_diverse_tracks_with_caps,
 )

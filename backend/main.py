@@ -50,14 +50,6 @@ scheduler_logger = logger
 # Core / type package imports
 # ---------------------------------------------------------------------------
 from .database import DatabaseManager, get_db, get_database_path
-from .schemas import (
-    CreatePlaylistRequest,
-    CreateGenrePlaylistRequest,
-    Playlist,
-    RediscoverWeeklyV2Response,
-    CreateRediscoverPlaylistRequest,
-    PlaylistWithScheduleInfo,
-)
 from .core.dependencies import get_ai_client
 from .core.server_router import get_server_client
 import backend.core.scheduler as scheduler_module

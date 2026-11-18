@@ -1,6 +1,4 @@
 """FastAPI routes for Song Radio."""
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
 from uuid import UUID
 

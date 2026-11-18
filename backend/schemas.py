@@ -1,14 +1,5 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
-
-class Artist(BaseModel):
-    """Schema for a music-server artist."""
-    id: str
-    name: str
-    album_count: int = 0
-    song_count: int = 0
-    mbid: Optional[str] = None
 
 class CreatePlaylistRequest(BaseModel):
     """Request schema for creating a playlist"""
@@ -151,30 +142,6 @@ class Playlist(BaseModel):
     created_at: str
     updated_at: str
 
-class Song(BaseModel):
-    """Schema for a song"""
-    id: str
-    title: str
-    artist: str
-    album: str
-    duration: Optional[int] = None
-    track_number: Optional[int] = None
-
-class PlaylistResponse(BaseModel):
-    """Response schema for playlist operations"""
-    playlist: Playlist
-    message: str
-
-class RediscoverTrack(BaseModel):
-    """Schema for a Re-Discover Weekly track"""
-    id: str
-    title: str
-    artist: str
-    album: str
-    score: float
-    historical_plays: int
-    days_since_last_play: str
-
 class RediscoverWeeklyV2Response(BaseModel):
     """Response schema for Re-Discover Weekly v2.0"""
     name: str
@@ -202,17 +169,3 @@ class ScheduledPlaylist(BaseModel):
     next_refresh: str
     created_at: str
     updated_at: str
-
-class PlaylistWithScheduleInfo(BaseModel):
-    """Schema for playlist with schedule information"""
-    id: int
-    artist_id: str
-    playlist_name: str
-    songs: List[str]
-    created_at: str
-    updated_at: str
-    navidrome_playlist_id: Optional[str] = None
-    is_public: Optional[bool] = None
-    refresh_frequency: Optional[str] = None
-    next_refresh: Optional[str] = None
-    playlist_type: Optional[str] = None

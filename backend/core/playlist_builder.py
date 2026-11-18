@@ -11,7 +11,7 @@ per-type ``builder`` modules stay tiny and the duplicated ~3x pipelines that use
 to live in ``main.py`` disappear.
 """
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Awaitable, Dict, List, Optional, Tuple
 
 from ..database import DatabaseManager

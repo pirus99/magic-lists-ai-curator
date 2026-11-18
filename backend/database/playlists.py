@@ -1,11 +1,8 @@
 import json
-import sqlite3
 import aiosqlite
-import os
 from typing import List, Optional, Dict
-from datetime import datetime, timedelta
 
-from ..schemas import Playlist, ScheduledPlaylist
+from ..schemas import Playlist
 
 
 def _safe_json_loads(value, default):

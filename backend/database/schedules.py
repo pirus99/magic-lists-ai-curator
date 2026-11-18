@@ -58,7 +58,6 @@ class _SchedulesMixin:
         await self.init_db()
     
         # Calculate grace period cutoff (7 days ago by default)
-        from datetime import timedelta
         grace_cutoff = current_time - timedelta(hours=grace_hours)
     
         scheduled_playlists = []

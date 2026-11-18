@@ -3,7 +3,7 @@ import httpx
 import json
 import logging
 import re
-from typing import Optional, Dict, Any, Union, NoReturn
+from typing import Optional, Dict, Union, NoReturn
 from dataclasses import dataclass
 from google import genai
 
