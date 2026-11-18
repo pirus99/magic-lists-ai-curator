@@ -223,12 +223,12 @@ async def refresh_genre_playlist(playlist: Dict[str, Any], db: DatabaseManager) 
     if not curated_track_ids:
         raise ValueError("No curated tracks generated")
 
-    from ..playlist_metadata import resolve_refresh_description
+    from ..playlist_metadata import description_refresh_enabled, resolve_refresh_description
 
     comment_to_use = resolve_refresh_description(
         existing_description=playlist.get("description"),
         generated_description=description,
-        metadata_overrides={"description": bool(playlist.get("description"))},
+        refresh_description=description_refresh_enabled(settings),
     )
     await nav_client.update_playlist(
         playlist_id=navidrome_playlist_id,

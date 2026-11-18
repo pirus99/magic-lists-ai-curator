@@ -67,6 +67,11 @@ async function openEditModal(playlistId) {
         document.getElementById('edit-playlist-name').value = playlist.playlist_name || '';
         document.getElementById('edit-playlist-description').value = playlist.description || '';
         document.getElementById('edit-playlist-public').checked = Boolean(playlist.is_public ?? playlist.public ?? false);
+        const refreshDescriptionEl = document.getElementById('edit-playlist-refresh-description');
+        if (refreshDescriptionEl) {
+            // Missing key (playlists saved before the option existed) = regenerate.
+            refreshDescriptionEl.checked = settings.refresh_description !== false;
+        }
 
         // Common: playlist length
         const length = settings.playlist_length || playlist.playlist_length || 25;
@@ -680,13 +685,14 @@ function collectEditSettings() {
     const playlist_name = document.getElementById('edit-playlist-name').value.trim();
     const description = document.getElementById('edit-playlist-description').value.trim();
     const is_public = document.getElementById('edit-playlist-public').checked;
+    const refresh_description = document.getElementById('edit-playlist-refresh-description')?.checked ?? true;
 
     // Structured schedule replaces the old frequency radios. The legacy
     // refresh_frequency is still sent for backwards compatibility.
     const { schedule, schedule_enabled } = collectSchedulePayload();
     const refresh_frequency = schedule ? (schedule.kind === 'interval' || schedule.kind === 'cron' ? 'custom' : schedule.kind) : 'none';
 
-    let curation_settings = { playlist_length, refresh_frequency };
+    let curation_settings = { playlist_length, refresh_frequency, refresh_description };
 
     if (type === 'genre_mix') {
         const capsEnabled = document.getElementById('edit-genre-caps-enabled').checked;

@@ -588,6 +588,11 @@ async def update_playlist_settings(
             raise HTTPException(status_code=404, detail="Playlist not found")
 
         curation_settings = dict(request.curation_settings)
+        # Persist the description-refresh preference as a real boolean so the
+        # refresh pipeline can rely on it (missing key = regenerate).
+        curation_settings["refresh_description"] = bool(
+            curation_settings.get("refresh_description", True)
+        )
         if playlist.get("playlist_type") in ("artist_radio", "this_is"):
             max_count = 20 if playlist.get("playlist_type") == "this_is" else 10
             curation_settings.update(top_tracks_settings(

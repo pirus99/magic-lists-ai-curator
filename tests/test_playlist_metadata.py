@@ -1,6 +1,6 @@
 import json
 
-from backend.playlist_metadata import resolve_refresh_description
+from backend.playlist_metadata import description_refresh_enabled, resolve_refresh_description
 from backend.database.playlists import _safe_json_loads
 from backend.recipe_manager import RecipeManager
 
@@ -30,27 +30,53 @@ def test_re_discover_phase1_recipe_replaces_all_input_placeholders():
     assert "2000s" in instructions
 
 
-def test_manual_description_is_preserved_during_refresh():
+def test_manual_description_is_preserved_when_refresh_is_disabled():
     existing_description = "Manual playlist description"
     generated_description = "AI-generated description"
 
     result = resolve_refresh_description(
         existing_description=existing_description,
         generated_description=generated_description,
-        metadata_overrides={"description": True},
+        refresh_description=False,
     )
 
     assert result == existing_description
 
 
-def test_generated_description_is_used_when_no_manual_override_exists():
+def test_generated_description_is_used_when_refresh_is_enabled():
     result = resolve_refresh_description(
         existing_description="Manual playlist description",
         generated_description="AI-generated description",
-        metadata_overrides={},
+        refresh_description=True,
     )
 
     assert result == "AI-generated description"
+
+
+def test_generated_description_is_used_by_default():
+    result = resolve_refresh_description(
+        existing_description="Manual playlist description",
+        generated_description="AI-generated description",
+    )
+
+    assert result == "AI-generated description"
+
+
+def test_refresh_disabled_without_existing_description_keeps_generated():
+    result = resolve_refresh_description(
+        existing_description=None,
+        generated_description="AI-generated description",
+        refresh_description=False,
+    )
+
+    assert result == "AI-generated description"
+
+
+def test_description_refresh_enabled_defaults_to_true():
+    assert description_refresh_enabled(None) is True
+    assert description_refresh_enabled({}) is True
+    assert description_refresh_enabled({"refresh_description": True}) is True
+    assert description_refresh_enabled({"refresh_description": False}) is False
 
 
 def test_safe_json_loads_handles_null_values_without_crashing():
