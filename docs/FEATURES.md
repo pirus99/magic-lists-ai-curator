@@ -210,6 +210,24 @@ nothing to leave your network at all.
 
 ---
 
+## ⚡ No library scans
+
+MagicLists does not require you to run a full library scan for playlist generation. It uses the
+track, artist, album, genre, year, and play-information data that Navidrome or Jellyfin already
+exposes through its API, so generation does not re-read or analyze every audio file on your server.
+
+This means:
+
+- **No extra waiting** — there is no separate scan phase before a playlist can be built.
+- **Existing metadata is enough** — tracks and related library information are queried directly from your media server.
+- **Lower server load** — MagicLists works with targeted API requests instead of rescanning the entire library or filesystem.
+- **No audio analysis required** — playlist curation and matching depend on library metadata and the configured AI or similarity services, not on fingerprinting every track.
+- **Normal server indexing still matters** — your Navidrome or Jellyfin library should already be populated and updated by your media server. MagicLists does not replace that server-side scanning or indexing process.
+
+A playlist can be created as soon as MagicLists is connected to your media server. 
+
+---
+
 ## 🆕 What's new since the original version
 
 This project started as a fork of

@@ -23,6 +23,7 @@ full description in **[docs/FEATURES.md](docs/FEATURES.md)**.
 | ✏️ **[Playlist editing](docs/FEATURES.md#-playlist-editing)** | Rename, re-describe, change length, filters, or schedule — then save, or save and rebuild in one click. |
 | 🌙 **[Dark mode](docs/FEATURES.md#-dark-mode)** | A proper light and dark theme across the whole app. |
 | 🩺 **[System check](docs/FEATURES.md#-system-check)** | Validates your configuration on startup and tells you exactly what to fix. |
+| ⚡ **[No library scans](docs/FEATURES.md#-no-library-scans)** | Playlist building uses your server's existing library metadata — no full library scans, so there is no wasted waiting time. |
 
 👉 **[See all features, including everything new →](docs/FEATURES.md)**
 
@@ -42,6 +43,12 @@ _Creating a 'This is (Artist)' playlist_
 ![Genre Mix UI](assets/images/genremix-playlist.png)
 
 _Creating a 'Genre Mix' playlist_ 
+
+### Other Screenshots:
+
+#### [Artist Radio UI](assets/images/artist-radio.png)
+
+#### [Song Radio UI](assets/images/song-radio.png)
 
 
 ## What’s still a work in progress?
