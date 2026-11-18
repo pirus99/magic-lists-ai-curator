@@ -186,42 +186,32 @@ function getStatusText(status) {
     }
 }
 
+// Single source of truth for page <-> URL mapping
+const PAGE_TO_URL = {
+    'home': '/',
+    'this-is-artist': '/this-is',
+    'artist-radio': '/artist-radio',
+    'song-radio': '/song-radio',
+    're-discover': '/re-discover',
+    'genre-mix': '/genre-mix',
+    'playlists': '/playlists',
+    'scheduler': '/scheduler',
+    'system-check': '/system-check',
+    'terms': '/terms'
+};
+
+const URL_TO_PAGE = Object.fromEntries(
+    Object.entries(PAGE_TO_URL).map(([page, url]) => [url, page])
+);
+
+// Resolve the URL path for a page name
+function getURLForPage(page) {
+    return PAGE_TO_URL[page] || '/';
+}
+
 // URL management function
 function updateURL(page) {
-    let url = '/';
-
-    // Map pages to URL paths
-    switch (page) {
-        case 'home':
-            url = '/';
-            break;
-        case 'this-is-artist':
-            url = '/this-is';
-            break;
-        case 'artist-radio':
-            url = '/artist-radio';
-            break;
-        case 're-discover':
-            url = '/re-discover';
-            break;
-        case 'genre-mix':
-            url = '/genre-mix';
-            break;
-        case 'playlists':
-            url = '/playlists';
-            break;
-        case 'scheduler':
-            url = '/scheduler';
-            break;
-        case 'system-check':
-            url = '/system-check';
-            break;
-        case 'terms':
-            url = '/terms';
-            break;
-        default:
-            url = '/';
-    }
+    const url = getURLForPage(page);
 
     // Update browser URL without page reload
     if (window.location.pathname !== url) {
@@ -240,40 +230,9 @@ function initSystemCheckPage() {
 
 // Get page from URL path
 function getPageFromURL(pathname) {
-    let page;
-    switch (pathname) {
-        case '/':
-            page = 'home';
-            break;
-        case '/this-is':
-            page = 'this-is-artist';
-            break;
-        case '/artist-radio':
-            page = 'artist-radio';
-            break;
-        case '/re-discover':
-            page = 're-discover';
-            break;
-        case '/genre-mix':
-            page = 'genre-mix';
-            break;
-        case '/playlists':
-            page = 'playlists';
-            break;
-        case '/scheduler':
-            page = 'scheduler';
-            break;
-        case '/system-check':
-            page = 'system-check';
-            break;
-        case '/terms':
-            page = 'terms';
-            break;
-        default:
-            page = 'home';
-            break;
-    }
-    return page;
+    // Ignore trailing slashes so /song-radio/ behaves like /song-radio
+    const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+    return URL_TO_PAGE[normalized] || 'home';
 }
 
 

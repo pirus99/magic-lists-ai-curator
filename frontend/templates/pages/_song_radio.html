@@ -1,18 +1,18 @@
 <div id="song-radio-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white dark:bg-gray-800 md:border md:border-gray-200 dark:md:border-gray-700 md:rounded-lg">
     <div class="mb-6">
-        <div class="flex items-start justify-between gap-4">
+        <div class="relative items-start justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">Song Radio</h1>
                 <p class="text-gray-600 dark:text-gray-300">Build a radio playlist around a single song. Search your library, resolve its MusicBrainz recording, and let ListenBrainz find similar recordings.</p>
             </div>
             <button type="button" data-help-type="song_radio"
-                class="shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                class="flex absolute top-0 right-1 -mt-1 items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                 <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10" />
                     <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
                     <path d="M12 17h.01" />
                 </svg>
-                How this works
+                <p class="hidden sm:block">How this works</p>
             </button>
         </div>
     </div>
@@ -21,7 +21,7 @@
         <div>
             <label for="song-radio-search" class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Search your library for a song</label>
             <div class="flex items-center gap-2">
-                <input id="song-radio-search" type="text" placeholder="Search by title, artist, or album..." class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                <input id="song-radio-search" type="text" placeholder="Search by title, artist, or album..." class="w-full px-3 py-3 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 placeholder-gray-900 dark:text-gray-100 dark:placeholder-gray-100">
                 <button id="song-radio-search-btn" type="button" class="shrink-0 bg-gray-900 dark:bg-gray-900 text-white dark:text-gray-100 font-bold py-2 px-4 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-700 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors">Search</button>
             </div>
         </div>

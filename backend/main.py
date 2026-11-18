@@ -973,8 +973,19 @@ app.include_router(song_radio_router)
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_router(request: Request, path: str):
     """Handle SPA routing - serve app for known paths, redirect unknown paths"""
-    spa_paths = ["this-is", "artist-radio", "song-radio", "re-discover", "playlists", "terms"]
-    if path in spa_paths:
+    spa_paths = [
+        "this-is",
+        "artist-radio",
+        "song-radio",
+        "re-discover",
+        "genre-mix",
+        "playlists",
+        "scheduler",
+        "terms",
+    ]
+    # Normalize trailing slashes so /song-radio/ behaves like /song-radio
+    normalized_path = path.strip("/")
+    if normalized_path in spa_paths:
         if not system_check_passed:
             return RedirectResponse(url="/system-check", status_code=302)
         return templates.TemplateResponse(request, "index.html", template_context(request))

@@ -96,6 +96,10 @@ function showContent(contentId) {
 document.addEventListener('click', function(event) {
     const link = event.target.closest('[data-page]');
     if (link) {
+        // Let the browser handle modified clicks (new tab/window, download, etc.)
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+            return;
+        }
         event.preventDefault();
         const page = link.getAttribute('data-page');
         
@@ -112,6 +116,25 @@ document.addEventListener('click', function(event) {
         }
     }
 });
+
+// Give every navigation link a real href so URLs stay consistent and links can
+// be opened in a new tab / copied. Keeps the SPA click handling above intact.
+function syncNavLinkHrefs() {
+    // getURLForPage() lives in app.js, which loads after this file
+    if (typeof getURLForPage !== 'function') return;
+    document.querySelectorAll('[data-page]').forEach(link => {
+        const page = link.getAttribute('data-page');
+        if (page) {
+            link.setAttribute('href', getURLForPage(page));
+        }
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', syncNavLinkHrefs);
+} else {
+    syncNavLinkHrefs();
+}
 
 // Mobile menu toggle functionality
 const mobileMenuBtn = document.getElementById('hs-navbar-alignment-collapse');

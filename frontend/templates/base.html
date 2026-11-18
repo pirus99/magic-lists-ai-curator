@@ -4,15 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/icon" href="./static/assets/favicon.ico" />
     <title>Magic Lists</title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
-        rel="stylesheet">
-
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/style/tailwind-3.4.17.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -25,9 +20,25 @@
     </script>
     <script src="/static/theme.js"></script>
 
-    <script src="https://cdn.jsdelivr.net/npm/preline@latest/dist/preline.min.js"></script>
+    <script src="/static/style/preline.min.js"></script>
 
     <style>
+        @font-face {
+            font-family: "Inter";
+            src: url("/static/fonts/Inter-VariableFont_opsz,wght.ttf") format("truetype");
+            font-weight: 100 900;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: "IBM Plex Serif";
+            src: url("/static/fonts/IBMPlexSerif-Regular.ttf") format("truetype");
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
         body {
             font-family: "Inter", sans-serif;
             font-optical-sizing: auto;
@@ -125,13 +136,13 @@
     <script src="/static/api.js"></script>
     <script src="/static/ui/selects.js"></script>
     <script src="/static/ui/toasts.js"></script>
-    <script src="/static/ui/nav.js"></script>
+    <script src="/static/ui/nav.js?v=1.1.1"></script>
     <script src="/static/ui/modals.js"></script>
     <script src="/static/ui/help.js?v=1.1.0"></script>
     <script src="/static/playlists.js"></script>
     <script src="/static/scheduler.js"></script>
     <script src="/static/main.js"></script>
-    <script src="/static/app.js?v=1.1.0"></script>
+    <script src="/static/app.js?v=1.1.1"></script>
 </body>
 
 </html>

@@ -120,6 +120,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`/song-radio` (and `/genre-mix`, `/scheduler`) redirected to the home page**: the SPA
+  URL helpers in `frontend/static/app.js` had no `song-radio` mapping, so the page could
+  never be reached by URL, and the backend catch-all route in `backend/main.py` did not
+  allow-list `genre-mix` or `scheduler`. Page ↔ URL mapping now lives in a single
+  `PAGE_TO_URL` table used by both `updateURL()` and `getPageFromURL()`, the backend
+  allow-list matches it, and trailing slashes are normalized on both sides. Sidebar and
+  home-page links also get real `href`s (instead of `#`), so links can be opened in a new
+  tab and the address bar stays consistent.
 - **`TypeError: cannot use 'tuple' as a dict key` on every page load after upgrading
   FastAPI/Starlette**: Starlette 1.x changed `Jinja2Templates.TemplateResponse` from
   `(name, context)` to `(request, name, context)`. The old call style passed the context
