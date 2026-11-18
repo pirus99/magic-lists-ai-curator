@@ -1,6 +1,11 @@
+import logging
+
 import httpx
 import os
 from typing import List, Dict, Any, Union
+
+
+logger = logging.getLogger(__name__)
 
 
 class _GenresMixin:
@@ -38,7 +43,7 @@ class _GenresMixin:
             if library_ids_list:
                 # Fetch from specific libraries
                 for lib_id in library_ids_list:
-                    print(f"🎵 Fetching genres from library ID: {lib_id}")
+                    logger.debug(f"🎵 Fetching genres from library ID: {lib_id}")
                     genres = await self._get_genres_from_library(lib_id)
                     for genre in genres:
                         name = genre["name"]
@@ -49,7 +54,7 @@ class _GenresMixin:
                             all_genres[name] = count
             else:
                 # Fetch from all libraries (no filter)
-                print("🎵 Fetching genres from all libraries")
+                logger.debug("🎵 Fetching genres from all libraries")
                 genres = await self._get_genres_from_library(None)
                 for genre in genres:
                     name = genre["name"]
@@ -59,11 +64,11 @@ class _GenresMixin:
             # Convert to list of genre objects
             genre_list = [{"name": name, "songCount": count} for name, count in all_genres.items()]
 
-            print(f"✅ Retrieved {len(genre_list)} unique genres from {len(library_ids_list) if library_ids_list else 'all'} libraries")
+            logger.info(f"✅ Retrieved {len(genre_list)} unique genres from {len(library_ids_list) if library_ids_list else 'all'} libraries")
             return sorted(genre_list, key=lambda x: x["name"])
 
         except Exception as e:
-            print(f"❌ Error in get_genres: {e}")
+            logger.error(f"❌ Error in get_genres: {e}")
             raise
 
 
@@ -107,11 +112,11 @@ class _GenresMixin:
                         })
 
                 if genres:
-                    print(f"✅ Retrieved {len(genres)} genres using getGenres endpoint")
+                    logger.debug(f"✅ Retrieved {len(genres)} genres using getGenres endpoint")
                     return genres
 
             except Exception as e:
-                print(f"⚠️ getGenres endpoint failed ({e}), falling back to search-based method")
+                logger.warning(f"⚠️ getGenres endpoint failed ({e}), falling back to search-based method")
 
             # Fallback: Use search-based method with larger sample
             params = self._get_subsonic_params()
@@ -154,7 +159,7 @@ class _GenresMixin:
             # Convert to list of genre objects
             genres = [{"name": name, "songCount": count} for name, count in genre_counts.items()]
 
-            print(f"📊 Retrieved {len(genres)} genres using search fallback method (sampled {len(songs)} tracks)")
+            logger.debug(f"📊 Retrieved {len(genres)} genres using search fallback method (sampled {len(songs)} tracks)")
             return genres
 
         except httpx.RequestError as e:

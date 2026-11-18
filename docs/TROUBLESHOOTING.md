@@ -213,7 +213,17 @@ Always the first thing to check:
 docker logs -f magiclists
 ```
 
-For more detail, set `LOG_LEVEL=DEBUG`.
+For more detail, set `LOG_LEVEL=DEBUG` and restart the container. The four
+levels behave as follows:
+
+| Level | What you see |
+|---|---|
+| `ALL` | DEBUG + including database messages. |
+| `DEBUG` | INFO + including every HTTP request and curation progress detail. |
+| `INFO` | ERROR + everything important except successful HTTP requests (`2xx`/`3xx`). Default. |
+| `ERROR` | Only errors plus startup messages. |
+
+Logs are written to stdout only — there is no log file inside the container.
 
 ---
 

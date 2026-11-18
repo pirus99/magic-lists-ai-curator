@@ -36,7 +36,7 @@ from .schedule_spec import (
 )
 
 
-scheduler_logger = logging.getLogger("scheduler")
+scheduler_logger = logging.getLogger(__name__)
 
 # The scheduler instance is owned by the application lifecycle (see main.py).
 scheduler: AsyncIOScheduler = None  # type: ignore

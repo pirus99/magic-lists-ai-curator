@@ -1,3 +1,9 @@
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
 def ensure_artist_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
     """
     Ensures that the same artist does not appear within a specified spacing in the playlist.
@@ -24,7 +30,7 @@ def ensure_artist_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
     for song in playlist:
         artist = song.get('artist')
         if artist is None:
-            print(f"⚠️ Song '{song.get('title', 'Unknown')}' does not have an 'artist' key. Skipping.")
+            logger.warning(f"⚠️ Song '{song.get('title', 'Unknown')}' does not have an 'artist' key. Skipping.")
             continue
 
         # Check if the artist has been seen and if the spacing condition is met
@@ -71,17 +77,17 @@ def ensure_artist_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
 
     if repositioned_songs_count == 0 and non_spaced_songs_count == 0:
         valid = True
-        print("✅ (Artist) All songs were spaced already correctly")
+        logger.debug("✅ (Artist) All songs were spaced already correctly")
         return new_playlist, valid
     if repositioned_songs_count > 0 and non_spaced_songs_count == 0:
         valid = True
-        print(f"↕️ (Artist) {repositioned_songs_count} songs repositioned")
+        logger.debug(f"↕️ (Artist) {repositioned_songs_count} songs repositioned")
         return new_playlist, valid
     if repositioned_songs_count > 0 and non_spaced_songs_count > 0:
-        print(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.warning(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
     if non_spaced_songs_count > 0:
-        print(f"⚠️ (Artist) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.warning(f"⚠️ (Artist) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
 
     return new_playlist, valid
@@ -112,7 +118,7 @@ def ensure_album_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
     for song in playlist:
         album = song.get('album')
         if album is None:
-            print(f"⚠️ Song '{song.get('title', 'Unknown')}' does not have an 'album' key. Skipping.")
+            logger.warning(f"⚠️ Song '{song.get('title', 'Unknown')}' does not have an 'album' key. Skipping.")
             continue
 
         # Check if the album has been seen and if the spacing condition is met
@@ -159,17 +165,17 @@ def ensure_album_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
 
     if repositioned_songs_count == 0 and non_spaced_songs_count == 0:
         valid = True
-        print("✅ (Album) All songs were spaced already correctly")
+        logger.debug("✅ (Album) All songs were spaced already correctly")
         return new_playlist, valid
     if repositioned_songs_count > 0 and non_spaced_songs_count == 0:
         valid = True
-        print(f"↕️ (Album) {repositioned_songs_count} songs repositioned")
+        logger.debug(f"↕️ (Album) {repositioned_songs_count} songs repositioned")
         return new_playlist, valid
     if repositioned_songs_count > 0 and non_spaced_songs_count > 0:
-        print(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.warning(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
     if non_spaced_songs_count > 0:
-        print(f"⚠️ (Album) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.warning(f"⚠️ (Album) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
 
     return new_playlist, valid
@@ -229,7 +235,7 @@ def space_id_track_list_by_artist_and_album(track_ids: list[int], candidate_trac
             duplicate_count += 1
 
     if duplicate_count >= 1:
-        print(f"⚠️ {duplicate_count} duplicate entries removed from output")
+        logger.warning(f"⚠️ {duplicate_count} duplicate entries removed from output")
 
     #Define Spacing Vars
     spaced_playlist = filtered_tracks

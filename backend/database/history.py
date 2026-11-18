@@ -6,13 +6,10 @@ page can show whether the last refresh succeeded and when the next one is due.
 History is intentionally minimal: only the last ``MAX_ROWS_PER_PLAYLIST`` rows
 per playlist are retained, and everything can be cleared by the user.
 """
-import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
 import aiosqlite
-
-logger = logging.getLogger("scheduler")
 
 # How many history rows to keep per playlist. Older rows are pruned on insert.
 MAX_ROWS_PER_PLAYLIST = 20

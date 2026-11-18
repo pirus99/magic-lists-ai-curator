@@ -1,4 +1,5 @@
 """Song Radio playlist builder and persistence settings."""
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..database import DatabaseManager
@@ -6,6 +7,9 @@ from ..core.playlist_builder import PlaylistTypeConfig
 from ..core.server_router import get_server_client
 from ..services.listenbrainz_service import ListenBrainzService
 from .curation import curate_song_radio, filter_song_radio_tracks
+
+
+logger = logging.getLogger(__name__)
 
 
 def as_track_dict(source_track: Any) -> Optional[Dict[str, Any]]:
@@ -120,7 +124,7 @@ async def build_song_radio_pool(
         try:
             similar = await service.get_similar_recordings(source_mbid, algorithm, minimum_score)
         except Exception as exc:
-            print(f"⚠️ ListenBrainz similar-recordings failed: {exc}")
+            logger.warning(f"⚠️ ListenBrainz similar-recordings failed: {exc}")
             break
 
         if not similar:
@@ -190,7 +194,7 @@ async def build_song_radio_pool(
                 library_ids=library_ids,
             )
         except Exception as exc:
-            print(f"⚠️ Subsonic similar-tracks failed: {exc}")
+            logger.warning(f"⚠️ Subsonic similar-tracks failed: {exc}")
             similar_tracks = []
 
         existing_ids = {t.get("id") for t in pool}

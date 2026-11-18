@@ -1,7 +1,12 @@
+import logging
+
 import httpx
 from typing import List, Dict, Any, Union, Optional
 
 from .utils import _normalize_genres
+
+
+logger = logging.getLogger(__name__)
 
 
 class _TracksMixin:
@@ -36,7 +41,7 @@ class _TracksMixin:
 
             song_data = subsonic_response.get("song", {})
             if not song_data:
-                print(f"⚠️ No song found for ID: {track_id}")
+                logger.warning(f"⚠️ No song found for ID: {track_id}")
                 return None
 
             raw_genres = song_data.get("genres", song_data.get("genre"))
@@ -59,7 +64,7 @@ class _TracksMixin:
                 "genres": normalized_genres,
             }
 
-            print(f"✅ Fetched track: {track['title']} by {track['artist']}")
+            logger.debug(f"✅ Fetched track: {track['title']} by {track['artist']}")
             return track
 
         except httpx.RequestError as e:
@@ -250,7 +255,7 @@ class _TracksMixin:
             batch_size = 500  # Max allowed by API
 
             library_filter = library_ids[0] if library_ids and len(library_ids) > 0 else None
-            print(f"🎵 Starting multi-genre track collection for {len(genres)} genres{' in library ' + library_filter if library_filter else ''}")
+            logger.debug(f"🎵 Starting multi-genre track collection for {len(genres)} genres{' in library ' + library_filter if library_filter else ''}")
 
             for genre in genres:
                 offset = 0
@@ -281,7 +286,7 @@ class _TracksMixin:
 
                         # If getSongsByGenre is not supported, fall back to search approach
                         if "not implemented" in error_msg.lower() or error_code == 0:
-                            print(f"⚠️ getSongsByGenre not supported, falling back to search method")
+                            logger.warning(f"⚠️ getSongsByGenre not supported, falling back to search method")
                             genre_tracks = await self._get_tracks_by_genre_fallback(genre)
                             all_tracks.extend(genre_tracks)
                             break
@@ -324,7 +329,7 @@ class _TracksMixin:
                     total_fetched += batch_count
                     offset += batch_size
 
-                    print(f"📦 Fetched batch for genre '{genre}': {batch_count} tracks (total: {total_fetched})")
+                    logger.debug(f"📦 Fetched batch for genre '{genre}': {batch_count} tracks (total: {total_fetched})")
 
                     # Safety check: prevent infinite loops
                     if batch_count < batch_size:
@@ -332,11 +337,11 @@ class _TracksMixin:
 
                     # Safety check: prevent too many API calls (max 100 batches = 50k tracks)
                     if offset >= 50000:
-                        print(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
+                        logger.warning(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
                         break
 
             deduped = self._deduplicate_tracks(all_tracks)
-            print(f"✅ Completed multi-genre collection: {len(deduped)} tracks for {len(genres)} genres")
+            logger.info(f"✅ Completed multi-genre collection: {len(deduped)} tracks for {len(genres)} genres")
             return deduped
 
         except httpx.RequestError as e:
@@ -366,7 +371,7 @@ class _TracksMixin:
             batch_size = 500  # Max allowed by API
 
             library_filter = library_ids[0] if library_ids and len(library_ids) > 0 else None
-            print(f"🎵 Starting genre track collection for '{genre}'{' in library ' + library_filter if library_filter else ''}")
+            logger.debug(f"🎵 Starting genre track collection for '{genre}'{' in library ' + library_filter if library_filter else ''}")
 
             while True:
                 params = self._get_subsonic_params()
@@ -395,7 +400,7 @@ class _TracksMixin:
 
                     # If getSongsByGenre is not supported, fall back to search approach
                     if "not implemented" in error_msg.lower() or error_code == 0:
-                        print(f"⚠️ getSongsByGenre not supported, falling back to search method")
+                        logger.warning(f"⚠️ getSongsByGenre not supported, falling back to search method")
                         return await self._get_tracks_by_genre_fallback(genre)
                     else:
                         raise Exception(f"Subsonic API error: {error_msg}")
@@ -436,7 +441,7 @@ class _TracksMixin:
                 total_fetched += batch_count
                 offset += batch_size
 
-                print(f"📦 Fetched batch: {batch_count} tracks (total: {total_fetched})")
+                logger.debug(f"📦 Fetched batch: {batch_count} tracks (total: {total_fetched})")
 
                 # Safety check: prevent infinite loops
                 if batch_count < batch_size:
@@ -444,11 +449,11 @@ class _TracksMixin:
 
                 # Safety check: prevent too many API calls (max 100 batches = 50k tracks)
                 if offset >= 50000:
-                    print(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
+                    logger.warning(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
                     break
 
             deduped = self._deduplicate_tracks(all_tracks)
-            print(f"✅ Completed genre collection: {len(deduped)} tracks for '{genre}'")
+            logger.info(f"✅ Completed genre collection: {len(deduped)} tracks for '{genre}'")
             return deduped
 
         except httpx.RequestError as e:
@@ -468,7 +473,7 @@ class _TracksMixin:
         Returns:
             List of tracks with format: {id, title, album, year, play_count}
         """
-        print(f"🔄 Using fallback search method for genre '{genre}'")
+        logger.debug(f"🔄 Using fallback search method for genre '{genre}'")
 
         try:
             await self._ensure_authenticated()
@@ -524,11 +529,11 @@ class _TracksMixin:
                     tracks_list.append(track)
 
             deduped = self._deduplicate_tracks(tracks_list)
-            print(f"✅ Fallback method found {len(deduped)} tracks for '{genre}'")
+            logger.info(f"✅ Fallback method found {len(deduped)} tracks for '{genre}'")
             return deduped
 
         except Exception as e:
-            print(f"❌ Fallback method also failed: {e}")
+            logger.error(f"❌ Fallback method also failed: {e}")
             return []
 
 
@@ -604,7 +609,7 @@ class _TracksMixin:
                 })
 
             deduped = self._deduplicate_tracks(tracks)
-            print(f"🔍 Search '{query}' returned {len(deduped)} track(s)")
+            logger.debug(f"🔍 Search '{query}' returned {len(deduped)} track(s)")
             return deduped
 
         except httpx.RequestError as e:
@@ -691,7 +696,7 @@ class _TracksMixin:
                 })
 
             deduped = self._deduplicate_tracks(tracks)
-            print(f"🎯 getSimilarSongs2 returned {len(deduped)} similar track(s) for {track_id}")
+            logger.debug(f"🎯 getSimilarSongs2 returned {len(deduped)} similar track(s) for {track_id}")
             return deduped
 
         except httpx.RequestError as e:
@@ -768,7 +773,7 @@ class _TracksMixin:
                 })
 
             deduped = self._deduplicate_tracks(tracks)
-            print(f"⭐ Retrieved {len(deduped)} starred tracks")
+            logger.debug(f"⭐ Retrieved {len(deduped)} starred tracks")
             return deduped
 
         except httpx.RequestError as e:
@@ -865,7 +870,7 @@ class _TracksMixin:
             scan_status = subsonic_response.get("scanStatus", {})
             count = scan_status.get("count", 0)
         
-            print(f"📊 Total song count in library (via startScan): {count}")
+            logger.debug(f"📊 Total song count in library (via startScan): {count}")
             return count
             
         except httpx.RequestError as e:
@@ -900,11 +905,11 @@ class _TracksMixin:
                 'total_tracks': total_tracks
             }
 
-            print(f"📊 Calculated library stats: {stats}")
+            logger.debug(f"📊 Calculated library stats: {stats}")
             return stats
 
         except Exception as e:
-            print(f"⚠️ Error getting library stats, using defaults: {e}")
+            logger.warning(f"⚠️ Error getting library stats, using defaults: {e}")
             # Return safe defaults if we can't get stats
             return {
                 'max_play_count': 100,

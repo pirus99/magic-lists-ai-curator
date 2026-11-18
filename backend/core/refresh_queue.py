@@ -25,6 +25,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..database import DatabaseManager, get_database_path
+from ..logging_config import STARTUP_FLAG
 from .curation_notices import (
     has_ai_failure,
     start_collecting,
@@ -32,7 +33,7 @@ from .curation_notices import (
     summarize,
 )
 
-logger = logging.getLogger("scheduler")
+logger = logging.getLogger(__name__)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -102,6 +103,7 @@ class RefreshQueue:
             "Refresh queue started (max_concurrency=%s, min_gap=%ss)",
             self.max_concurrency,
             self.min_gap_seconds,
+            extra={STARTUP_FLAG: True},
         )
 
     async def stop(self) -> None:
@@ -117,7 +119,7 @@ class RefreshQueue:
         self._pending.clear()
         self._in_flight.clear()
         self._running = None
-        logger.info("Refresh queue stopped")
+        logger.info("Refresh queue stopped", extra={STARTUP_FLAG: True})
 
     # ------------------------------------------------------------------
     # Submission

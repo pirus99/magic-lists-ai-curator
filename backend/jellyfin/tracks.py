@@ -1,3 +1,4 @@
+import logging
 from typing import List, Dict, Any, Union, Optional
 from .utils import _get_quality_score
 from ..services.lastfm_service import (
@@ -5,6 +6,9 @@ from ..services.lastfm_service import (
     normalize_artist,
     resolve_top_tracks,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class _TracksMixin:
@@ -51,11 +55,11 @@ class _TracksMixin:
                 tracks.append(self._normalize_track(item))
 
             deduped = self._deduplicate_tracks(tracks)
-            print(f"🔍 Search '{query}' returned {len(deduped)} track(s)")
+            logger.debug(f"🔍 Search '{query}' returned {len(deduped)} track(s)")
             return deduped
 
         except Exception as e:
-            print(f"⚠️ Error searching tracks in Jellyfin: {e}")
+            logger.warning(f"⚠️ Error searching tracks in Jellyfin: {e}")
             return []
 
     async def get_library_stats(self) -> dict:
@@ -94,11 +98,11 @@ class _TracksMixin:
                 'total_tracks': total_tracks
             }
             
-            print(f"📊 Calculated library stats: {stats}")
+            logger.debug(f"📊 Calculated library stats: {stats}")
             return stats
             
         except Exception as e:
-            print(f"⚠️ Error getting library stats, using defaults: {e}")
+            logger.warning(f"⚠️ Error getting library stats, using defaults: {e}")
             # Return safe defaults if we can't get stats
             return {
                 'max_play_count': 100,
@@ -209,12 +213,12 @@ class _TracksMixin:
 
         artist = await self.find_artist_by_name(artist_name, library_ids)
         if not artist:
-            print(f"⚠️ Jellyfin top tracks skipped: no library artist matching '{artist_name}'")
+            logger.warning(f"⚠️ Jellyfin top tracks skipped: no library artist matching '{artist_name}'")
             return []
 
         local_tracks = await self.get_tracks_by_artist(artist["id"], library_ids) or []
         if not local_tracks:
-            print(f"⚠️ Jellyfin top tracks skipped: '{artist['name']}' has no local tracks")
+            logger.warning(f"⚠️ Jellyfin top tracks skipped: '{artist['name']}' has no local tracks")
             return []
 
         # A user-supplied MBID wins; otherwise fall back to the library's, if any.
@@ -233,7 +237,7 @@ class _TracksMixin:
 
         resolved_name = top_tracks[0].get("artist") if top_tracks else None
         if resolved_name and not artists_match(resolved_name, artist.get("name")):
-            print(f"⚠️ Last.fm returned tracks by '{resolved_name}' for '{artist['name']}'")
+            logger.warning(f"⚠️ Last.fm returned tracks by '{resolved_name}' for '{artist['name']}'")
 
         return top_tracks[:count]
     
@@ -486,5 +490,5 @@ class _TracksMixin:
         result = list(seen.values())
         duplicates_removed = len(tracks) - len(result)
         if duplicates_removed > 0:
-            print(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
+            logger.debug(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
         return result

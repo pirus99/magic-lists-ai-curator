@@ -17,7 +17,7 @@ from ..database import DatabaseManager
 from ..core.server_router import get_server_client
 
 
-logger = logging.getLogger("scheduler")
+logger = logging.getLogger(__name__)
 
 # Fallback local IDs used when the media server cannot be reached.
 _UNKNOWN = "?"

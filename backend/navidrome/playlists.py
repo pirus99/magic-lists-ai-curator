@@ -1,9 +1,14 @@
+import logging
+
 import httpx
 from typing import List, Set
 
 # Subsonic error code 70 = "The requested data was not found". Navidrome returns
 # it when deleting a playlist that no longer exists.
 _SUBSONIC_NOT_FOUND = 70
+
+
+logger = logging.getLogger(__name__)
 
 
 class _PlaylistsMixin:
@@ -88,7 +93,7 @@ class _PlaylistsMixin:
         
             # Add tracks to the playlist if provided - PRESERVE ORDER
             if track_ids:
-                print(f"🎵 Adding {len(track_ids)} tracks to playlist in AI-curated order using updatePlaylist...")
+                logger.debug(f"🎵 Adding {len(track_ids)} tracks to playlist in AI-curated order using updatePlaylist...")
             
                 # Use proper Subsonic API with multiple songIdToAdd parameters in single call
                 update_params = self._get_subsonic_params()
@@ -108,11 +113,11 @@ class _PlaylistsMixin:
                     error = update_subsonic.get("error", {})
                     raise Exception(f"Failed to add songs to playlist: {error.get('message', 'Unknown error')}")
             
-                print(f"🎯 Successfully added all {len(track_ids)} tracks in single API call")
+                logger.debug(f"🎯 Successfully added all {len(track_ids)} tracks in single API call")
         
             # Add comment via updatePlaylist if provided (createPlaylist doesn't support comments)
             if comment:
-                print(f"💬 Adding comment to playlist via updatePlaylist...")
+                logger.debug(f"💬 Adding comment to playlist via updatePlaylist...")
                 comment_params = self._get_subsonic_params()
                 comment_params["playlistId"] = playlist_id
                 comment_params["comment"] = comment
@@ -127,9 +132,9 @@ class _PlaylistsMixin:
                 comment_subsonic = comment_data.get("subsonic-response", {})
                 if comment_subsonic.get("status") != "ok":
                     error = comment_subsonic.get("error", {})
-                    print(f"⚠️ Warning: Failed to add comment to playlist: {error.get('message', 'Unknown error')}")
+                    logger.warning(f"⚠️ Warning: Failed to add comment to playlist: {error.get('message', 'Unknown error')}")
                 else:
-                    print(f"✅ Successfully added comment to playlist")
+                    logger.debug(f"✅ Successfully added comment to playlist")
             
             return playlist_id
             
@@ -209,7 +214,7 @@ class _PlaylistsMixin:
         
             # Then add the new tracks - PRESERVE ORDER
             if track_ids:
-                print(f"🎵 Updating playlist with {len(track_ids)} tracks in AI-curated order...")
+                logger.debug(f"🎵 Updating playlist with {len(track_ids)} tracks in AI-curated order...")
             
                 # Use proper Subsonic API with multiple songIdToAdd parameters in single call
                 update_params = self._get_subsonic_params()
@@ -229,7 +234,7 @@ class _PlaylistsMixin:
                     error = update_subsonic.get("error", {})
                     raise Exception(f"Failed to add songs to playlist: {error.get('message', 'Unknown error')}")
             
-                print(f"🎯 Successfully updated playlist with all {len(track_ids)} tracks in single API call")
+                logger.debug(f"🎯 Successfully updated playlist with all {len(track_ids)} tracks in single API call")
         
             return True
             
@@ -295,9 +300,9 @@ class _PlaylistsMixin:
             params = self._get_subsonic_params()
             params["id"] = playlist_id  # According to Subsonic API docs, parameter should be "id", not "playlistId"
         
-            print(f"🗑️ Attempting to delete playlist with ID: {playlist_id}")
-            print(f"🔧 Delete request URL: {self.base_url}/rest/deletePlaylist.view")
-            print(f"🔧 Delete request params: {params}")
+            logger.debug(f"🗑️ Attempting to delete playlist with ID: {playlist_id}")
+            logger.debug(f"🔧 Delete request URL: {self.base_url}/rest/deletePlaylist.view")
+            logger.debug(f"🔧 Delete request params: {params}")
         
             response = await self.client.get(
                 f"{self.base_url}/rest/deletePlaylist.view",
@@ -306,35 +311,35 @@ class _PlaylistsMixin:
             response.raise_for_status()
         
             data = response.json()
-            print(f"🔧 Delete response data: {data}")
+            logger.debug(f"🔧 Delete response data: {data}")
         
             subsonic_response = data.get("subsonic-response", {})
-            print(f"🔧 Subsonic response status: {subsonic_response.get('status')}")
+            logger.debug(f"🔧 Subsonic response status: {subsonic_response.get('status')}")
         
             if subsonic_response.get("status") != "ok":
                 error = subsonic_response.get("error", {})
                 error_message = error.get('message', 'Unknown error')
                 error_code = error.get('code', 'Unknown code')
-                print(f"❌ Subsonic API error: {error_message} (code: {error_code})")
+                logger.error(f"❌ Subsonic API error: {error_message} (code: {error_code})")
                 # "Not found" means the playlist is already gone -> success.
                 if error_code == _SUBSONIC_NOT_FOUND:
-                    print(f"ℹ️ Playlist {playlist_id} no longer exists in Navidrome, treating as already deleted")
+                    logger.info(f"ℹ️ Playlist {playlist_id} no longer exists in Navidrome, treating as already deleted")
                     return True
                 raise Exception(f"Failed to delete playlist: {error_message} (code: {error_code})")
         
-            print(f"✅ Successfully deleted playlist {playlist_id} from Navidrome")
+            logger.info(f"✅ Successfully deleted playlist {playlist_id} from Navidrome")
             return True
             
         except httpx.RequestError as e:
-            print(f"🌐 Network error deleting playlist: {e}")
+            logger.error(f"🌐 Network error deleting playlist: {e}")
             raise Exception(f"Network error connecting to Navidrome: {e}")
         except httpx.HTTPStatusError as e:
-            print(f"🚨 HTTP error deleting playlist: {e.response.status_code} - {e.response.text}")
+            logger.error(f"🚨 HTTP error deleting playlist: {e.response.status_code} - {e.response.text}")
             # Navidrome answers 404 for missing playlists on some versions.
             if e.response.status_code == 404:
-                print(f"ℹ️ Playlist {playlist_id} returned 404, treating as already deleted")
+                logger.info(f"ℹ️ Playlist {playlist_id} returned 404, treating as already deleted")
                 return True
-            print(f"💥 Unexpected error deleting playlist: {e}")
+            logger.error(f"💥 Unexpected error deleting playlist: {e}")
             raise Exception(f"Unexpected error deleting playlist: {e}")
     
 

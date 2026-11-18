@@ -19,7 +19,7 @@ from fastapi import Query
 import uvicorn
 import os
 import logging
-import logging.handlers
+import time
 from typing import List, Optional, Dict, Any
 
 from dotenv import load_dotenv
@@ -29,30 +29,22 @@ from pydantic import BaseModel
 # Load environment variables first
 load_dotenv()
 
-# Get log level from environment (ERROR=minimal, INFO=normal, DEBUG=verbose)
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-
-# Configure logging for scheduler activities with rotation
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.handlers.RotatingFileHandler(
-            'scheduler.log',
-            maxBytes=5*1024*1024,
-            backupCount=2,
-            encoding='utf-8'
-        ),
-        logging.StreamHandler()
-    ]
+# Configure logging before anything else logs. The policy (DEBUG / INFO / ERROR)
+# lives in backend.logging_config so every module and the HTTP access log share
+# one definition of what each level means.
+from .logging_config import (
+    access_level,
+    active_policy_name,
+    configure_logging,
+    log_startup,
 )
 
-# Create a specific logger for scheduler activities
-scheduler_logger = logging.getLogger('scheduler')
+LOG_LEVEL = configure_logging()
 
-# Reduce httpx logging verbosity
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('httpcore').setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
+
+# Kept as an alias: the scheduler modules and the startup sequence below use it.
+scheduler_logger = logger
 
 # ---------------------------------------------------------------------------
 # Core / type package imports
@@ -106,6 +98,44 @@ from .services.health_check_service import HealthCheckService
 
 app = FastAPI(title="MagicLists Navidrome MVP")
 
+
+# ---------------------------------------------------------------------------
+# HTTP access logging
+# ---------------------------------------------------------------------------
+# Uvicorn's own access log is disabled (see the Dockerfile and the __main__
+# block) because it always logs at INFO and cannot be filtered by status code.
+# This middleware replaces it: successful requests are DEBUG, client errors are
+# WARNING and server errors are ERROR, so LOG_LEVEL=INFO hides the noise from
+# the UI polling the API while keeping real failures visible.
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log one line per HTTP request at a level derived from the status code."""
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        logger.error(
+            "%s %s -> unhandled exception (%.0fms)",
+            request.method,
+            request.url.path,
+            elapsed_ms,
+            exc_info=True,
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.log(
+        access_level(response.status_code),
+        "%s %s -> %s (%.0fms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
+
+
 # ---------------------------------------------------------------------------
 # App lifecycle
 # ---------------------------------------------------------------------------
@@ -121,10 +151,15 @@ system_check_results = None
 async def startup_event():
     """Initialize scheduler on app startup and register refresh handlers."""
     global scheduler, system_check_passed, system_check_results
+    log_startup(
+        scheduler_logger,
+        "MagicLists starting (log level: %s)",
+        active_policy_name(),
+    )
     scheduler = AsyncIOScheduler()
     scheduler_module.scheduler = scheduler
     scheduler.start()
-    scheduler_logger.info("Scheduler started successfully")
+    log_startup(scheduler_logger, "Scheduler started successfully")
 
     # Register per-type refresh handlers with the shared scheduler registry so
     # the refresh queue can dispatch without importing the type packages.
@@ -149,7 +184,7 @@ async def startup_event():
         system_check_passed = system_check_results.get("all_passed", False)
 
         if system_check_passed:
-            scheduler_logger.info("System health checks passed on startup")
+            log_startup(scheduler_logger, "System health checks passed on startup")
         else:
             scheduler_logger.warning("System health checks failed on startup")
 
@@ -160,18 +195,18 @@ async def startup_event():
                 if check["status"] == "success":
                     if "model:" in check["message"]:
                         model_part = check["message"].split("model: ")[1].rstrip(")")
-                        scheduler_logger.info(f"AI Provider: {ai_provider.title()} with model '{model_part}' - Ready")
+                        log_startup(scheduler_logger, "AI Provider: %s with model '%s' - Ready", ai_provider.title(), model_part)
                     else:
-                        scheduler_logger.info(f"AI Provider: {ai_provider.title()} - Ready")
+                        log_startup(scheduler_logger, "AI Provider: %s - Ready", ai_provider.title())
                 elif check["status"] == "warning":
                     if "not set" in check["message"]:
-                        scheduler_logger.info(f"AI Provider: {ai_provider.title()} - No API key (using fallback algorithms)")
+                        log_startup(scheduler_logger, "AI Provider: %s - No API key (using fallback algorithms)", ai_provider.title())
                     else:
                         scheduler_logger.warning(f"AI Provider: {ai_provider.title()} - {check['message']}")
                 elif check["status"] == "error":
                     scheduler_logger.error(f"AI Provider: {ai_provider.title()} - {check['message']}")
             else:
-                scheduler_logger.info(f"{status_emoji} {check['name']}: {check['status']}")
+                log_startup(scheduler_logger, "%s %s: %s", status_emoji, check["name"], check["status"])
     except Exception as e:
         scheduler_logger.error(f"Failed to run system checks on startup: {e}")
         system_check_passed = False
@@ -219,7 +254,7 @@ async def shutdown_event():
         scheduler_logger.warning(f"Refresh queue shutdown failed: {e}")
     if scheduler:
         scheduler.shutdown()
-        scheduler_logger.info("Scheduler shutdown completed")
+        log_startup(scheduler_logger, "Scheduler shutdown completed")
 
 
 # Mount static files
@@ -955,22 +990,11 @@ async def spa_router(request: Request, path: str):
 
 
 if __name__ == "__main__":
-    import uvicorn.config
-
-    class FilteredUvicornFormatter(uvicorn.formatters.DefaultFormatter):
-        def format(self, record):
-            if hasattr(record, 'args') and record.args:
-                message = str(record.args[2]) if len(record.args) > 2 else ""
-                if 'GET / HTTP' in message:
-                    return ""
-            return super().format(record)
-
-    log_config = uvicorn.config.LOGGING_CONFIG
-    log_config["formatters"]["access"]["()"] = FilteredUvicornFormatter
-
+    # Access logging is handled by the middleware above, so uvicorn's own access
+    # log is switched off to avoid a second, unfilterable line per request.
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8000,
-        log_config=log_config
+        access_log=False,
     )

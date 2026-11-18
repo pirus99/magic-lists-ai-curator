@@ -10,7 +10,7 @@ from ..services.top_tracks_service import fetch_top_tracks, top_tracks_settings
 from .curation import curate_this_is
 
 
-scheduler_logger = logging.getLogger("scheduler")
+scheduler_logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 """Main entry point: filter source tracks for This Is / Genre Mix playlists."""
+import logging
 import random
 from typing import List, Dict, Tuple, Any, Optional
 
@@ -11,6 +12,9 @@ from .diversity import (
     select_diverse_tracks,
     select_diverse_tracks_with_caps,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 # Format quality tiers (higher = better). Used for "minimum quality" filtering.
@@ -121,11 +125,11 @@ def filter_tracks_for_genre_mix_playlist(
         pre_filtered_tracks.append(track)
 
     if any(filter_stats.values()):
-        print(f"🔍 PRE-FILTERING APPLIED:")
-        print(f"   📅 Year filter: {filter_stats['year_filtered']} tracks excluded")
-        print(f"   🚫 Artist blacklist: {filter_stats['artist_filtered']} tracks excluded")
-        print(f"   🎧 Quality filter: {filter_stats['quality_filtered']} tracks excluded")
-        print(f"   📊 Remaining: {len(pre_filtered_tracks)} tracks (from {len(source_tracks)})")
+        logger.debug(f"🔍 PRE-FILTERING APPLIED:")
+        logger.debug(f"   📅 Year filter: {filter_stats['year_filtered']} tracks excluded")
+        logger.debug(f"   🚫 Artist blacklist: {filter_stats['artist_filtered']} tracks excluded")
+        logger.debug(f"   🎧 Quality filter: {filter_stats['quality_filtered']} tracks excluded")
+        logger.debug(f"   📊 Remaining: {len(pre_filtered_tracks)} tracks (from {len(source_tracks)})")
 
     if max_tracks_per_album is None:
         max_tracks_per_album = int(diversity_config.get("max_tracks_per_album", 0)) if diversity_config else 0
@@ -155,7 +159,7 @@ def filter_tracks_for_genre_mix_playlist(
             )
             capped_tracks = [track for score, track in selected]
             diversity_dropped = selection_meta.get("caps_dropped", 0)
-            print(f"🎭 DIVERSITY CAPS (below threshold): kept {len(capped_tracks)} of "
+            logger.debug(f"🎭 DIVERSITY CAPS (below threshold): kept {len(capped_tracks)} of "
                   f"{len(pre_filtered_tracks)} tracks (dropped {diversity_dropped}, "
                   f"max {max_albums} tracks per album / {max_tracks} tracks per artist)")
             return capped_tracks, {
@@ -212,17 +216,17 @@ def filter_tracks_for_genre_mix_playlist(
         filtered_tracks = [track for score, track in scored_tracks[:threshold_count]]
         diversity_dropped = 0
 
-    print(f"🎯 FILTERING DECISION:")
-    print(f"   🎯 Threshold: {threshold_count} tracks (target: {target_playlist_size} × {threshold_multiplier}x multiplier)")
-    print(f"   ✂️  Filtered {len(pre_filtered_tracks)} → {len(filtered_tracks)} tracks for LLM payload")
-    print(f"   📤 Payload reduction: {((len(pre_filtered_tracks) - len(filtered_tracks)) / len(pre_filtered_tracks) * 100):.1f}%")
+    logger.debug(f"🎯 FILTERING DECISION:")
+    logger.debug(f"   🎯 Threshold: {threshold_count} tracks (target: {target_playlist_size} × {threshold_multiplier}x multiplier)")
+    logger.debug(f"   ✂️  Filtered {len(pre_filtered_tracks)} → {len(filtered_tracks)} tracks for LLM payload")
+    logger.debug(f"   📤 Payload reduction: {((len(pre_filtered_tracks) - len(filtered_tracks)) / len(pre_filtered_tracks) * 100):.1f}%")
     if use_diverse_selection:
-        print(f"   🎲 Diversified selection: core {selection_meta.get('core_count', 0)} "
+        logger.debug(f"   🎲 Diversified selection: core {selection_meta.get('core_count', 0)} "
               f"(from top {selection_meta.get('high_tier_size', 0)}) + explore "
               f"{selection_meta.get('explore_count', 0)} (offset {selection_meta.get('start_offset', 0)})"
               f"{' [exhausted]' if selection_meta.get('exhausted') else ''}")
     if apply_diversity:
-        print(f"   🎭 Diversity caps applied: max {max_albums} tracks per album / {max_tracks} tracks per artist "
+        logger.debug(f"   🎭 Diversity caps applied: max {max_albums} tracks per album / {max_tracks} tracks per artist "
               f"(dropped {diversity_dropped} tracks"
               f"{' during selection' if use_diverse_selection else ''})"
               f"{' [exhausted]' if selection_meta.get('exhausted') else ''}")

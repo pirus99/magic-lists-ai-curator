@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Consistent logging policy** (`backend/logging_config.py`): `LOG_LEVEL` now
+  controls both application logs and the HTTP access log, so `docker logs`
+  behaves predictably. `ALL` adds database driver logs on top of `DEBUG`;
+  `DEBUG` shows everything including every request; `INFO` (default) hides
+  successful `2xx`/`3xx` requests but keeps `4xx`/`5xx`; `ERROR` shows only
+  errors plus startup messages. Unrecognised values fall back to `INFO`.
+  - All 227 `print()` calls across 19 modules were replaced with logger calls,
+    so nothing bypasses `LOG_LEVEL` any more.
+  - HTTP access logging moved from uvicorn (which always logged at `INFO`) to a
+    middleware in `backend/main.py` that picks the level from the status code.
+    Uvicorn's access log is disabled via `--no-access-log`.
+  - Uvicorn's lifecycle messages are relabelled from `uvicorn.error` to
+    `uvicorn`, so INFO startup lines no longer read as failures.
+  - The rotating `scheduler.log` file handler was removed: it wrote to `/app`,
+    outside the data volume, so it was lost on every container recreate. Logs
+    now go to stdout only.
+  - Catch-all `logging.getLogger("scheduler")` loggers were renamed to
+    `logging.getLogger(__name__)` so records identify their module.
 - **Per-playlist refresh scheduling** (`backend/core/schedule_spec.py`,
   `backend/core/scheduler.py`): the single global 12-hour cron job is gone. Every
   scheduled playlist now gets its own APScheduler job built from a structured

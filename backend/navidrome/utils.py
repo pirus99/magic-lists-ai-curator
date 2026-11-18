@@ -1,4 +1,9 @@
+import logging
 from typing import List, Dict, Any, Iterable
+
+
+logger = logging.getLogger(__name__)
+
 
 def _normalize_genres(value: Any) -> List[str]:
     """Normalize Subsonic genre payloads into a stable list of strings.
@@ -122,7 +127,7 @@ def _deduplicate_tracks(tracks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     duplicates_removed = len(tracks) - len(result)
     if duplicates_removed > 0:
-        print(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
+        logger.debug(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
 
     return result
 

@@ -23,7 +23,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from pydantic import BaseModel, Field, field_validator
 
-logger = logging.getLogger("scheduler")
+logger = logging.getLogger(__name__)
 
 # Weekday names indexed 0=Monday .. 6=Sunday (matches APScheduler's day_of_week).
 WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]

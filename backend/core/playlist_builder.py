@@ -19,7 +19,7 @@ from ..core.dependencies import get_ai_client
 from ..core.server_router import get_server_client
 
 
-scheduler_logger = logging.getLogger("scheduler")
+scheduler_logger = logging.getLogger(__name__)
 
 
 @dataclass

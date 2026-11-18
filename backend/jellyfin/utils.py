@@ -1,4 +1,8 @@
+import logging
 from typing import List, Dict, Any
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_quality_score(track: Dict[str, Any]) -> int:
@@ -89,7 +93,7 @@ def _deduplicate_tracks(tracks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     
     duplicates_removed = len(tracks) - len(result)
     if duplicates_removed > 0:
-        print(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
+        logger.debug(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
     
     return result
 

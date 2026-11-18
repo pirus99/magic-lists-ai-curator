@@ -1,10 +1,14 @@
 import os
 import httpx
 import json
+import logging
 import re
 from typing import Optional, Dict, Any, Union, NoReturn
 from dataclasses import dataclass
 from google import genai
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -102,12 +106,12 @@ class AIProvider:
                     try:
                         content = result["choices"][0]["message"]["content"]
                         if content is None:
-                            print(f"⚠️  AI service returned None content in response")
+                            logger.warning(f"⚠️  AI service returned None content in response")
                             return ""
                         return content.strip()
                     except (KeyError, AttributeError, TypeError) as e:
-                        print(f"⚠️  Failed to extract content from AI response: {e}")
-                        print(f"📋 Response structure: {result}")
+                        logger.warning(f"⚠️  Failed to extract content from AI response: {e}")
+                        logger.debug(f"📋 Response structure: {result}")
                         return ""
                     
                 except httpx.HTTPStatusError as e:
@@ -118,14 +122,14 @@ class AIProvider:
                             error_message = error_data.get("error", {}).get("message", "")
                             
                             if "loading model" in error_message.lower():
-                                print(f"🔄 Model still loading (attempt {attempt + 1}/{max_retries}), waiting {retry_delay}s...")
+                                logger.info(f"🔄 Model still loading (attempt {attempt + 1}/{max_retries}), waiting {retry_delay}s...")
                                 if attempt < max_retries - 1:
                                     import asyncio
                                     await asyncio.sleep(retry_delay)
                                     retry_delay += 10
                                     continue
                                 else:
-                                    print(f"❌ Model loading timeout after {max_retries} attempts")
+                                    logger.error(f"❌ Model loading timeout after {max_retries} attempts")
                                     raise Exception(f"Ollama model '{self.model}' is still loading after {max_retries * retry_delay}s. Try again in a few minutes.")
                             else:
                                 raise
@@ -137,7 +141,7 @@ class AIProvider:
                     if attempt == max_retries - 1:
                         raise
                     else:
-                        print(f"🔄 Request failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                        logger.warning(f"🔄 Request failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                         import asyncio
                         await asyncio.sleep(retry_delay)
                         continue
@@ -165,12 +169,12 @@ class AIProvider:
                     try:
                         content = result["choices"][0]["message"]["content"]
                         if content is None:
-                            print(f"⚠️  AI service returned None content in response")
+                            logger.warning(f"⚠️  AI service returned None content in response")
                             return ""
                         return content.strip()
                     except (KeyError, AttributeError, TypeError) as e:
-                        print(f"⚠️  Failed to extract content from AI response: {e}")
-                        print(f"📋 Response structure: {result}")
+                        logger.warning(f"⚠️  Failed to extract content from AI response: {e}")
+                        logger.debug(f"📋 Response structure: {result}")
                         return ""
 
                 except httpx.HTTPStatusError as e:
@@ -189,7 +193,7 @@ class AIProvider:
                     else:
                         delay = base_delay * (2 ** attempt)
 
-                    print(
+                    logger.warning(
                         f"🔄 AI provider returned {status} "
                         f"(attempt {attempt + 1}/{max_retries}), retrying in {delay:.0f}s..."
                     )
@@ -201,7 +205,7 @@ class AIProvider:
                     if attempt == max_retries - 1:
                         raise
                     delay = base_delay * (2 ** attempt)
-                    print(
+                    logger.warning(
                         f"🔄 AI request failed ({type(e).__name__}, "
                         f"attempt {attempt + 1}/{max_retries}), retrying in {delay:.0f}s..."
                     )
@@ -249,7 +253,7 @@ class AIProvider:
             # Get the text response
             text = response.text
             if text is None:
-                print(f"⚠️  Google AI service returned None text in response")
+                logger.warning(f"⚠️  Google AI service returned None text in response")
                 text = ""
 
             # Try to extract JSON from the response

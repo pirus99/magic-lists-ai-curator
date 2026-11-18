@@ -1,5 +1,6 @@
 """Artist Radio candidate filtering and curation."""
 import json
+import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -9,6 +10,9 @@ from ..output_sorting import space_id_track_list_by_artist_and_album
 from ..recipe_manager import recipe_manager
 from ..services.candidate_limiter import limit_candidates_for_ai
 from ..services.track_scoring_service import calculate_track_score
+
+
+logger = logging.getLogger(__name__)
 
 
 def filter_radio_tracks(
@@ -205,7 +209,7 @@ async def curate_radio(
                 )
                 return final_selection, description
     except Exception as exc:  # noqa: BLE001 - fall back to a local ordering
-        print(f"💥 Artist Radio AI curation failed: {exc}")
+        logger.error(f"💥 Artist Radio AI curation failed: {exc}")
         record_ai_failure(
             f"AI curation failed for Artist Radio ({exc}). "
             f"The playlist was rebuilt with the local track-score fallback instead."
@@ -300,7 +304,7 @@ async def _generate_radio_description(
             llm_config=llm_config,
         )
     except Exception as exc:
-        print(f"⚠️  Artist Radio description generation failed: {exc}")
+        logger.warning(f"⚠️  Artist Radio description generation failed: {exc}")
         return fallback_description
 
 

@@ -12,6 +12,8 @@ from .builder import create_rediscover_playlist_v2
 from .processor import ReDiscoverV2Processor
 
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["rediscover"])
 
 
@@ -55,5 +57,5 @@ async def create_rediscover_playlist(
     except HTTPException:
         raise
     except Exception as e:
-        logging.getLogger("scheduler").error(f"❌ Failed to create Re-Discover Weekly v2.0 playlist: {e}")
+        logger.error(f"❌ Failed to create Re-Discover Weekly v2.0 playlist: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create Re-Discover Weekly v2.0 playlist: {str(e)}")

@@ -11,7 +11,7 @@ from ..recipe_manager import recipe_manager
 from .curation import curate_genre_mix
 
 
-scheduler_logger = logging.getLogger("scheduler")
+scheduler_logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TRACKS_PER_ALBUM = 2
 DEFAULT_MAX_TRACKS_PER_ARTIST = 3

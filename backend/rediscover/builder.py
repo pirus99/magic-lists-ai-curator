@@ -14,7 +14,7 @@ from ..core.scheduler import calculate_next_refresh
 from .processor import ReDiscoverV2Processor
 
 
-scheduler_logger = logging.getLogger("scheduler")
+scheduler_logger = logging.getLogger(__name__)
 
 FREQUENCY_NAMES = {
     "daily": "Re-Discover Daily ✨",

@@ -90,6 +90,18 @@ docker run -d --name magiclists -p 4545:8000 -e NAVIDROME_URL=... -e NAVIDROME_U
 - Log levels: DEBUG, INFO, WARNING, ERROR
 - Include relevant context in log messages
 - Use emojis sparingly for visual distinction in logs
+- **Never use `print()`** — it bypasses `LOG_LEVEL` entirely
+- All logging setup lives in `backend/logging_config.py`; `LOG_LEVEL` accepts
+  `ALL`, `DEBUG`, `INFO` or `ERROR` (anything else falls back to `INFO`)
+- `ALL` = `DEBUG` plus database driver logs (`aiosqlite`/`sqlite3`). Database
+  logs stay hidden at `DEBUG` so per-query noise does not bury app debug output
+- Severity mapping: `❌`/`💥`/`🚨` → `error`, `⚠️` → `warning`, progress and
+  success (`✅`/`🎵`/`🔍`/`🔄`/`📊`/`📦`/`🎯`) → `info`, verbose dumps (raw AI
+  responses, request params, filtering decisions) → `debug`
+- Startup messages that must survive `LOG_LEVEL=ERROR` use
+  `log_startup(logger, ...)` from `backend/logging_config.py`
+- HTTP access logging is a middleware in `backend/main.py`; uvicorn's own access
+  log is disabled (`--no-access-log`) because it cannot be filtered by status
 
 ### Database
 - Use async SQLite operations with `aiosqlite`

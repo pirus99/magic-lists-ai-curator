@@ -4,6 +4,9 @@ Moved here from ``ai_client.py`` so that the per-type curation code lives next t
 the rest of the type's logic. The shared parser / provider plumbing still lives in
 ``ai_client.py`` and is reused via the passed-in ``AIClient`` instance.
 """
+import logging
+import traceback
+
 import httpx
 import json
 import random
@@ -21,6 +24,9 @@ from ..services.candidate_limiter import limit_candidates_for_ai
 from ..services.track_scoring_service import calculate_track_score
 
 
+logger = logging.getLogger(__name__)
+
+
 async def curate_this_is(
     ai_client,
     artist_name: str,
@@ -31,7 +37,7 @@ async def curate_this_is(
 ) -> Union[List[str], Tuple[List[str], str]]:
     """Curate a 'This Is' playlist for a single artist using AI."""
     if not ai_client.api_key and ai_client.provider.provider_type == "openrouter":
-        print(f"❌ No AI API key configured, using fallback curation for {artist_name}")
+        logger.warning(f"❌ No AI API key configured, using fallback curation for {artist_name}")
         record_fallback(
             f"No AI API key is configured, so '{artist_name}' was built with the "
             f"play-count fallback instead of AI curation."
@@ -52,16 +58,16 @@ async def curate_this_is(
         random.shuffle(shuffled_tracks)
 
         shuffled_track_count = len(shuffled_tracks)
-        print(f"🎵 Preparing {shuffled_track_count} tracks for AI curation")
+        logger.debug(f"🎵 Preparing {shuffled_track_count} tracks for AI curation")
 
         if shuffled_tracks:
             sample_track = shuffled_tracks[0]
             essential_fields = ["id", "title", "artist", "album"]
             missing_fields = [f for f in essential_fields if f not in sample_track]
             if missing_fields:
-                print(f"⚠️  Missing essential fields in tracks: {missing_fields}")
+                logger.warning(f"⚠️  Missing essential fields in tracks: {missing_fields}")
         else:
-            print(f"❌ ERROR: No tracks available for curation!")
+            logger.error(f"❌ ERROR: No tracks available for curation!")
 
         recipe_inputs = {
             "artists": artist_name,
@@ -69,7 +75,7 @@ async def curate_this_is(
             "variety_context": variety_context or "",
         }
 
-        print(f"🍳 Applying recipe for {artist_name} ({num_tracks} tracks)")
+        logger.debug(f"🍳 Applying recipe for {artist_name} ({num_tracks} tracks)")
         final_recipe = recipe_manager.apply_recipe("this_is", recipe_inputs, include_description)
         ai_candidate_tracks = limit_candidates_for_ai(
             candidate_tracks,
@@ -79,7 +85,7 @@ async def curate_this_is(
         shuffled_tracks = ai_candidate_tracks.copy()
         random.shuffle(shuffled_tracks)
         shuffled_track_count = len(shuffled_tracks)
-        print(f"🎵 Preparing {shuffled_track_count} tracks for AI curation")
+        logger.debug(f"🎵 Preparing {shuffled_track_count} tracks for AI curation")
 
         if "llm_config" in final_recipe:
             llm_config = final_recipe.get("llm_config", {})
@@ -93,7 +99,7 @@ async def curate_this_is(
             temperature = llm_config.get("temperature", 0.7)
             max_tokens = llm_config.get("max_output_tokens", 1000)
 
-            print(f"🤖 Using AI model: {model} (from {ai_client.provider.provider_type} provider)")
+            logger.debug(f"🤖 Using AI model: {model} (from {ai_client.provider.provider_type} provider)")
 
             indexed_tracks = []
             track_id_map = []
@@ -108,7 +114,7 @@ async def curate_this_is(
                 )
                 indexed_tracks.append(indexed_track)
 
-            print(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
+            logger.debug(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
 
             user_content = (
                 f"Select up to {num_tracks} tracks for a 'This Is {artist_name}' playlist.\n"
@@ -140,19 +146,19 @@ async def curate_this_is(
                 temperature=temperature,
             )
 
-        print(f"🤖 FULL RAW AI RESPONSE for This Is: {content}")
+        logger.debug(f"🤖 FULL RAW AI RESPONSE for This Is: {content}")
 
         if not content or content.strip() == "":
-            print(f"⚠️  AI service returned empty response")
+            logger.warning(f"⚠️  AI service returned empty response")
             return _fallback_this_is(candidate_tracks, num_tracks, include_description, "AI service returned empty response")
 
         try:
             track_ids, _description = parse_ai_track_response(content)
-            print(f"✅ AI returned {len(track_ids)} tracks (requested: {num_tracks}), validation passed")
+            logger.info(f"✅ AI returned {len(track_ids)} tracks (requested: {num_tracks}), validation passed")
 
             max_allowed = int(num_tracks * MAX_OVER_RETURN_FACTOR)
             if len(track_ids) > max_allowed:
-                print(f"❌ AI returned {len(track_ids)} tracks, more than {MAX_OVER_RETURN_FACTOR}x requested {num_tracks}")
+                logger.error(f"❌ AI returned {len(track_ids)} tracks, more than {MAX_OVER_RETURN_FACTOR}x requested {num_tracks}")
                 raise ValueError(f"AI response validation failed: Too many tracks returned ({len(track_ids)} vs max {max_allowed})")
 
             valid_indices = [idx for idx in track_ids if 0 <= idx < len(track_id_map)]
@@ -176,29 +182,28 @@ async def curate_this_is(
             return final_selection
 
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"Failed to parse AI response: {e}")
-            print(f"Response content: {content}")
+            logger.error(f"Failed to parse AI response: {e}")
+            logger.debug(f"Response content: {content}")
             return _fallback_this_is(candidate_tracks, num_tracks, include_description)
     except httpx.RequestError as e:
-        print(f"🌐 Network error calling AI API: {e}")
+        logger.error(f"🌐 Network error calling AI API: {e}")
         return _fallback_this_is(candidate_tracks, num_tracks, include_description, f"Network error: {e}")
     except httpx.HTTPStatusError as e:
         response_text = e.response.text
         if (response_text.strip().startswith("<!DOCTYPE html") or response_text.strip().startswith("<html") or len(response_text) > 500):
             truncated_text = response_text[:200] + "..." if len(response_text) > 200 else response_text
-            print(f"🚨 HTTP error from AI API: {e.response.status_code} - {truncated_text}")
+            logger.error(f"🚨 HTTP error from AI API: {e.response.status_code} - {truncated_text}")
             user_message = (
                 f"AI service temporarily unavailable (error {e.response.status_code}). Please try again in a minute."
                 if e.response.status_code in [502, 503, 504]
                 else f"AI service error (HTTP {e.response.status_code}). Please try again."
             )
             return _fallback_this_is(candidate_tracks, num_tracks, include_description, user_message)
-        print(f"🚨 HTTP error from AI API: {e.response.status_code} - {response_text}")
+        logger.error(f"🚨 HTTP error from AI API: {e.response.status_code} - {response_text}")
         return _fallback_this_is(candidate_tracks, num_tracks, include_description, f"HTTP {e.response.status_code}: {response_text}")
     except Exception as e:
-        print(f"💥 Unexpected error in This Is AI curation: {e}")
-        import traceback
-        print(f"📋 Traceback: {traceback.format_exc()}")
+        logger.error(f"💥 Unexpected error in This Is AI curation: {e}")
+        logger.debug(f"📋 Traceback: {traceback.format_exc()}")
         return _fallback_this_is(candidate_tracks, num_tracks, include_description, f"Unexpected error: {e}")
 
 
