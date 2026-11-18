@@ -1,14 +1,5 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
-
-class Artist(BaseModel):
-    """Schema for a music-server artist."""
-    id: str
-    name: str
-    album_count: int = 0
-    song_count: int = 0
-    mbid: Optional[str] = None
 
 class CreatePlaylistRequest(BaseModel):
     """Request schema for creating a playlist"""
@@ -58,6 +49,66 @@ class ArtistRadioRequest(BaseModel):
     top_tracks_enabled: bool = False
     top_tracks_count: int = Field(default=0, ge=0, le=10)
 
+
+class SongRadioTrack(BaseModel):
+    """A library track selected as the Song Radio source."""
+    id: str
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    artist_id: Optional[str] = None
+    recording_mbid: Optional[str] = None
+
+
+class SongRadioSearchRequest(BaseModel):
+    """Request schema for searching the library for a source track."""
+    query: str
+    library_ids: List[str] = []
+    limit: int = 50
+
+
+class SongRadioRequest(BaseModel):
+    """Request schema for a ListenBrainz-backed song radio playlist."""
+    source_mbid: str
+    source_track: Optional[SongRadioTrack] = None
+    listenbrainz_enabled: bool = True
+    use_subsonic_similar: bool = False
+    algorithm: str = "5Y Balanced"
+    minimum_score: int = Field(default=20, ge=1, le=100)
+    repeat_limit: int = Field(default=6, ge=1, le=6)
+    playlist_name: Optional[str] = None
+    refresh_frequency: str = "none"
+    playlist_length: int = 25
+    library_ids: List[str] = []
+    year_start: Optional[int] = None
+    year_end: Optional[int] = None
+    diversity_enabled: bool = True
+    max_tracks_per_album: int = 4
+    max_tracks_per_artist: int = 8
+    min_bitrate: Optional[int] = None
+    min_format: Optional[str] = None
+    min_bit_depth: Optional[int] = None
+
+
+class SongRadioPoolRequest(BaseModel):
+    """Request schema for building (but not yet creating) a Song Radio pool."""
+    source_mbid: str
+    source_track: Optional[SongRadioTrack] = None
+    listenbrainz_enabled: bool = True
+    use_subsonic_similar: bool = False
+    algorithm: str = "5Y Balanced"
+    minimum_score: int = Field(default=20, ge=1, le=100)
+    repeat_limit: int = Field(default=6, ge=1, le=6)
+    library_ids: List[str] = []
+    year_start: Optional[int] = None
+    year_end: Optional[int] = None
+    diversity_enabled: bool = True
+    max_tracks_per_album: int = 4
+    max_tracks_per_artist: int = 8
+    min_bitrate: Optional[int] = None
+    min_format: Optional[str] = None
+    min_bit_depth: Optional[int] = None
+
 class CreateGenrePlaylistRequest(BaseModel):
     """Request schema for creating a genre mix playlist"""
     genres: List[str]
@@ -91,30 +142,6 @@ class Playlist(BaseModel):
     created_at: str
     updated_at: str
 
-class Song(BaseModel):
-    """Schema for a song"""
-    id: str
-    title: str
-    artist: str
-    album: str
-    duration: Optional[int] = None
-    track_number: Optional[int] = None
-
-class PlaylistResponse(BaseModel):
-    """Response schema for playlist operations"""
-    playlist: Playlist
-    message: str
-
-class RediscoverTrack(BaseModel):
-    """Schema for a Re-Discover Weekly track"""
-    id: str
-    title: str
-    artist: str
-    album: str
-    score: float
-    historical_plays: int
-    days_since_last_play: str
-
 class RediscoverWeeklyV2Response(BaseModel):
     """Response schema for Re-Discover Weekly v2.0"""
     name: str
@@ -142,17 +169,3 @@ class ScheduledPlaylist(BaseModel):
     next_refresh: str
     created_at: str
     updated_at: str
-
-class PlaylistWithScheduleInfo(BaseModel):
-    """Schema for playlist with schedule information"""
-    id: int
-    artist_id: str
-    playlist_name: str
-    songs: List[str]
-    created_at: str
-    updated_at: str
-    navidrome_playlist_id: Optional[str] = None
-    is_public: Optional[bool] = None
-    refresh_frequency: Optional[str] = None
-    next_refresh: Optional[str] = None
-    playlist_type: Optional[str] = None

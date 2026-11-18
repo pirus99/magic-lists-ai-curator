@@ -587,10 +587,66 @@ function renderPlaylists(playlists) {
     }).join('');
 }
 
-async function deletePlaylist(playlistId, playlistName) {
-    if (!confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your media server.`)) {
+// ---------------------------------------------------------------------------
+// Delete playlist confirmation modal
+// Replaces the native window.confirm() so the dialog follows the app theme
+// (light/dark) and can show a busy state while the request is in flight.
+// ---------------------------------------------------------------------------
+let pendingDeletePlaylistId = null;
+
+function openDeleteModal(playlistId, playlistName) {
+    const overlay = document.getElementById('delete-modal-overlay');
+    const modal = document.getElementById('delete-modal');
+    const nameEl = document.getElementById('delete-modal-playlist-name');
+    if (!overlay || !modal) {
+        // Modal markup missing (e.g. partial page render) — fall back to confirm()
+        if (confirm(`Are you sure you want to delete "${playlistName}"?\n\nThis will permanently remove the playlist from both Magic Lists and your media server.`)) {
+            performDeletePlaylist(playlistId);
+        }
         return;
     }
+
+    pendingDeletePlaylistId = playlistId;
+    if (nameEl) nameEl.textContent = `"${playlistName || 'this playlist'}"`;
+    setDeleteModalBusy(false);
+
+    overlay.classList.remove('hidden');
+    modal.classList.remove('hidden');
+
+    const confirmBtn = document.getElementById('delete-confirm-btn');
+    if (confirmBtn) confirmBtn.focus();
+}
+
+function closeDeleteModal() {
+    const overlay = document.getElementById('delete-modal-overlay');
+    const modal = document.getElementById('delete-modal');
+    if (overlay) overlay.classList.add('hidden');
+    if (modal) modal.classList.add('hidden');
+    pendingDeletePlaylistId = null;
+    setDeleteModalBusy(false);
+}
+
+function setDeleteModalBusy(busy) {
+    const confirmBtn = document.getElementById('delete-confirm-btn');
+    const cancelBtn = document.getElementById('delete-cancel-btn');
+    const closeBtn = document.getElementById('delete-close-top');
+    const spinner = document.getElementById('delete-confirm-spinner');
+    const label = document.getElementById('delete-confirm-label');
+
+    if (confirmBtn) confirmBtn.disabled = busy;
+    if (cancelBtn) cancelBtn.disabled = busy;
+    if (closeBtn) closeBtn.disabled = busy;
+    if (spinner) spinner.classList.toggle('hidden', !busy);
+    if (label) label.textContent = busy ? 'Deleting...' : 'Delete Playlist';
+}
+
+// Entry point used by the playlist card "Delete" button
+async function deletePlaylist(playlistId, playlistName) {
+    openDeleteModal(playlistId, playlistName);
+}
+
+async function performDeletePlaylist(playlistId) {
+    setDeleteModalBusy(true);
 
     try {
         const response = await fetch(`/api/playlists/${playlistId}`, {
@@ -602,6 +658,8 @@ async function deletePlaylist(playlistId, playlistName) {
             throw new Error(errorData.detail || 'Failed to delete playlist');
         }
 
+        closeDeleteModal();
+
         // Reload the playlists list and update count
         loadPlaylists();
         updatePlaylistCount();
@@ -612,8 +670,46 @@ async function deletePlaylist(playlistId, playlistName) {
 
     } catch (error) {
         console.error('Error deleting playlist:', error);
+        setDeleteModalBusy(false);
         showToast('error', error.message);
     }
+}
+
+// Wire up the delete modal once the DOM is ready (playlists.js loads before
+// main.js, so the markup may still be parsing).
+function initDeleteModal() {
+    const overlay = document.getElementById('delete-modal-overlay');
+    const modal = document.getElementById('delete-modal');
+    if (!overlay || !modal) return;
+
+    overlay.addEventListener('click', closeDeleteModal);
+    modal.addEventListener('click', function (event) {
+        // Close only when clicking the backdrop, not the inner panel
+        if (event.target === modal) closeDeleteModal();
+    });
+
+    const cancelBtn = document.getElementById('delete-cancel-btn');
+    const closeBtn = document.getElementById('delete-close-top');
+    const confirmBtn = document.getElementById('delete-confirm-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeDeleteModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeDeleteModal);
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function () {
+            if (pendingDeletePlaylistId) performDeletePlaylist(pendingDeletePlaylistId);
+        });
+    }
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && !modal.classList.contains('hidden')) {
+            closeDeleteModal();
+        }
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDeleteModal);
+} else {
+    initDeleteModal();
 }
 
 // Manually refresh a playlist from its saved curation settings
@@ -642,7 +738,13 @@ async function refreshPlaylist(playlistId) {
             throw new Error(errorData.detail || 'Failed to refresh playlist');
         }
 
-        showToast('success', 'Playlist refreshed successfully');
+        // The endpoint queues the refresh and returns 202 immediately.
+        const data = await response.json().catch(() => ({}));
+        if (data.status === 'already_queued') {
+            showToast('info', 'This playlist is already queued or refreshing');
+        } else {
+            showToast('success', 'Refresh queued — it will start shortly');
+        }
         loadPlaylists();
         updatePlaylistCount();
     } catch (error) {
@@ -659,7 +761,7 @@ async function refreshPlaylist(playlistId) {
 async function savePlaylistSettings(regenerate) {
     if (!currentEditPlaylistId) return;
 
-    const { curation_settings, refresh_frequency, playlist_name, description, is_public } = collectEditSettings();
+    const { curation_settings, refresh_frequency, playlist_name, description, is_public, schedule, schedule_enabled } = collectEditSettings();
 
     const saveBtn = document.getElementById('edit-save-btn');
     const refreshBtn = document.getElementById('edit-save-refresh-btn');
@@ -670,7 +772,7 @@ async function savePlaylistSettings(regenerate) {
         const response = await fetch(`/api/playlists/${currentEditPlaylistId}/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ curation_settings, refresh_frequency, playlist_name, description, is_public })
+            body: JSON.stringify({ curation_settings, refresh_frequency, playlist_name, description, is_public, schedule, schedule_enabled })
         });
 
         if (!response.ok) {
@@ -829,4 +931,274 @@ if (artistRadioFormat) {
     };
     artistRadioFormat.addEventListener('change', syncQuality);
     syncQuality();
+}
+
+// Song Radio page event handlers
+const songRadioSearch = document.getElementById('song-radio-search');
+const songRadioTrackSelect = document.getElementById('song-radio-track');
+let songRadioBuiltPool = null; // holds the last built pool so create can reuse it
+if (songRadioSearch && songRadioTrackSelect) {
+    const resultsBox = document.getElementById('song-radio-results');
+    const mbidFallback = document.getElementById('song-radio-mbid-fallback');
+    const mbidInput = document.getElementById('song-radio-mbid');
+    const poolBox = document.getElementById('song-radio-pool');
+    const poolCount = document.getElementById('song-radio-pool-count');
+    const createBtn = document.getElementById('create-song-radio-btn');
+
+    document.getElementById('song-radio-search-btn').addEventListener('click', async () => {
+        const query = songRadioSearch.value.trim();
+        if (!query || !checkLibrarySelection()) return;
+        showToast('loading', 'Searching library...', 0);
+        try {
+            const response = await fetch('/api/song-radio/search', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query, library_ids: selectedLibraryIds, limit: 50 })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Search failed');
+            songRadioTrackSelect.innerHTML = '<option value="">Choose a track</option>';
+            const sortedTracks = [...data].sort((a, b) => {
+                const titleA = (a.title || 'Unknown').toLocaleLowerCase();
+                const titleB = (b.title || 'Unknown').toLocaleLowerCase();
+                return titleA.localeCompare(titleB) || (a.artist || 'Unknown').localeCompare(b.artist || 'Unknown');
+            });
+            sortedTracks.forEach(track => {
+                const option = document.createElement('option');
+                option.value = track.id;
+                option.textContent = `${track.title || 'Unknown'} — ${track.artist || 'Unknown'} (${track.album || 'Unknown'})`;
+                option.dataset.track = JSON.stringify({
+                    id: track.id,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    artist_id: track.artist_id,
+                    recording_mbid: track.recording_mbid || null
+                });
+                songRadioTrackSelect.appendChild(option);
+            });
+            resultsBox.classList.remove('hidden');
+            poolBox.classList.add('hidden');
+            createBtn.disabled = true;
+            songRadioBuiltPool = null;
+            showToast('success', `Found ${data.length} track(s)`);
+        } catch (error) { showToast('error', error.message); }
+    });
+
+    songRadioTrackSelect.addEventListener('change', () => {
+        const option = songRadioTrackSelect.selectedOptions[0];
+        const track = option && option.dataset.track ? JSON.parse(option.dataset.track) : null;
+        if (track && track.recording_mbid) {
+            mbidFallback.classList.add('hidden');
+            mbidInput.value = track.recording_mbid;
+        } else {
+            mbidFallback.classList.remove('hidden');
+            mbidInput.value = '';
+        }
+        // Reset any previously built pool when the source track changes.
+        poolBox.classList.add('hidden');
+        songRadioBuiltPool = null;
+        if (songRadioFindBtn) songRadioFindBtn.disabled = !document.getElementById('song-radio-listenbrainz-enabled').checked || !(option && option.value);
+        // In Subsonic-only mode (ListenBrainz disabled or "use Navidrome
+        // similar-tracks" checked) the pool is built server-side on create, so
+        // the "Find Similar Tracks" step is optional and the Create button can
+        // be enabled as soon as a source track is selected.
+        const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+        const subsonicOnly = !document.getElementById('song-radio-listenbrainz-enabled').checked
+            || Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
+        createBtn.disabled = !(option && option.value) || !subsonicOnly;
+    });
+
+    const findBtn = document.getElementById('song-radio-find-btn');
+    if (findBtn) {
+        findBtn.addEventListener('click', async () => {
+            const option = songRadioTrackSelect.selectedOptions[0];
+            if (!option || !option.value) return showToast('error', 'Select a source track first.');
+            const track = option.dataset.track ? JSON.parse(option.dataset.track) : null;
+            const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+            const useSubsonic = Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
+            const sourceMbid = track?.recording_mbid || mbidInput.value.trim();
+            if (!sourceMbid && !useSubsonic) return showToast('error', 'A MusicBrainz Recording ID is required.');
+
+            showToast('loading', 'Finding similar tracks...', 0);
+            findBtn.disabled = true;
+            try {
+                const response = await fetch('/api/song-radio/build-pool', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source_mbid: sourceMbid,
+                        source_track: track,
+                        listenbrainz_enabled: document.getElementById('song-radio-listenbrainz-enabled').checked,
+                        use_subsonic_similar: Boolean(subsonicSimilarInput && subsonicSimilarInput.checked),
+                        algorithm: document.getElementById('song-radio-algorithm').value,
+                        minimum_score: Number(document.getElementById('song-radio-score').value),
+                        repeat_limit: Number(document.getElementById('song-radio-repeat').value),
+                        library_ids: selectedLibraryIds
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'Failed to build pool');
+                songRadioBuiltPool = data;
+                const n = data.pool_size;
+                const listenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled').checked;
+                poolCount.textContent = n > 0
+                    ? `Found ${n} matching track${n === 1 ? '' : 's'} in your library.`
+                    : listenbrainzEnabled && !useSubsonic
+                        ? 'ListenBrainz found no matching tracks.'
+                        : 'No matching tracks found in your library.';
+                poolBox.classList.remove('hidden');
+                createBtn.disabled = n === 0;
+                if (n > 0) showToast('success', `Built a pool of ${n} track(s).`);
+                else if (listenbrainzEnabled && !useSubsonic) showToast('info', 'ListenBrainz found no matching tracks.');
+                else showToast('info', 'No matches — try another track or lower the score.');
+            } catch (error) {
+                showToast('error', error.message);
+            } finally {
+                findBtn.disabled = false;
+            }
+        });
+    }
+
+    const resetBtn = document.getElementById('song-radio-reset-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            poolBox.classList.add('hidden');
+            createBtn.disabled = true;
+            songRadioBuiltPool = null;
+            songRadioTrackSelect.value = '';
+            songRadioTrackSelect.dispatchEvent(new Event('change'));
+        });
+    }
+}
+const songRadioScore = document.getElementById('song-radio-score');
+if (songRadioScore) songRadioScore.addEventListener('input', () => document.getElementById('song-radio-score-value').textContent = songRadioScore.value);
+const songRadioRepeat = document.getElementById('song-radio-repeat');
+if (songRadioRepeat) songRadioRepeat.addEventListener('input', () => document.getElementById('song-radio-repeat-value').textContent = songRadioRepeat.value);
+const songRadioListenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled');
+const songRadioListenbrainzControls = document.getElementById('song-radio-listenbrainz-controls');
+const songRadioFindBtnWrap = document.getElementById('song-radio-find-btn-wrap');
+const songRadioFindBtn = document.getElementById('song-radio-find-btn');
+if (songRadioListenbrainzEnabled) {
+    const syncListenbrainzUi = () => {
+        const enabled = songRadioListenbrainzEnabled.checked;
+        songRadioListenbrainzControls?.classList.toggle('hidden', !enabled);
+        songRadioFindBtnWrap?.classList.toggle('hidden', !enabled);
+        const option = songRadioTrackSelect.selectedOptions[0];
+        if (songRadioFindBtn) songRadioFindBtn.disabled = !enabled || !(option && option.value);
+        // Re-evaluate whether the Create button can be enabled without the
+        // "Find Similar Tracks" step (Subsonic-only mode).
+        const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+        const subsonicOnly = !enabled || Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
+        const createBtn = document.getElementById('create-song-radio-btn');
+        const poolBox = document.getElementById('song-radio-pool');
+        if (subsonicOnly && option && option.value && createBtn) {
+            createBtn.disabled = false;
+            poolBox?.classList.add('hidden');
+            songRadioBuiltPool = null;
+        } else if (createBtn) {
+            createBtn.disabled = true;
+        }
+    };
+    songRadioListenbrainzEnabled.addEventListener('change', syncListenbrainzUi);
+    syncListenbrainzUi();
+}
+const songRadioSubsonicSimilar = document.getElementById('song-radio-subsonic-similar');
+if (songRadioSubsonicSimilar) {
+    songRadioSubsonicSimilar.addEventListener('change', () => {
+        const subsonicOnly = songRadioSubsonicSimilar.checked
+            || !document.getElementById('song-radio-listenbrainz-enabled').checked;
+        const option = songRadioTrackSelect.selectedOptions[0];
+        const createBtn = document.getElementById('create-song-radio-btn');
+        const poolBox = document.getElementById('song-radio-pool');
+        if (subsonicOnly && option && option.value && createBtn) {
+            createBtn.disabled = false;
+            poolBox?.classList.add('hidden');
+            songRadioBuiltPool = null;
+        } else if (createBtn) {
+            createBtn.disabled = true;
+        }
+    });
+}
+const songRadioDiversity = document.getElementById('song-radio-diversity-enabled');
+if (songRadioDiversity) {
+    const inputs = document.getElementById('song-radio-diversity-inputs');
+    const sync = () => {
+        inputs.querySelectorAll('input').forEach(input => input.disabled = !songRadioDiversity.checked);
+        inputs.style.opacity = songRadioDiversity.checked ? '1' : '0.5';
+    };
+    songRadioDiversity.addEventListener('change', sync);
+    sync();
+}
+const songRadioFormat = document.getElementById('song-radio-min-format');
+if (songRadioFormat) {
+    const syncQuality = () => {
+        const isFlac = songRadioFormat.value === 'flac';
+        document.getElementById('song-radio-bitrate-wrap').classList.toggle('hidden', isFlac);
+        document.getElementById('song-radio-bitdepth-wrap').classList.toggle('hidden', !isFlac);
+        document.getElementById('song-radio-min-bitrate').disabled = isFlac;
+        document.getElementById('song-radio-min-bitdepth').disabled = !isFlac;
+    };
+    songRadioFormat.addEventListener('change', syncQuality);
+    syncQuality();
+}
+const songRadioForm = document.getElementById('song-radio-form');
+if (songRadioForm) songRadioForm.addEventListener('submit', createSongRadioPlaylist);
+
+async function createSongRadioPlaylist(event) {
+    if (event) event.preventDefault();
+    const submitBtn = document.getElementById('create-song-radio-btn');
+    if (!checkLibrarySelection()) return;
+    const subsonicSimilarInput = document.getElementById('song-radio-subsonic-similar');
+    const useSubsonic = Boolean(subsonicSimilarInput && subsonicSimilarInput.checked);
+    const listenbrainzEnabled = document.getElementById('song-radio-listenbrainz-enabled').checked;
+    // When relying on Navidrome's similarity engine the pool is built server-side
+    // on create, so the "Find Similar Tracks" step is not required.
+    if (!songRadioBuiltPool && listenbrainzEnabled && !useSubsonic) {
+        return showToast('error', 'Find similar tracks first to build the pool.');
+    }
+    const trackSelect = document.getElementById('song-radio-track');
+    const option = trackSelect.selectedOptions[0];
+    if (!option || !option.value) return showToast('error', 'Select a source track.');
+    const track = option.dataset.track ? JSON.parse(option.dataset.track) : null;
+    const sourceMbid = track?.recording_mbid || document.getElementById('song-radio-mbid').value.trim();
+    if (!sourceMbid && !useSubsonic) return showToast('error', 'A MusicBrainz Recording ID is required.');
+
+    const minFormat = document.getElementById('song-radio-min-format').value;
+    const minBitrate = document.getElementById('song-radio-min-bitrate').value;
+    const minBitDepth = document.getElementById('song-radio-min-bitdepth').value;
+
+    showToast('loading', 'Creating your Song Radio playlist...', 0);
+    submitBtn.disabled = true;
+    try {
+        const response = await fetch('/api/create_song_radio', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_mbid: sourceMbid,
+                source_track: track,
+                listenbrainz_enabled: document.getElementById('song-radio-listenbrainz-enabled').checked,
+                use_subsonic_similar: Boolean(document.getElementById('song-radio-subsonic-similar') && document.getElementById('song-radio-subsonic-similar').checked),
+                algorithm: document.getElementById('song-radio-algorithm').value,
+                minimum_score: Number(document.getElementById('song-radio-score').value),
+                repeat_limit: Number(document.getElementById('song-radio-repeat').value),
+                year_start: valueOrNull('song-radio-year-start'),
+                year_end: valueOrNull('song-radio-year-end'),
+                diversity_enabled: document.getElementById('song-radio-diversity-enabled').checked,
+                max_tracks_per_album: Number(document.getElementById('song-radio-album-cap').value),
+                max_tracks_per_artist: Number(document.getElementById('song-radio-artist-cap').value),
+                min_format: minFormat || null,
+                min_bitrate: minFormat === 'flac' ? null : (minBitrate ? Number(minBitrate) : null),
+                min_bit_depth: minFormat === 'flac' ? (minBitDepth ? Number(minBitDepth) : null) : null,
+                playlist_length: Number(document.querySelector('input[name="song-radio-playlist-length"]:checked').value),
+                refresh_frequency: document.querySelector('input[name="song-radio-refresh-frequency"]:checked').value,
+                library_ids: selectedLibraryIds
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Failed to create playlist');
+        showToast('success', `Song Radio playlist created with ${data.songs ? data.songs.length : 0} tracks`);
+        updatePlaylistCount();
+    } catch (error) {
+        showToast('error', error.message);
+    } finally {
+        submitBtn.disabled = false;
+    }
 }

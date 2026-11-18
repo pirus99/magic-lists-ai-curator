@@ -1,9 +1,12 @@
 import json
+import logging
 import math
-import os
 import re
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 # Math functions allowed inside recipe {{MATH:...}} expressions.
 _SAFE_MATH_NAMES = {
@@ -93,7 +96,7 @@ class RecipeManager:
                     return str(result)
                     
                 except Exception as e:
-                    print(f"❌ Math evaluation failed for '{expression}': {e}")
+                    logger.error(f"❌ Math evaluation failed for '{expression}': {e}")
                     return match.group(0)  # Return original if evaluation fails
             
             # Replace all math expressions
@@ -149,7 +152,7 @@ class RecipeManager:
             if "num_tracks" in inputs:
                 replacements["{{DESIRED_TRACK_COUNT}}"] = str(inputs["num_tracks"])
 
-            print(f"🔄 Processing recipe with {len(replacements)} placeholder replacements")
+            logger.debug(f"🔄 Processing recipe with {len(replacements)} placeholder replacements")
 
             # Map re-discover specific inputs
             if "candidate_tracks" in inputs:
@@ -170,9 +173,9 @@ class RecipeManager:
                 if token in model_instructions
             ]
             if unresolved:
-                print(f"⚠️  Placeholder replacement failed for: {unresolved}")
+                logger.warning(f"⚠️  Placeholder replacement failed for: {unresolved}")
             else:
-                print(f"✅ Recipe processed successfully")
+                logger.debug(f"✅ Recipe processed successfully")
 
             # Add tracks data to the final recipe for AI processing
             if "tracks_data" in inputs:
@@ -182,13 +185,13 @@ class RecipeManager:
         
         else:
             # Legacy recipe format - maintain backward compatibility
-            print(f"🍳 Using LEGACY recipe format: {recipe_filename}")
-            print(f"📋 Recipe version: {recipe.get('version', 'N/A')}")
-            print(f"📝 Recipe description: {recipe.get('description', 'N/A')[:100]}...")
+            logger.debug(f"🍳 Using LEGACY recipe format: {recipe_filename}")
+            logger.debug(f"📋 Recipe version: {recipe.get('version', 'N/A')}")
+            logger.debug(f"📝 Recipe description: {recipe.get('description', 'N/A')[:100]}...")
             if recipe.get('llm_params'):
-                print(f"🤖 Model fallback: {recipe.get('llm_params', {}).get('model_fallback', 'N/A')}")
-                print(f"🌡️ Temperature: {recipe.get('llm_params', {}).get('temperature', 'N/A')}")
-                print(f"🔢 Max tokens: {recipe.get('llm_params', {}).get('max_tokens', 'N/A')}")
+                logger.debug(f"🤖 Model fallback: {recipe.get('llm_params', {}).get('model_fallback', 'N/A')}")
+                logger.debug(f"🌡️ Temperature: {recipe.get('llm_params', {}).get('temperature', 'N/A')}")
+                logger.debug(f"🔢 Max tokens: {recipe.get('llm_params', {}).get('max_tokens', 'N/A')}")
             # Validate inputs
             required_inputs = recipe.get("inputs", [])
             missing_inputs = [inp for inp in required_inputs if inp not in inputs]

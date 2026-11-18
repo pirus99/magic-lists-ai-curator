@@ -10,7 +10,7 @@ import os
 from typing import Any, Dict, Iterable, List, Optional
 
 from ..core.server_router import get_server_client
-from .lastfm_service import TOP_TRACK_STRATEGY_LABELS, top_tracks_strategy_label
+from .lastfm_service import TOP_TRACK_STRATEGY_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,6 @@ def top_tracks_configured() -> bool:
     if strategy == "lastfm":
         return bool(os.getenv("LASTFM_API_KEY"))
     return False
-
-
-def top_tracks_strategy_label_for_current_server() -> str:
-    """Return the short label for the active top-track strategy."""
-    return top_tracks_strategy_label(top_tracks_strategy())
 
 
 def top_tracks_settings(

@@ -15,6 +15,10 @@
             title: 'Artist Radio',
             subtitle: 'Similar-artist radio seeded by a source artist'
         },
+        song_radio: {
+            title: 'Song Radio',
+            subtitle: 'Similar-track radio seeded by a single song'
+        },
         genre_mix: {
             title: 'Genre Mix',
             subtitle: 'Curated genre playlist with diversity controls'

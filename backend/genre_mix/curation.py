@@ -3,6 +3,9 @@
 Moved here from ``ai_client.py``. Reuses the shared parser / provider plumbing via
 the passed-in ``AIClient`` instance.
 """
+import logging
+import traceback
+
 import httpx
 import json
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -12,8 +15,12 @@ from ..ai_client import (
     parse_ai_track_response,
     MAX_OVER_RETURN_FACTOR,
 )
+from ..core.curation_notices import record_ai_failure, record_fallback
 from ..output_sorting import space_id_track_list_by_artist_and_album
 from ..services.candidate_limiter import limit_candidates_for_ai
+
+
+logger = logging.getLogger(__name__)
 
 
 async def curate_genre_mix(
@@ -27,7 +34,11 @@ async def curate_genre_mix(
     """Curate a 'Genre Mix' playlist for multiple genres using AI."""
     if not ai_client.api_key and not ai_client.provider.provider_type == "ollama":
         genre_names = ", ".join(genres)
-        print(f"❌ No AI API key configured, using fallback curation for {genre_names}")
+        logger.warning(f"❌ No AI API key configured, using fallback curation for {genre_names}")
+        record_fallback(
+            f"No AI API key is configured, so '{genre_names}' was built with the "
+            f"play-count fallback instead of AI curation."
+        )
         return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description, f"No AI API key configured for {genre_names}")
 
     try:
@@ -38,7 +49,7 @@ async def curate_genre_mix(
             "variety_context": variety_context or "",
         }
 
-        print(f"🍳 Applying recipe for {genre_names} ({num_tracks} tracks)")
+        logger.debug(f"🍳 Applying recipe for {genre_names} ({num_tracks} tracks)")
         final_recipe = recipe_manager.apply_recipe("genre_mix", recipe_inputs, include_description)
         ai_candidate_tracks = limit_candidates_for_ai(
             candidate_tracks,
@@ -61,7 +72,7 @@ async def curate_genre_mix(
         temperature = llm_config.get("temperature", 0.7)
         max_tokens = llm_config.get("max_output_tokens", 16000)
 
-        print(f"🤖 Using AI model: {model} (from {ai_client.provider.provider_type} provider)")
+        logger.debug(f"🤖 Using AI model: {model} (from {ai_client.provider.provider_type} provider)")
 
         indexed_tracks = []
         for index, track in enumerate(ai_candidate_tracks):
@@ -78,7 +89,7 @@ async def curate_genre_mix(
             )
             indexed_tracks.append(indexed_track)
 
-        print(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
+        logger.debug(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
 
         user_content = (
             f"Select {num_tracks} tracks for your {genre_names} playlist.\n"
@@ -92,10 +103,10 @@ async def curate_genre_mix(
             temperature=temperature,
         )
 
-        print(f"🤖 FULL RAW AI RESPONSE for Genre Mix: {content}")
+        logger.debug(f"🤖 FULL RAW AI RESPONSE for Genre Mix: {content}")
 
         if not content or content.strip() == "":
-            print(f"⚠️  AI service returned empty response")
+            logger.warning(f"⚠️  AI service returned empty response")
             return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description, "AI service returned empty response")
 
         try:
@@ -103,20 +114,20 @@ async def curate_genre_mix(
             returned_track_count = len(track_ids)
 
             if returned_track_count == 0:
-                print(f"❌ AI returned no tracks - invalid response")
+                logger.error(f"❌ AI returned no tracks - invalid response")
                 raise ValueError("AI response validation failed: No tracks returned")
 
             max_reasonable = int(num_tracks * MAX_OVER_RETURN_FACTOR)
             if returned_track_count > max_reasonable:
-                print(f"❌ AI returned {returned_track_count} tracks, more than {MAX_OVER_RETURN_FACTOR}x requested {num_tracks}")
+                logger.error(f"❌ AI returned {returned_track_count} tracks, more than {MAX_OVER_RETURN_FACTOR}x requested {num_tracks}")
                 raise ValueError(f"AI response validation failed: Too many tracks returned ({returned_track_count} vs max {max_reasonable})")
 
             source_track_count = len(ai_candidate_tracks)
             if returned_track_count > source_track_count:
-                print(f"❌ AI returned {returned_track_count} tracks but we only provided {source_track_count}")
+                logger.error(f"❌ AI returned {returned_track_count} tracks but we only provided {source_track_count}")
                 raise ValueError(f"AI response validation failed: More tracks returned than provided")
 
-            print(f"✅ AI returned {returned_track_count} tracks (requested: {num_tracks}), validation passed")
+            logger.info(f"✅ AI returned {returned_track_count} tracks (requested: {num_tracks}), validation passed")
 
             valid_indices = [idx for idx in track_ids if 0 <= idx < len(track_id_map)]
             mapped_track_ids = [track_id_map[idx] for idx in valid_indices]
@@ -141,29 +152,28 @@ async def curate_genre_mix(
             return final_selection
 
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"Failed to parse AI response: {e}")
-            print(f"Response content: {content}")
+            logger.error(f"Failed to parse AI response: {e}")
+            logger.debug(f"Response content: {content}")
             return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description)
     except httpx.RequestError as e:
-        print(f"🌐 Network error calling AI API: {e}")
+        logger.error(f"🌐 Network error calling AI API: {e}")
         return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description, f"Network error: {e}")
     except httpx.HTTPStatusError as e:
         response_text = e.response.text
         if (response_text.strip().startswith("<!DOCTYPE html") or response_text.strip().startswith("<html") or len(response_text) > 500):
             truncated_text = response_text[:200] + "..." if len(response_text) > 200 else response_text
-            print(f"🚨 HTTP error from AI API: {e.response.status_code} - {truncated_text}")
+            logger.error(f"🚨 HTTP error from AI API: {e.response.status_code} - {truncated_text}")
             user_message = (
                 f"AI service temporarily unavailable (error {e.response.status_code}). Please try again in a minute."
                 if e.response.status_code in [502, 503, 504]
                 else f"AI service error (HTTP {e.response.status_code}). Please try again."
             )
             return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description, user_message)
-        print(f"🚨 HTTP error from AI API: {e.response.status_code} - {response_text}")
+        logger.error(f"🚨 HTTP error from AI API: {e.response.status_code} - {response_text}")
         return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description, f"HTTP {e.response.status_code}: {response_text}")
     except Exception as e:
-        print(f"💥 Unexpected error in Genre Mix AI curation: {e}")
-        import traceback
-        print(f"📋 Traceback: {traceback.format_exc()}")
+        logger.error(f"💥 Unexpected error in Genre Mix AI curation: {e}")
+        logger.debug(f"📋 Traceback: {traceback.format_exc()}")
         return _fallback_genre_mix_selection(candidate_tracks, num_tracks, include_description, f"Unexpected error: {e}")
 
 
@@ -173,7 +183,15 @@ def _fallback_genre_mix_selection(
     include_description: bool = False,
     error_reason: str = "AI service was unavailable",
 ) -> Union[List[str], Tuple[List[str], str]]:
-    """Fallback selection algorithm for genre mix when AI is unavailable."""
+    """Fallback selection algorithm for genre mix when AI is unavailable.
+
+    Every AI failure path funnels through here, so this is where the failure is
+    reported to the refresh queue.
+    """
+    record_ai_failure(
+        f"AI curation failed for Genre Mix ({error_reason}). "
+        f"The playlist was rebuilt with the play-count fallback instead."
+    )
     sorted_tracks = sorted(candidate_tracks, key=lambda x: x.get("play_count", 0), reverse=True)
     track_ids = [track["id"] for track in sorted_tracks[:num_tracks]]
     spaced_tracks = space_id_track_list_by_artist_and_album(track_ids, candidate_tracks, artist_spacing=4, album_spacing=3)

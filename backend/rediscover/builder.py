@@ -10,11 +10,11 @@ from typing import Any, Dict
 from ..database import DatabaseManager
 from ..core.dependencies import get_ai_client
 from ..core.server_router import get_server_client
-from ..core.scheduler import calculate_next_refresh, schedule_playlist_refresh
+from ..core.scheduler import calculate_next_refresh
 from .processor import ReDiscoverV2Processor
 
 
-scheduler_logger = logging.getLogger("scheduler")
+scheduler_logger = logging.getLogger(__name__)
 
 FREQUENCY_NAMES = {
     "daily": "Re-Discover Daily ✨",
@@ -107,13 +107,18 @@ async def create_rediscover_playlist_v2(
 
     if frequency != "never":
         scheduler_logger.info(f"⏰ Setting up {frequency} refresh schedule")
-        await db.create_scheduled_playlist(
+        from ..core.scheduler import sync_playlist_job
+        from ..core.schedule_spec import spec_from_frequency
+
+        spec = spec_from_frequency(frequency)
+        schedule_row = await db.upsert_schedule(
             playlist_type="rediscover_weekly_v2",
             navidrome_playlist_id=navidrome_playlist_id,
             refresh_frequency=frequency,
             next_refresh=calculate_next_refresh(frequency),
+            schedule_json=spec.model_dump_json() if spec else None,
         )
-        schedule_playlist_refresh()
+        sync_playlist_job(schedule_row)
         scheduler_logger.info(f"✅ Scheduled playlist created")
 
     return {
@@ -126,77 +131,70 @@ async def create_rediscover_playlist_v2(
     }
 
 
-async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager) -> None:
-    """Refresh a Re-Discover Weekly playlist (legacy or v2) using the v2 processor."""
-    try:
-        scheduler_logger.info(
-            f"🔄 Starting refresh for playlist ID: {scheduled_playlist.navidrome_playlist_id} "
-            f"(frequency: {scheduled_playlist.refresh_frequency})"
-        )
-        server_client = get_server_client()
-        ai_client = get_ai_client()
+async def refresh_rediscover_playlist(playlist: Dict[str, Any], db: DatabaseManager) -> int:
+    """Refresh a Re-Discover Weekly playlist (legacy or v2) using the v2 processor.
 
-        playlists = await db.get_all_playlists_with_schedule_info()
-        original_playlist = next(
-            (p for p in playlists if p.get("navidrome_playlist_id") == scheduled_playlist.navidrome_playlist_id),
-            None,
-        )
-        if not original_playlist:
-            scheduler_logger.error(f"❌ Could not find original playlist data for {scheduled_playlist.navidrome_playlist_id}")
-            return
+    Args:
+        playlist: Playlist row from ``get_playlist_by_navidrome_id_with_schedule_info``.
+        db: Database manager.
 
-        settings = original_playlist.get("curation_settings") or {}
-        library_ids = settings.get("library_ids") or []
-        original_length = settings.get("playlist_length") or original_playlist.get("playlist_length", 20)
-        scheduler_logger.info(f"🎯 Using original playlist length: {original_length}")
+    Returns:
+        The number of tracks written to the playlist.
 
-        previous_songs = original_playlist.get("songs", [])[:10]
-        scheduler_logger.info(f"🔄 Re-Discover v2.0 refresh context - Previous tracks: {len(previous_songs)}, Library IDs: {library_ids}")
+    Raises:
+        ValueError: If the processor produced no tracks.
+    """
+    navidrome_playlist_id = playlist.get("navidrome_playlist_id")
+    scheduler_logger.info(f"🔄 Starting refresh for playlist ID: {navidrome_playlist_id}")
 
-        user_id = await db.get_or_create_user_id()
-        server_id = server_client.base_url or "unknown_server"
+    server_client = get_server_client()
+    ai_client = get_ai_client()
 
-        processor = ReDiscoverV2Processor(server_client, ai_client, db)
-        result = await processor.generate_playlist(user_id, server_id, library_ids if library_ids else None)
+    settings = playlist.get("curation_settings") or {}
+    library_ids = settings.get("library_ids") or []
+    original_length = settings.get("playlist_length") or playlist.get("playlist_length", 20)
+    scheduler_logger.info(f"🎯 Using original playlist length: {original_length}")
 
-        tracks = result.get("tracks", [])
-        if tracks:
-            scheduler_logger.info(f"🎵 Generated {len(tracks)} new tracks for refresh")
-            if len(tracks) != original_length:
-                scheduler_logger.warning(f"⚠️ Generated {len(tracks)} tracks but user requested {original_length}")
-            else:
-                scheduler_logger.info(f"✅ Generated exact number of requested tracks: {len(tracks)}")
+    previous_songs = playlist.get("songs", [])[:10]
+    scheduler_logger.info(
+        f"🔄 Re-Discover v2.0 refresh context - Previous tracks: {len(previous_songs)}, Library IDs: {library_ids}"
+    )
 
-            ai_description = ""
-            ai_curated = False
-            if tracks:
-                first_track = tracks[0]
-                ai_description = first_track.get("ai_description", "")
-                ai_curated = first_track.get("ai_curated", False)
+    user_id = await db.get_or_create_user_id()
+    server_id = server_client.base_url or "unknown_server"
 
-            track_ids = [track["id"] for track in tracks]
-            comment_to_use = ai_description if (ai_description and ai_curated) else "Re-Discover Weekly v2.0 - Automatically refreshed"
-            await server_client.update_playlist(
-                playlist_id=scheduled_playlist.navidrome_playlist_id,
-                track_ids=track_ids,
-                comment=comment_to_use,
-            )
+    processor = ReDiscoverV2Processor(server_client, ai_client, db)
+    result = await processor.generate_playlist(user_id, server_id, library_ids if library_ids else None)
 
-            track_titles = [track["title"] for track in tracks]
-            description_to_store = ai_description if ai_curated else "Algorithmic selection"
-            await db.update_playlist_content(
-                navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
-                songs=track_titles,
-                description=description_to_store,
-            )
+    tracks = result.get("tracks", [])
+    if not tracks:
+        raise ValueError("No tracks generated")
 
-            next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
-            await db.update_scheduled_playlist_next_refresh(scheduled_playlist.id, next_refresh)
-            scheduler_logger.info(
-                f"✅ Successfully refreshed playlist {scheduled_playlist.navidrome_playlist_id}. "
-                f"Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-        else:
-            scheduler_logger.warning(f"⚠️ No tracks generated for playlist {scheduled_playlist.navidrome_playlist_id}")
-    except Exception as e:
-        scheduler_logger.error(f"❌ Error refreshing playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
+    scheduler_logger.info(f"🎵 Generated {len(tracks)} new tracks for refresh")
+    if len(tracks) != original_length:
+        scheduler_logger.warning(f"⚠️ Generated {len(tracks)} tracks but user requested {original_length}")
+    else:
+        scheduler_logger.info(f"✅ Generated exact number of requested tracks: {len(tracks)}")
+
+    first_track = tracks[0]
+    ai_description = first_track.get("ai_description", "")
+    ai_curated = first_track.get("ai_curated", False)
+
+    track_ids = [track["id"] for track in tracks]
+    comment_to_use = ai_description if (ai_description and ai_curated) else "Re-Discover Weekly v2.0 - Automatically refreshed"
+    await server_client.update_playlist(
+        playlist_id=navidrome_playlist_id,
+        track_ids=track_ids,
+        comment=comment_to_use,
+    )
+
+    track_titles = [track["title"] for track in tracks]
+    description_to_store = ai_description if ai_curated else "Algorithmic selection"
+    await db.update_playlist_content(
+        navidrome_playlist_id=navidrome_playlist_id,
+        songs=track_titles,
+        description=description_to_store,
+    )
+
+    scheduler_logger.info(f"✅ Successfully refreshed playlist {navidrome_playlist_id}")
+    return len(track_titles)

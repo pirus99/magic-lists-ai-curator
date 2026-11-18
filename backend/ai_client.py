@@ -1,8 +1,11 @@
-import httpx
 import json
+import logging
 import re
 from typing import List, Dict, Any, Union, Tuple, Optional
 from .services.ai_providers import get_ai_provider
+
+
+logger = logging.getLogger(__name__)
 
 
 def clean_json_response(response: str) -> str:
@@ -207,10 +210,10 @@ class AIClient:
         self.base_url = self.provider.base_url
 
         # Debug logging
-        print(f"🔍 AIClient initialized with provider: {self.provider.provider_type}")
-        print(f"🤖 Using model: {self.model}")
-        print(f"📝 Description model: {self.description_provider.model}")
-        print(f"🌐 Base URL: {self.base_url}")
+        logger.debug(f"🔍 AIClient initialized with provider: {self.provider.provider_type}")
+        logger.debug(f"🤖 Using model: {self.model}")
+        logger.debug(f"📝 Description model: {self.description_provider.model}")
+        logger.debug(f"🌐 Base URL: {self.base_url}")
         
         
     async def call_ai(self, llm_config: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
@@ -224,7 +227,7 @@ class AIClient:
             system_prompt = llm_config.get("system_prompt", "You are a helpful AI assistant.")
             user_prompt = llm_config.get("user_prompt", "")
 
-            print(f"🤖 Making generic AI call with model {model}...")
+            logger.debug(f"🤖 Making generic AI call with model {model}...")
 
             content = await self.provider.generate(
                 system_prompt=system_prompt,
@@ -235,7 +238,7 @@ class AIClient:
 
             # Handle empty response from AI provider
             if not content or content.strip() == "":
-                print(f"⚠️  AI service returned empty response")
+                logger.warning(f"⚠️  AI service returned empty response")
                 return ""
 
             # Try to parse as JSON, return as string if not
@@ -247,7 +250,7 @@ class AIClient:
                 return content
 
         except Exception as e:
-            print(f"💥 Error in generic AI call: {e}")
+            logger.error(f"💥 Error in generic AI call: {e}")
             raise
 
     async def _generate_playlist_description(
@@ -277,7 +280,7 @@ class AIClient:
         fallback_description = f"A curated playlist: {playlist_context}."
 
         if not description_instructions:
-            print(f"⚠️ No description_instructions configured, using fallback description")
+            logger.warning(f"⚠️ No description_instructions configured, using fallback description")
             return fallback_description
 
         # Build a human-readable, ordered list of the selected tracks
@@ -305,7 +308,7 @@ class AIClient:
         max_tokens = llm_config.get("max_output_tokens", 500)
 
         try:
-            print(f"📝 Generating playlist description with model: {self.description_provider.model}")
+            logger.debug(f"📝 Generating playlist description with model: {self.description_provider.model}")
             content = await self.description_provider.generate(
                 system_prompt=description_instructions,
                 user_prompt=user_content,
@@ -314,7 +317,7 @@ class AIClient:
             )
 
             if not content or content.strip() == "":
-                print(f"⚠️ Description AI returned empty response, using fallback description")
+                logger.warning(f"⚠️ Description AI returned empty response, using fallback description")
                 return fallback_description
 
             # Parse: accept plain text, or extract "description" from a JSON wrapper
@@ -338,14 +341,14 @@ class AIClient:
                 description = cleaned
 
             if not description:
-                print(f"⚠️ Description AI returned empty content, using fallback description")
+                logger.warning(f"⚠️ Description AI returned empty content, using fallback description")
                 return fallback_description
 
-            print(f"✅ Playlist description generated (length: {len(description)} chars)")
+            logger.debug(f"✅ Playlist description generated (length: {len(description)} chars)")
             return description
 
         except Exception as e:
-            print(f"💥 Error generating playlist description: {e}")
+            logger.error(f"💥 Error generating playlist description: {e}")
             return fallback_description
 
     async def close(self):
@@ -354,9 +357,9 @@ class AIClient:
             if hasattr(self, 'provider') and self.provider:
                 await self.provider.close()
         except Exception as e:
-            print(f"Warning: Error closing AI provider: {e}")
+            logger.warning(f"Warning: Error closing AI provider: {e}")
         try:
             if hasattr(self, 'description_provider') and self.description_provider:
                 await self.description_provider.close()
         except Exception as e:
-            print(f"Warning: Error closing description AI provider: {e}")
+            logger.warning(f"Warning: Error closing description AI provider: {e}")

@@ -11,16 +11,15 @@ per-type ``builder`` modules stay tiny and the duplicated ~3x pipelines that use
 to live in ``main.py`` disappear.
 """
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Awaitable, Dict, List, Optional, Tuple
 
 from ..database import DatabaseManager
 from ..core.dependencies import get_ai_client
 from ..core.server_router import get_server_client
-from ..playlist_metadata import resolve_refresh_description
 
 
-scheduler_logger = logging.getLogger("scheduler")
+scheduler_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -151,16 +150,19 @@ async def build_playlist(
     # 7. Optionally schedule a refresh.
     frequency = refresh_frequency or config.default_refresh_frequency
     if config.schedule_on_create and frequency not in ("none", "never"):
-        from ..core.scheduler import calculate_next_refresh, schedule_playlist_refresh
+        from ..core.scheduler import calculate_next_refresh, sync_playlist_job
+        from ..core.schedule_spec import spec_from_frequency
 
+        spec = spec_from_frequency(frequency)
         next_refresh = calculate_next_refresh(frequency)
-        await db.create_scheduled_playlist(
+        schedule_row = await db.upsert_schedule(
             playlist_type=config.type_key,
             navidrome_playlist_id=navidrome_playlist_id,
             refresh_frequency=frequency,
             next_refresh=next_refresh,
+            schedule_json=spec.model_dump_json() if spec else None,
         )
-        schedule_playlist_refresh()
+        sync_playlist_job(schedule_row)
         scheduler_logger.info(f"📅 Scheduled {frequency} refresh for {config.type_key} playlist: {playlist_name}")
 
     # 8. Build the response dict.
@@ -170,80 +172,6 @@ async def build_playlist(
     if frequency != "none":
         playlist_dict["next_refresh"] = calculate_next_refresh(frequency).isoformat()
     return playlist_dict
-
-
-async def refresh_playlist(
-    config: PlaylistTypeConfig,
-    playlist: Dict[str, Any],
-    db: DatabaseManager,
-) -> None:
-    """Refresh an existing playlist of the given type using its saved settings."""
-    nav_client = get_server_client()
-    ai_client = get_ai_client()
-
-    settings = playlist.get("curation_settings") or {}
-    library_ids = settings.get("library_ids") or []
-    playlist_length = settings.get("playlist_length") or playlist.get("playlist_length") or 25
-
-    # 1. Re-fetch candidate tracks (type-specific; refresh variant).
-    source_tracks = await config.fetch_tracks(
-        request=None,
-        library_ids=library_ids,
-        playlist_length=playlist_length,
-        playlist=playlist,
-        settings=settings,
-    )
-    if not source_tracks:
-        scheduler_logger.warning(f"⚠️ No tracks found for {config.type_key} refresh")
-        return
-
-    # 2. Optional smart filtering (type-specific).
-    if config.apply_smart_filter is not None:
-        candidate_tracks, filter_metadata = await config.apply_smart_filter(
-            source_tracks=source_tracks,
-            target_playlist_size=playlist_length,
-            request=None,
-            nav_client=nav_client,
-            ai_client=ai_client,
-            settings=settings,
-        )
-    else:
-        candidate_tracks = source_tracks
-
-    # 3. AI curation (type-specific; refresh variant with variety context).
-    curated_track_ids, description = await config.curate(
-        candidate_tracks=candidate_tracks,
-        num_tracks=playlist_length,
-        request=None,
-        ai_client=ai_client,
-        playlist=playlist,
-        settings=settings,
-    )
-
-    if not curated_track_ids:
-        scheduler_logger.warning(f"⚠️ No curated tracks generated for {config.type_key} refresh")
-        return
-
-    # 4. Update the existing Navidrome playlist.
-    comment_to_use = resolve_refresh_description(
-        existing_description=playlist.get("description"),
-        generated_description=description,
-        metadata_overrides={"description": bool(playlist.get("description"))},
-    )
-    await nav_client.update_playlist(
-        playlist_id=playlist.get("navidrome_playlist_id"),
-        track_ids=curated_track_ids,
-        comment=comment_to_use,
-    )
-
-    # 5. Persist the new content locally.
-    track_titles = _titles_for_ids(curated_track_ids, source_tracks)
-    await db.update_playlist_content(
-        navidrome_playlist_id=playlist.get("navidrome_playlist_id"),
-        songs=track_titles,
-        description=comment_to_use,
-    )
-    scheduler_logger.info(f"✅ Successfully refreshed {config.type_key} playlist {playlist.get('navidrome_playlist_id')}")
 
 
 # ---------------------------------------------------------------------------

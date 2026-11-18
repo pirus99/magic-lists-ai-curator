@@ -1,13 +1,17 @@
 """Artist Radio candidate filtering and curation."""
-import json
+import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..ai_client import MAX_OVER_RETURN_FACTOR, parse_ai_track_response
+from ..core.curation_notices import record_ai_failure
 from ..output_sorting import space_id_track_list_by_artist_and_album
 from ..recipe_manager import recipe_manager
 from ..services.candidate_limiter import limit_candidates_for_ai
 from ..services.track_scoring_service import calculate_track_score
+
+
+logger = logging.getLogger(__name__)
 
 
 def filter_radio_tracks(
@@ -22,10 +26,12 @@ def filter_radio_tracks(
     protected_track_ids: Optional[set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Filter, score, and cap Artist Radio candidates in preference order."""
+    protected = protected_track_ids or set()
     eligible_tracks = [
         track
         for track in tracks
-        if _passes_radio_filters(
+        if track.get("id") in protected
+        or _passes_radio_filters(
             track,
             year_start,
             year_end,
@@ -116,8 +122,15 @@ async def curate_radio(
     num_tracks: int,
     ai_client=None,
     artist_name: str = "Artist Radio",
+    anchor_track_id: Optional[str] = None,
 ) -> Tuple[List[str], str]:
-    """Curate the radio candidate pool, falling back to a stable local order."""
+    """Curate the radio candidate pool, falling back to a stable local order.
+
+    ``anchor_track_id`` pins a track to the very first position of the finished
+    playlist. The anchor is inserted into the AI selection *before* the
+    duplicate removal happens, so it is never dropped as a duplicate and is
+    always present in the final playlist.
+    """
     if not candidate_tracks:
         return [], "No candidate tracks available for Artist Radio."
 
@@ -138,6 +151,11 @@ async def curate_radio(
         candidate_tracks,
         recipe,
         ai_client,
+    )
+    limited_candidates = _keep_anchor_candidate(
+        limited_candidates,
+        candidate_tracks,
+        anchor_track_id,
     )
     ai_candidates = _build_ai_candidate_order(limited_candidates)
     indexed_tracks = [
@@ -166,6 +184,8 @@ async def curate_radio(
             if len(indices) > int(num_tracks * MAX_OVER_RETURN_FACTOR):
                 raise ValueError("AI returned too many tracks")
             selected = [ai_candidates[index]["id"] for index in indices if 0 <= index < len(ai_candidates)]
+            # Insert the anchor before the duplicate removal so it survives it.
+            selected = _insert_anchor_first(selected, anchor_track_id)
             if selected:
                 sorted_selection = space_id_track_list_by_artist_and_album(
                     selected,
@@ -173,7 +193,11 @@ async def curate_radio(
                     artist_spacing=artist_spacing,
                     album_spacing=album_spacing,
                 )
-                final_selection = sorted_selection[:num_tracks]
+                final_selection = _ensure_anchor_first(
+                    sorted_selection[:num_tracks],
+                    anchor_track_id,
+                    num_tracks,
+                )
                 description = await _generate_radio_description(
                     ai_client,
                     description_instructions=description_instructions,
@@ -183,8 +207,12 @@ async def curate_radio(
                     llm_config=description_llm_config,
                 )
                 return final_selection, description
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - fall back to a local ordering
+        logger.error(f"💥 Artist Radio AI curation failed: {exc}")
+        record_ai_failure(
+            f"AI curation failed for Artist Radio ({exc}). "
+            f"The playlist was rebuilt with the local track-score fallback instead."
+        )
 
     ordered = sorted(
         candidate_tracks,
@@ -199,9 +227,51 @@ async def curate_radio(
         album_spacing=album_spacing,
     )
     return (
-        sorted_fallback[:num_tracks],
+        _ensure_anchor_first(sorted_fallback[:num_tracks], anchor_track_id, num_tracks),
         "Artist Radio fallback selection based on local track scores.",
     )
+
+
+def _keep_anchor_candidate(
+    limited_candidates: List[Dict[str, Any]],
+    candidate_tracks: List[Dict[str, Any]],
+    anchor_track_id: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Make sure the anchor track survives the candidate limiter."""
+    if not anchor_track_id:
+        return limited_candidates
+    if any(track.get("id") == anchor_track_id for track in limited_candidates):
+        return limited_candidates
+    anchor = next(
+        (track for track in candidate_tracks if track.get("id") == anchor_track_id),
+        None,
+    )
+    if anchor is None:
+        return limited_candidates
+    return [anchor] + list(limited_candidates)
+
+
+def _insert_anchor_first(
+    selected: List[str],
+    anchor_track_id: Optional[str],
+) -> List[str]:
+    """Insert the anchor at the front of the selection, removing duplicates."""
+    if not anchor_track_id:
+        return selected
+    without_anchor = [track_id for track_id in selected if track_id != anchor_track_id]
+    return [anchor_track_id] + without_anchor
+
+
+def _ensure_anchor_first(
+    track_ids: List[str],
+    anchor_track_id: Optional[str],
+    num_tracks: int,
+) -> List[str]:
+    """Guarantee the anchor track is the first entry of the finished playlist."""
+    if not anchor_track_id:
+        return list(track_ids)[:num_tracks]
+    without_anchor = [track_id for track_id in track_ids if track_id != anchor_track_id]
+    return ([anchor_track_id] + without_anchor)[:num_tracks]
 
 
 async def _generate_radio_description(
@@ -233,7 +303,7 @@ async def _generate_radio_description(
             llm_config=llm_config,
         )
     except Exception as exc:
-        print(f"⚠️  Artist Radio description generation failed: {exc}")
+        logger.warning(f"⚠️  Artist Radio description generation failed: {exc}")
         return fallback_description
 
 

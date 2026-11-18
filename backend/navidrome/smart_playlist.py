@@ -5,14 +5,13 @@ such as lastPlayed date ranges, then retrieve and clean up those
 tracks without fetching the entire library.
 """
 
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
 
-from ..config import NAVIDROME_URL, NAVIDROME_USERNAME, NAVIDROME_PASSWORD
+from ..config import NAVIDROME_USERNAME, NAVIDROME_PASSWORD
 
 logger = logging.getLogger(__name__)
 
@@ -93,20 +92,6 @@ class SmartPlaylistAPI:
         now = datetime.now(timezone.utc)
         start_date = (now - timedelta(days=days_start)).strftime("%Y-%m-%d")
         end_date = (now - timedelta(days=days_end)).strftime("%Y-%m-%d")
-
-        # Build the smart playlist criteria JSON
-        # {"all":[{"inTheRange":{"lastPlayed":["start_date","end_date"]}}]}
-        criteria_json = json.dumps(
-            {
-                "all": [
-                    {
-                        "inTheRange": {
-                            "lastPlayed": [start_date, end_date]
-                        }
-                    }
-                ]
-            }
-        )
 
         payload = {
             "name": name,
@@ -298,29 +283,3 @@ class SmartPlaylistAPI:
                 pass
             logger.error(f"Error retrieving target tracks: {e}")
             return []
-
-
-# Convenience function for quick usage
-async def get_tracks_last_played_range(
-    client: httpx.AsyncClient,
-    base_url: str,
-    days_start: int = 90,
-    days_end: int = 30,
-    limit: int = 1000,
-) -> List[Dict[str, Any]]:
-    """Quick function to get tracks last played in a date range.
-
-    Args:
-        client: httpx async client (already configured)
-        base_url: Navidrome base URL
-        days_start: Start of target period in days (e.g., 90)
-        days_end: End of target period in days (e.g., 30)
-        limit: Maximum tracks to return
-
-    Returns:
-        List of tracks last played between days_end and days_start ago
-    """
-    api = SmartPlaylistAPI(client, base_url)
-    return await api.get_target_tracks_direct(
-        days_start=days_start, days_end=days_end, limit=limit
-    )

@@ -1,15 +1,20 @@
 """Re-Discover Weekly v2.0 processor (two-phase AI curation)."""
 import json
+import logging
 import random
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ..config import NAVIDROME_URL
+from ..core.curation_notices import record_fallback
 from ..recipe_manager import recipe_manager
 from ..jellyfin import JellyfinClient
 from .curation import curate_rediscover_weekly
 from ..navidrome.smart_playlist import SmartPlaylistAPI
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReDiscoverV2Processor:
@@ -60,13 +65,13 @@ class ReDiscoverV2Processor:
         fails or returns insufficient results.
         """
         try:
-            print(f"🎵 Re-Discover Weekly v2.0: Starting generation for user {user_id}, server {server_id}")
+            logger.info(f"🎵 Re-Discover Weekly v2.0: Starting generation for user {user_id}, server {server_id}")
 
-            print("📊 Phase 0: Gathering context...")
+            logger.debug("📊 Phase 0: Gathering context...")
             library_size = await self._get_library_size_cached(server_id)
-            print(f"📊 Library size: {library_size} tracks")
+            logger.debug(f"📊 Library size: {library_size} tracks")
 
-            print("🔍 Phase 1: Analyzing listening patterns...")
+            logger.debug("🔍 Phase 1: Analyzing listening patterns...")
 
             # Navidrome can use native smart playlists for an exact target
             # period. Jellyfin has no equivalent private endpoint; use its
@@ -76,7 +81,7 @@ class ReDiscoverV2Processor:
             is_jellyfin = isinstance(self.navidrome_client, JellyfinClient)
 
             if not is_jellyfin and self.config.get("use_smart_playlist_target", True):
-                print("🔍 Using Navidrome smart-playlist for exact 30-90 day target discovery...")
+                logger.debug("🔍 Using Navidrome smart-playlist for exact 30-90 day target discovery...")
                 try:
                     target_tracks = await self._get_target_tracks_smart_playlist(
                         days_start=self.config["target_period_days_start"],
@@ -84,26 +89,26 @@ class ReDiscoverV2Processor:
                         limit=self.config["target_playlist_limit"],
                     )
                 except Exception as smart_playlist_error:
-                    print(f"⚠️ Navidrome smart-playlist discovery failed: {smart_playlist_error}")
+                    logger.warning(f"⚠️ Navidrome smart-playlist discovery failed: {smart_playlist_error}")
                 if target_tracks:
                     used_smart_playlist = True
-                    print(f"🔍 Found {len(target_tracks)} tracks in target period (30-90 days ago) via smart playlist")
+                    logger.debug(f"🔍 Found {len(target_tracks)} tracks in target period (30-90 days ago) via smart playlist")
 
             # Fall back to the active media server's common track API if native
             # smart-playlist discovery failed or returned too few results.
             if not target_tracks or len(target_tracks) < self.config["min_target_period_tracks"]:
                 if not is_jellyfin and self.config.get("use_smart_playlist_target", True):
-                    print(f"⚠️ Smart-playlist returned {len(target_tracks)} tracks, falling back to random sampling...")
+                    logger.warning(f"⚠️ Smart-playlist returned {len(target_tracks)} tracks, falling back to random sampling...")
                 sample_size = self._calculate_sample_size(library_size)
-                print(f"📊 Calculated sample size: {sample_size} tracks")
+                logger.debug(f"📊 Calculated sample size: {sample_size} tracks")
                 sample_tracks = await self._sample_library(sample_size, library_ids)
-                print(f"🔍 Sampled {len(sample_tracks)} tracks from library")
+                logger.debug(f"🔍 Sampled {len(sample_tracks)} tracks from library")
                 target_tracks = self._filter_to_target_period(sample_tracks)
-                print(f"🔍 Found {len(target_tracks)} tracks in target period (30-90 days ago) via sampling")
+                logger.debug(f"🔍 Found {len(target_tracks)} tracks in target period (30-90 days ago) via sampling")
 
             if len(target_tracks) < self.config["min_target_period_tracks"]:
-                print(f"⚠️ Only {len(target_tracks)} target tracks found (minimum: {self.config['min_target_period_tracks']})")
-                print("🔄 Triggering fallback strategy...")
+                logger.warning(f"⚠️ Only {len(target_tracks)} target tracks found (minimum: {self.config['min_target_period_tracks']})")
+                logger.info("🔄 Triggering fallback strategy...")
                 return await self._trigger_fallback(user_id, server_id, library_ids)
 
             analysis = self._analyze_target_period(target_tracks)
@@ -279,7 +284,7 @@ class ReDiscoverV2Processor:
             songs = data.get("subsonic-response", {}).get("randomSongs", {}).get("song", [])
             return songs if isinstance(songs, list) else []
         except Exception as e:
-            print(f"❌ Failed to sample library: {e}")
+            logger.error(f"❌ Failed to sample library: {e}")
             return []
 
     def _filter_to_target_period(self, tracks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -289,7 +294,7 @@ class ReDiscoverV2Processor:
         tracks_with_timestamps = 0
         tracks_in_range = 0
 
-        print(f"🔍 Filtering {len(tracks)} tracks for target period ({self.config['target_period_days_end']}-{self.config['target_period_days_start']} days ago)...")
+        logger.debug(f"🔍 Filtering {len(tracks)} tracks for target period ({self.config['target_period_days_end']}-{self.config['target_period_days_start']} days ago)...")
 
         for track in tracks:
             played_value = track.get("played")
@@ -302,17 +307,17 @@ class ReDiscoverV2Processor:
                     raise ValueError(f"Could not parse timestamp: {played_value}")
                 days_ago = (now - played).days
                 if tracks_in_range < 3:
-                    print(f"🔍 Track '{track.get('title', 'Unknown')}' played {days_ago} days ago")
+                    logger.debug(f"🔍 Track '{track.get('title', 'Unknown')}' played {days_ago} days ago")
                 if self.config["target_period_days_end"] <= days_ago <= self.config["target_period_days_start"]:
                     track["played_datetime"] = played
                     track["days_ago"] = days_ago
                     target_tracks.append(track)
                     tracks_in_range += 1
             except (ValueError, TypeError) as e:
-                print(f"⚠️ Failed to parse timestamp '{played_value}' for track '{track.get('title', 'Unknown')}': {e}")
+                logger.warning(f"⚠️ Failed to parse timestamp '{played_value}' for track '{track.get('title', 'Unknown')}': {e}")
                 continue
 
-        print(f"🔍 Summary: {tracks_with_timestamps} tracks had timestamps, {tracks_in_range} in target range")
+        logger.debug(f"🔍 Summary: {tracks_with_timestamps} tracks had timestamps, {tracks_in_range} in target range")
         return target_tracks
 
     def _analyze_target_period(self, target_tracks: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -388,7 +393,7 @@ class ReDiscoverV2Processor:
                 temperature = llm_config.get("temperature", 0.7)
                 max_tokens = llm_config.get("max_output_tokens", 1500)
 
-                print(f"🤖 Making Phase 1 AI call with model {model}...")
+                logger.debug(f"🤖 Making Phase 1 AI call with model {model}...")
 
                 ai_result = await self.ai_client.provider.generate(
                     system_prompt="You are an expert music curator analyzing listening patterns.",
@@ -427,10 +432,10 @@ class ReDiscoverV2Processor:
                     strategy = json.loads(final_json)
                     return strategy
                 except json.JSONDecodeError as e:
-                    print(f"❌ Failed to parse Phase 1 AI response as JSON: {e}")
-                    print(f"🔍 Raw response: {ai_result}")
+                    logger.error(f"❌ Failed to parse Phase 1 AI response as JSON: {e}")
+                    logger.debug(f"🔍 Raw response: {ai_result}")
         except Exception as e:
-            print(f"❌ Phase 1 AI failed: {e}")
+            logger.error(f"❌ Phase 1 AI failed: {e}")
 
         return {
             "selected_mode": "A",
@@ -466,7 +471,7 @@ class ReDiscoverV2Processor:
                 tracks = await self.navidrome_client.get_tracks_by_genre(genre, library_ids)
                 search_results.extend(tracks)
             except Exception as e:
-                print(f"⚠️ Genre search failed for {genre}: {e}")
+                logger.warning(f"⚠️ Genre search failed for {genre}: {e}")
 
         include_decades = strategy.get("include_decades", [])
         for decade in include_decades[:2]:
@@ -479,14 +484,14 @@ class ReDiscoverV2Processor:
                 tracks = await self._search_by_year_range(start_year, end_year, library_ids)
                 search_results.extend(tracks)
             except Exception as e:
-                print(f"⚠️ Decade search failed for {decade}: {e}")
+                logger.warning(f"⚠️ Decade search failed for {decade}: {e}")
 
         if strategy.get("prioritize_starred", False):
             try:
                 starred = await self.navidrome_client.get_starred()
                 search_results.extend(starred)
             except Exception as e:
-                print(f"⚠️ Starred tracks search failed: {e}")
+                logger.warning(f"⚠️ Starred tracks search failed: {e}")
 
         return search_results
 
@@ -517,7 +522,7 @@ class ReDiscoverV2Processor:
             songs = data.get("subsonic-response", {}).get("randomSongs", {}).get("song", [])
             return songs if isinstance(songs, list) else []
         except Exception as e:
-            print(f"❌ Year range search failed: {e}")
+            logger.error(f"❌ Year range search failed: {e}")
             return []
 
     def _filter_and_enrich_candidates(
@@ -622,7 +627,7 @@ class ReDiscoverV2Processor:
             if len(final_tracks) == self.config["track_count"]:
                 return final_tracks
         except Exception as e:
-            print(f"❌ Phase 2 AI failed: {e}")
+            logger.error(f"❌ Phase 2 AI failed: {e}")
             theme_strategy["description"] = "Fallback strategy due to AI unavailability"
 
         top_candidates = candidates[: self.config["track_count"]]
@@ -675,7 +680,7 @@ class ReDiscoverV2Processor:
         tracks_analyzed: int,
     ):
         """Log v2 playlist generation to database."""
-        print(
+        logger.debug(
             f"📊 V2 Playlist logged: {len(playlist_data['tracks'])} tracks, "
             f"theme: {theme_strategy.get('theme_identified', 'Unknown')}, "
             f"tracks analyzed: {tracks_analyzed}"
@@ -687,7 +692,17 @@ class ReDiscoverV2Processor:
         server_id: str,
         library_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Fallback strategy when insufficient target period tracks are found."""
+        """Fallback strategy when insufficient target period tracks are found.
+
+        This is a *legitimate* fallback, not a failure: there simply is not
+        enough listening history to analyse. The refresh still succeeds, but a
+        notice is recorded so the user knows why the playlist looks different.
+        """
+        record_fallback(
+            "Re-Discover used its fallback strategy because there was not enough "
+            "recent listening history to analyse. The playlist was built from "
+            "starred or popular tracks instead."
+        )
         try:
             starred_tracks = await self.navidrome_client.get_starred()
             if starred_tracks:
@@ -722,10 +737,10 @@ class ReDiscoverV2Processor:
                         "is_fallback": True,
                     }
         except Exception as e:
-            print(f"⚠️ Starred tracks fallback failed: {e}")
+            logger.warning(f"⚠️ Starred tracks fallback failed: {e}")
 
         try:
-            print("🔄 Trying basic library fallback...")
+            logger.info("🔄 Trying basic library fallback...")
             basic_tracks = await self._sample_library(min(100, self.config["track_count"] * 3), library_ids)
             if basic_tracks and len(basic_tracks) >= 10:
                 basic_tracks.sort(key=lambda x: x.get("play_count", 0), reverse=True)
@@ -746,6 +761,6 @@ class ReDiscoverV2Processor:
                     "is_fallback": True,
                 }
         except Exception as e:
-            print(f"⚠️ Basic library fallback also failed: {e}")
+            logger.warning(f"⚠️ Basic library fallback also failed: {e}")
 
         raise Exception("Insufficient listening history. Star favorites and listen regularly. Check back in 2-3 weeks!")

@@ -11,13 +11,13 @@ asks the media server which playlists still exist and removes the local rows
 for any that no longer do.
 """
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set
 
 from ..database import DatabaseManager
 from ..core.server_router import get_server_client
 
 
-logger = logging.getLogger("scheduler")
+logger = logging.getLogger(__name__)
 
 # Fallback local IDs used when the media server cannot be reached.
 _UNKNOWN = "?"

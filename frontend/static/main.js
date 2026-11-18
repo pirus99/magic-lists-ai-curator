@@ -6,6 +6,10 @@
             if (window.App && window.App.selects) {
                 window.App.selects.initHSSelect();
             }
+            if (typeof loadVersionStatus === 'function') {
+                loadVersionStatus();
+            }
+
             // Wire template buttons to existing global functions or App shims
             const rediscoverBtn = document.getElementById('rediscover-btn');
             if (rediscoverBtn) {

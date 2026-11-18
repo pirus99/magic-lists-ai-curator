@@ -1,3 +1,4 @@
+import logging
 from typing import List, Dict, Any, Union, Optional
 from .utils import _get_quality_score
 from ..services.lastfm_service import (
@@ -7,9 +8,60 @@ from ..services.lastfm_service import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class _TracksMixin:
     """Methods for fetching tracks from Jellyfin."""
-    
+
+    async def search_tracks(
+        self,
+        query: str,
+        library_ids: Union[List[str], str, None] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Search the library for tracks by title, artist, or album.
+
+        Uses Jellyfin's ``/Items`` search endpoint so callers can locate a
+        source track for Song Radio without knowing its server ID in advance.
+        The returned tracks carry the same shape as every other track method so
+        the Song Radio pipeline can treat them uniformly.
+        """
+        if not query or not str(query).strip():
+            return []
+
+        try:
+            await self._ensure_authenticated()
+
+            headers = self._get_auth_headers()
+            params = self._items_params(
+                SearchTerm=str(query).strip(),
+                IncludeItemTypes="Audio",
+                Limit=max(1, int(limit)),
+            )
+            response = await self.client.get(
+                f"{self.base_url}/Items",
+                headers=headers,
+                params=params,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            items = payload.get("Items", []) if isinstance(payload, dict) else []
+
+            tracks: List[Dict[str, Any]] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                tracks.append(self._normalize_track(item))
+
+            deduped = self._deduplicate_tracks(tracks)
+            logger.debug(f"🔍 Search '{query}' returned {len(deduped)} track(s)")
+            return deduped
+
+        except Exception as e:
+            logger.warning(f"⚠️ Error searching tracks in Jellyfin: {e}")
+            return []
+
     async def get_library_stats(self) -> dict:
         """
         Calculate statistics needed for track scoring normalization.
@@ -46,11 +98,11 @@ class _TracksMixin:
                 'total_tracks': total_tracks
             }
             
-            print(f"📊 Calculated library stats: {stats}")
+            logger.debug(f"📊 Calculated library stats: {stats}")
             return stats
             
         except Exception as e:
-            print(f"⚠️ Error getting library stats, using defaults: {e}")
+            logger.warning(f"⚠️ Error getting library stats, using defaults: {e}")
             # Return safe defaults if we can't get stats
             return {
                 'max_play_count': 100,
@@ -161,12 +213,12 @@ class _TracksMixin:
 
         artist = await self.find_artist_by_name(artist_name, library_ids)
         if not artist:
-            print(f"⚠️ Jellyfin top tracks skipped: no library artist matching '{artist_name}'")
+            logger.warning(f"⚠️ Jellyfin top tracks skipped: no library artist matching '{artist_name}'")
             return []
 
         local_tracks = await self.get_tracks_by_artist(artist["id"], library_ids) or []
         if not local_tracks:
-            print(f"⚠️ Jellyfin top tracks skipped: '{artist['name']}' has no local tracks")
+            logger.warning(f"⚠️ Jellyfin top tracks skipped: '{artist['name']}' has no local tracks")
             return []
 
         # A user-supplied MBID wins; otherwise fall back to the library's, if any.
@@ -185,7 +237,7 @@ class _TracksMixin:
 
         resolved_name = top_tracks[0].get("artist") if top_tracks else None
         if resolved_name and not artists_match(resolved_name, artist.get("name")):
-            print(f"⚠️ Last.fm returned tracks by '{resolved_name}' for '{artist['name']}'")
+            logger.warning(f"⚠️ Last.fm returned tracks by '{resolved_name}' for '{artist['name']}'")
 
         return top_tracks[:count]
     
@@ -394,7 +446,8 @@ class _TracksMixin:
             "format": jellyfin_track.get("Container", ""),
             "bit_rate": jellyfin_track.get("Bitrate", 0) // 1000,  # Convert to kbps
             "duration": jellyfin_track.get("RunTimeTicks", 0) // 10_000_000,  # Convert ticks to seconds
-            "track_number": jellyfin_track.get("IndexNumber", 0)
+            "track_number": jellyfin_track.get("IndexNumber", 0),
+            "recording_mbid": (jellyfin_track.get("ProviderIds") or {}).get("MusicBrainzRecording"),
         }
     
     def _deduplicate_tracks(self, tracks: List[Dict]) -> List[Dict]:
@@ -437,5 +490,5 @@ class _TracksMixin:
         result = list(seen.values())
         duplicates_removed = len(tracks) - len(result)
         if duplicates_removed > 0:
-            print(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
+            logger.debug(f"🔍 Deduplication: removed {duplicates_removed} duplicate track(s) from {len(tracks)} → {len(result)} unique tracks")
         return result

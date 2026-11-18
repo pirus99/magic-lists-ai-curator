@@ -8,7 +8,37 @@ Every variable MagicLists reads, where it comes from, and whether it's required.
 |---|---|---|---|
 | `SERVER_TYPE` | `navidrome` | Which music server to talk to: `navidrome` or `jellyfin` | **Yes** |
 | `DATABASE_PATH` | internal path | Location of the SQLite database | **Yes** |
-| `LOG_LEVEL` | `INFO` | Log verbosity: `ERROR`, `INFO`, `DEBUG` | No |
+| `LOG_LEVEL` | `INFO` | Log verbosity: `ALL`, `DEBUG`, `INFO`, `ERROR` (see [Log levels](#log-levels)) | No |
+
+## Log levels
+
+`LOG_LEVEL` controls both the application's own log records and the HTTP access
+log, so `docker logs` behaves predictably. Each level includes everything the
+level below it shows:
+
+| Level | What appears |
+|---|---|
+| `ALL` | `DEBUG` plus database driver messages (`aiosqlite` / `sqlite3`). Use this when a query or connection problem is suspected. |
+| `DEBUG` | `INFO` plus application debug output, curation progress detail, third-party HTTP client logs, and **every** HTTP request including successful ones. Database messages stay hidden. |
+| `INFO` | `ERROR` plus everything important except successful HTTP traffic. Requests answered with `2xx`/`3xx` are hidden; `4xx` and `5xx` are kept. This is the default. |
+| `ERROR` | Only errors, plus a short set of startup messages (banner, scheduler/queue start, health-check summary). |
+
+Any other value — including `WARNING` — falls back to `INFO`, so a typo never
+silences the log. Logs go to stdout only; Docker captures them, so there is no
+log file to rotate or clean up.
+
+## Refresh scheduling
+
+Playlist refreshes run through a single throttled queue so two playlists never
+refresh at the same time. Schedule times are interpreted in the **server's local
+timezone** (set `TZ` on the container if you need a specific one).
+
+| Variable | Default | Description | Required |
+|---|---|---|---|
+| `REFRESH_MAX_CONCURRENCY` | `1` | How many playlists may refresh simultaneously | No |
+| `REFRESH_MIN_GAP_SECONDS` | `45` | Minimum gap between two refresh starts (rate-limit guard) | No |
+| `AI_MAX_RETRIES` | `4` | Retries for AI provider 429/5xx responses | No |
+| `AI_RETRY_BASE_DELAY` | `5` | Base delay (seconds) for exponential backoff | No |
 
 ## Navidrome
 
@@ -69,13 +99,16 @@ Only used when `AI_PROVIDER=ollama`.
 
 ## ListenBrainz Labs
 
-Used for **Artist Radio** similar-artist lookups.
+Used for **Artist Radio** similar-artist lookups and **Song Radio** similar-recording lookups.
 
 | Variable | Default | Description | Required |
 |---|---|---|---|
-| `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint for artist suggestions | No |
+| `LISTENBRAINZ_LABS_URL` | `https://labs.api.listenbrainz.org` | Endpoint for artist and recording suggestions | No |
 | `LISTENBRAINZ_TOKEN` | *(empty)* | Personal token — only needed if you hit rate limits | No |
 | `LISTENBRAINZ_TIMEOUT` | `15` (seconds) | HTTP timeout for ListenBrainz calls | No |
+
+No API key is required for either feature. Song Radio additionally works without ListenBrainz on
+Navidrome, using the Subsonic `getSimilarSongs2` similarity engine instead.
 
 ## Last.fm
 

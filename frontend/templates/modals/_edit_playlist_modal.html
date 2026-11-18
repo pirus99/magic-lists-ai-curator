@@ -87,32 +87,68 @@
             </div>
 
             <div>
-                <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-3">Refresh Frequency</label>
+                <div class="flex items-center justify-between mb-3">
+                    <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold">Refresh Schedule</label>
+                    <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                        <input type="checkbox" id="edit-schedule-enabled" checked
+                            class="shrink-0 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+                        Enabled
+                    </label>
+                </div>
+
                 <div class="space-y-3">
-                    <div class="flex items-center">
-                        <input type="radio" id="edit-freq-none" name="edit-refresh-frequency" value="none"
-                            class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500">
-                        <label for="edit-freq-none" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Don't
-                            refresh</label>
+                    <div>
+                        <label for="edit-schedule-kind" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Repeat</label>
+                        <select id="edit-schedule-kind"
+                            class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 text-gray-900 dark:text-gray-100">
+                            <option value="none">Don't refresh</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="interval">Every N hours</option>
+                            <option value="cron">Custom (cron)</option>
+                        </select>
                     </div>
-                    <div class="flex items-center">
-                        <input type="radio" id="edit-freq-daily" name="edit-refresh-frequency" value="daily"
-                            class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500">
-                        <label for="edit-freq-daily" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Daily <span
-                                class="text-xs text-gray-500 dark:text-gray-400">(1am)</span></label>
+
+                    <div id="edit-schedule-time-wrap">
+                        <label for="edit-schedule-time" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Time of day</label>
+                        <input type="time" id="edit-schedule-time" value="01:00"
+                            class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 text-gray-900 dark:text-gray-100">
                     </div>
-                    <div class="flex items-center">
-                        <input type="radio" id="edit-freq-weekly" name="edit-refresh-frequency" value="weekly"
-                            class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500">
-                        <label for="edit-freq-weekly" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Weekly <span
-                                class="text-xs text-gray-500 dark:text-gray-400">(Monday 1am)</span></label>
+
+                    <div id="edit-schedule-weekdays-wrap" class="hidden">
+                        <span class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Days</span>
+                        <div class="flex flex-wrap gap-1.5" id="edit-schedule-weekdays">
+                            <button type="button" data-weekday="0" class="schedule-weekday px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">Mon</button>
+                            <button type="button" data-weekday="1" class="schedule-weekday px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">Tue</button>
+                            <button type="button" data-weekday="2" class="schedule-weekday px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">Wed</button>
+                            <button type="button" data-weekday="3" class="schedule-weekday px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">Thu</button>
+                            <button type="button" data-weekday="4" class="schedule-weekday px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">Fri</button>
+                            <button type="button" data-weekday="5" class="schedule-weekday px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">Sat</button>
+                            <button type="button" data-weekday="6" class="schedule-weekday px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">Sun</button>
+                        </div>
                     </div>
-                    <div class="flex items-center">
-                        <input type="radio" id="edit-freq-monthly" name="edit-refresh-frequency" value="monthly"
-                            class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded-full text-blue-600 focus:ring-blue-500">
-                        <label for="edit-freq-monthly" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Monthly
-                            <span class="text-xs text-gray-500 dark:text-gray-400">(1st of month 1am)</span></label>
+
+                    <div id="edit-schedule-day-wrap" class="hidden">
+                        <label for="edit-schedule-day" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Day of month</label>
+                        <input type="number" id="edit-schedule-day" min="1" max="28" value="1"
+                            class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 text-gray-900 dark:text-gray-100">
                     </div>
+
+                    <div id="edit-schedule-interval-wrap" class="hidden">
+                        <label for="edit-schedule-interval" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Hours between refreshes</label>
+                        <input type="number" id="edit-schedule-interval" min="1" max="8760" value="24"
+                            class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 text-gray-900 dark:text-gray-100">
+                    </div>
+
+                    <div id="edit-schedule-cron-wrap" class="hidden">
+                        <label for="edit-schedule-cron" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Cron expression</label>
+                        <input type="text" id="edit-schedule-cron" placeholder="0 3 * * 1"
+                            class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm font-mono focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">minute hour day-of-month month day-of-week</p>
+                    </div>
+
+                    <p id="edit-schedule-preview" class="text-xs text-gray-500 dark:text-gray-400"></p>
                 </div>
             </div>
 
@@ -126,13 +162,116 @@
                         <label for="edit-this-is-top-tracks-count" class="block text-sm text-gray-500 dark:text-gray-400">Top Tracks per Artist</label>
                         <span class="text-xs font-semibold text-blue-600 dark:text-blue-400">Source: <span data-top-tracks-source-label>Native</span></span>
                     </div>
-                    <div class="flex items-center gap-3"><input type="range" id="edit-this-is-top-tracks-count" min="0" max="20" value="0" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600"><output for="edit-this-is-top-tracks-count" id="edit-this-is-top-tracks-count-value" class="min-w-8 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold">0</output></div>
+                    <div class="flex items-center gap-3"><input type="range" id="edit-this-is-top-tracks-count" min="0" max="20" value="0" class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600"><output for="edit-this-is-top-tracks-count" id="edit-this-is-top-tracks-count-value" class="min-w-8 text-center px-2 py-1 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 text-sm font-bold dark:text-gray-100">0</output></div>
                 </div>
             </div>
 
             <div id="edit-rediscover-section" class="hidden border-t border-gray-200 dark:border-gray-700 pt-4">
                 <p class="text-sm text-gray-600 dark:text-gray-400">Library scope for this re-discover playlist.</p>
                 <input type="hidden" id="edit-rediscover-library-ids" value="[]">
+            </div>
+
+            <div id="edit-song-radio-section" class="hidden border-t border-gray-200 dark:border-gray-700 pt-4 flex flex-col gap-4">
+                <div>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">Source track: <span id="edit-song-radio-source"
+                            class="font-semibold text-gray-900 dark:text-gray-100"></span></p>
+                    <input type="hidden" id="edit-song-radio-source-mbid">
+                    <input type="hidden" id="edit-song-radio-source-track" value="null">
+                    <input type="hidden" id="edit-song-radio-library-ids" value="[]">
+                </div>
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+                    <label class="flex items-center" for="edit-song-radio-listenbrainz-enabled">
+                        <input type="checkbox" id="edit-song-radio-listenbrainz-enabled"
+                            class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use ListenBrainz similarity recommendations</span>
+                    </label>
+                    {% if server_type != 'jellyfin' %}
+                    <label class="flex items-center" for="edit-song-radio-subsonic-similar">
+                        <input type="checkbox" id="edit-song-radio-subsonic-similar"
+                            class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use {{ server_label }} similar-tracks</span>
+                    </label>
+                    {% endif %}
+                </div>
+                <div id="edit-song-radio-listenbrainz-controls" class="space-y-4">
+                    <div>
+                        <label for="edit-song-radio-algorithm"
+                            class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">ListenBrainz Algorithm</label>
+                        <select id="edit-song-radio-algorithm"
+                            class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100">
+                            <option>5Y Balanced</option>
+                            <option>20Y+</option>
+                            <option>25Y Deep</option>
+                            <option>3M Recent</option>
+                            <option>20Y Broad</option>
+                            <option>5Y Light</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="edit-song-radio-score"
+                            class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Minimum Similarity Score: <span id="edit-song-radio-score-value">20</span></label>
+                        <input id="edit-song-radio-score" type="range" min="1" max="100" value="20"
+                            class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit-song-radio-repeat"
+                            class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Expansion Rounds: <span id="edit-song-radio-repeat-value">6</span></label>
+                        <input id="edit-song-radio-repeat" type="range" min="1" max="6" value="6"
+                            class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-700 accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label for="edit-song-radio-year-start"
+                            class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Year From</label><input
+                            type="number" id="edit-song-radio-year-start" min="1950" max="2026" placeholder="Start"
+                            class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100"></div>
+                    <div><label for="edit-song-radio-year-end"
+                            class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Year To</label><input
+                            type="number" id="edit-song-radio-year-end" min="1950" max="2026" placeholder="End"
+                            class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100"></div>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-900 dark:text-gray-100 font-bold mb-2">Minimum Quality</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div id="edit-song-radio-bitrate-wrap">
+                            <select id="edit-song-radio-min-bitrate"
+                                class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                                <option value="">Any bitrate</option>
+                                <option value="128">128 kbps</option>
+                                <option value="192">192 kbps</option>
+                                <option value="256">256 kbps</option>
+                                <option value="320">320 kbps</option>
+                            </select>
+                        </div>
+                        <div id="edit-song-radio-bitdepth-wrap" class="hidden">
+                            <select id="edit-song-radio-min-bitdepth"
+                                class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                                <option value="">Any depth</option>
+                                <option value="16">16-bit</option>
+                                <option value="24">24-bit</option>
+                            </select>
+                        </div>
+                        <select id="edit-song-radio-min-format"
+                            class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                            <option value="">Any format</option>
+                            <option value="mp3">MP3</option>
+                            <option value="flac">FLAC</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex items-center"><input type="checkbox" id="edit-song-radio-caps-enabled"
+                        class="shrink-0 mt-0.5 border-gray-200 dark:border-gray-700 rounded text-blue-600 focus:ring-blue-500"><label
+                        for="edit-song-radio-caps-enabled" class="text-sm text-gray-500 dark:text-gray-400 ms-2">Use Artist &amp; Album Diversity Limits</label></div>
+                <div id="edit-song-radio-caps-inputs" class="grid grid-cols-2 gap-3">
+                    <div><label for="edit-song-radio-album-cap"
+                            class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per album</label><input
+                            type="number" id="edit-song-radio-album-cap" min="0" value="4"
+                            class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100"></div>
+                    <div><label for="edit-song-radio-artist-cap"
+                            class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tracks per artist</label><input
+                            type="number" id="edit-song-radio-artist-cap" min="0" value="8"
+                            class="w-full px-2 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline focus:outline-2 focus:outline-gray-900 dark:focus:outline-gray-100"></div>
+                </div>
             </div>
 
             <div id="edit-artist-radio-section" class="hidden border-t border-gray-200 dark:border-gray-700 pt-4 flex flex-col gap-4">
@@ -263,7 +402,7 @@
                             "dropdownClasses": "mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-white dark:bg-gray-800 border border-select-line rounded-lg shadow-xl overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-none [&::-webkit-scrollbar-track]:bg-scrollbar-track [&::-webkit-scrollbar-thumb]:bg-scrollbar-thumb",
                             "optionClasses": "py-2 px-4 w-full text-sm text-select-item-foreground cursor-pointer hover:bg-select-item-hover rounded-lg focus:outline-hidden focus:bg-select-item-focus hs-selected:bg-blue-50 hs-selected:text-blue-800",
                             "optionTemplate": "<div class=\"flex items-center\"><div class=\"text-sm capitalize text-foreground\" data-title></div><div class=\"text-xs text-muted-foreground-1\" data-description></div><div class=\"ms-auto\"><span class=\"hidden hs-selected:block\"><svg class=\"shrink-0 size-4 text-blue-600\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z\"/></svg></span></div></div>",
-                            "extraMarkup": "<div class=\"absolute top-1/2 end-3 -translate-y-1/2\"><svg class=\"shrink-0 size-3.5 text-muted-foreground-1\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m7 15 5 5 5-5\"/><path d=\"m7 9 5-5 5 5\"/></svg></div>",
+                            "extraMarkup": "<div class=\"absolute top-1/2 end-3 -translate-y-1/2\"><svg class=\"shrink-0 size-3.5 text-muted-foreground-1 dark:stroke-gray-200\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m7 15 5 5 5-5\"/><path d=\"m7 9 5-5 5 5\"/></svg></div>",
                             "multiple": true
                         }' class="hidden">
                             <option value="">Choose a genre</option>

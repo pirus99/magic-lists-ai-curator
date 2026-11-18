@@ -1,11 +1,8 @@
 import json
-import sqlite3
 import aiosqlite
-import os
 from typing import List, Optional, Dict
-from datetime import datetime, timedelta
 
-from ..schemas import Playlist, ScheduledPlaylist
+from ..schemas import Playlist
 
 
 def _safe_json_loads(value, default):
@@ -223,6 +220,57 @@ class _DatabasePlaylistsMixin:
     
         return None
     
+
+    async def get_playlist_by_navidrome_id_with_schedule_info(self, navidrome_playlist_id: str) -> Optional[Dict]:
+        """Get a playlist (with schedule info) by its media-server playlist ID.
+
+        Used by the refresh queue, which only knows the server-side identifier.
+        """
+        await self.init_db()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("""
+                SELECT 
+                    p.id, 
+                    p.artist_id, 
+                    p.playlist_name, 
+                    p.songs, 
+                    p.description,
+                    p.is_public,
+                    p.created_at, 
+                    p.updated_at,
+                    p.navidrome_playlist_id,
+                    p.curation_settings,
+                    p.playlist_type,
+                    sp.refresh_frequency,
+                    sp.next_refresh,
+                    sp.playlist_type
+                FROM playlists p
+                LEFT JOIN scheduled_playlists sp ON p.navidrome_playlist_id = sp.navidrome_playlist_id
+                WHERE p.navidrome_playlist_id = ?
+                LIMIT 1
+            """, (navidrome_playlist_id,)) as cursor:
+                row = await cursor.fetchone()
+
+                if row:
+                    resolved_type = row[10] or row[13] or "this_is"
+                    return {
+                        "id": row[0],
+                        "artist_id": row[1],
+                        "playlist_name": row[2],
+                        "songs": _safe_json_loads(row[3], []),
+                        "description": row[4],
+                        "is_public": bool(row[5]),
+                        "created_at": row[6],
+                        "updated_at": row[7],
+                        "navidrome_playlist_id": row[8],
+                        "curation_settings": _safe_json_loads(row[9], {}),
+                        "playlist_type": resolved_type,
+                        "refresh_frequency": row[11],
+                        "next_refresh": row[12]
+                    }
+
+        return None
 
     async def delete_playlist(self, playlist_id: int) -> bool:
         """Delete a playlist from the database"""

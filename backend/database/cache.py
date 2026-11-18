@@ -1,5 +1,5 @@
 import aiosqlite
-from typing import List, Optional, Dict
+from typing import Optional
 from datetime import datetime, timedelta
 
 
@@ -21,7 +21,6 @@ class _CacheMixin:
         """Set a cached value with TTL (time to live in seconds)"""
         await self.init_db()
 
-        from datetime import datetime, timedelta
         expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
 
         async with aiosqlite.connect(self.db_path) as db:

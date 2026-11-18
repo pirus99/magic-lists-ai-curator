@@ -1,8 +1,12 @@
 """Shared post-filter candidate limits for AI curation requests."""
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
 from .track_scoring_service import calculate_track_score
+
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_candidate_limit(
@@ -30,7 +34,7 @@ def limit_candidates_for_ai(
         return candidate_tracks
 
     limited = sorted(candidate_tracks, key=calculate_track_score, reverse=True)[:limit]
-    print(f"✂️ Candidate limiter: {len(candidate_tracks)} → {len(limited)} tracks before AI curation")
+    logger.debug(f"✂️ Candidate limiter: {len(candidate_tracks)} → {len(limited)} tracks before AI curation")
     return limited
 
 

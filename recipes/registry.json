@@ -3,6 +3,7 @@
   "artist_radio": "artist_radio_v1.json",
   "re_discover": "re_discover_phase2_v2.json",
   "genre_mix": "genre_mix_v2.json",
+  "song_radio": "song_radio_v1.json",
   "re_discover_phase1_v2": "re_discover_phase1_v2.json",
   "re_discover_phase2_v2": "re_discover_phase2_v2.json"
 }

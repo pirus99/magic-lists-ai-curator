@@ -5,19 +5,34 @@
 MagicLists adds the kind of curated, evolving playlists you’d expect from Spotify or Apple Music—except it works entirely on your self-hosted Navidrome or Jellyfin server. No subscriptions, no renting your music back. Just smart mixes generated from the library you already own.
 
 ## What it does
-- 🎵 **This Is (Artist)** — Builds a definitive playlist for any artist in your library, combining hits, deep cuts, and featured appearances without duplicates.
-- 📻 **Artist Radio** — Automatically search for similar artists for your selected one, then create a distinctive mixed radio playlist from your selection.
-- 🎸 **Genre Mix** — Creates curated playlists from your complete genre collections, using AI to craft the perfect mix of tracks.
-- 🔄 **Re-Discover** — Rotates tracks you haven't played in a while, helping you fall back in love with your collection.
-- ⏰ **Auto-Refresh** — Keep playlists fresh with daily, weekly, or monthly updates.
-- 🐳 **Quick Setup** — Simple Docker install; get started in minutes.
+
+Five playlist types, automatic refresh, and a UI that stays out of your way. Each one has a
+full description in **[docs/FEATURES.md](docs/FEATURES.md)**.
+
+| Feature | What it gives you |
+|---|---|
+| 🎵 **[This Is (Artist)](docs/FEATURES.md#this-is-artist)** | A definitive playlist for one artist — hits, deep cuts, and guest appearances, without duplicates. |
+| 📻 **[Artist Radio](docs/FEATURES.md#artist-radio)** | A mix built from an artist plus similar artists, so you can explore without knowing the names. |
+| 🎧 **[Song Radio](docs/FEATURES.md#song-radio)** | A radio built around a single track, with a preview of the candidate pool before you commit. |
+| 🎸 **[Genre Mix](docs/FEATURES.md#genre-mix)** | A playlist from whole genres, with year, quality, and per-album/per-artist filters. |
+| 🔄 **[Re-Discover](docs/FEATURES.md#re-discover)** | Tracks you haven't played in a while, so your collection keeps surprising you. |
+| ⏰ **[Refresh scheduling](docs/FEATURES.md#-refresh-scheduling)** | Per-playlist schedules, a Refresh Schedule page with history, and refreshes queued one at a time so your AI provider never gets rate limited. |
+| 🎧 **[Artist top tracks](docs/FEATURES.md#-artist-top-tracks)** | Popular songs per artist — native on Navidrome, via Last.fm on Jellyfin. |
+| 🖥️ **[Navidrome & Jellyfin](docs/FEATURES.md#-works-with-navidrome-and-jellyfin)** | Works with either server, each with its own database. |
+| 📚 **[Multiple libraries](docs/FEATURES.md#-multiple-libraries)** | Pick which library to work with; your choice is remembered. |
+| ✏️ **[Playlist editing](docs/FEATURES.md#-playlist-editing)** | Rename, re-describe, change length, filters, or schedule — then save, or save and rebuild in one click. |
+| 🌙 **[Dark mode](docs/FEATURES.md#-dark-mode)** | A proper light and dark theme across the whole app. |
+| 🩺 **[System check](docs/FEATURES.md#-system-check)** | Validates your configuration on startup and tells you exactly what to fix. |
+| ⚡ **[No library scans](docs/FEATURES.md#-no-library-scans)** | Playlist building uses your server's existing library metadata — no full library scans, so there is no wasted waiting time. |
+
+👉 **[See all features, including everything new →](docs/FEATURES.md)**
 
 ## Why it matters
 Navidrome and Jellyfin users already own their music. MagicLists brings modern curation tools into that world—so your playlists feel alive, not static, and your collection keeps surprising you.
 
 ## What's that Fork?
 This repo is a fork of Ricky Synnot's [magic-lists-for-navidrome](https://github.com/rsynnot/magic-lists-for-navidrome).  
-It is an improved version with many bug fixes and more features, including, e.g., Jellyfin implementation, artist radio, genre mix with advanced filters, dark mode, no usage tracking and many more features...
+It is an improved version with many bug fixes and more features, including, e.g., Jellyfin implementation, artist radio, song radio, genre mix with advanced filters, dark mode, no usage tracking and many more features...
 
 
 ## Screenshots
@@ -29,20 +44,32 @@ _Creating a 'This is (Artist)' playlist_
 
 _Creating a 'Genre Mix' playlist_ 
 
+### Other Screenshots:
+
+#### [Artist Radio UI](assets/images/artist-radio.png)
+
+#### [Song Radio UI](assets/images/song-radio.png)
+
 
 ## What’s still a work in progress?
 ### Some features are still barely or not at all tested, including:
  - Jellyfin Server Client
    - Artist Radio Similarity Check
+   - Song Radio Similarity Check
    - Playlist Generation Quality
    - Support for Big Music Libraries
    - LastFm top tracks fetching
+ - Song Radio
+   - ListenBrainz Similarity Check
+   - Playlist Generation Quality
 
-Please contribute to the project and report your testing and experience with this application on the Issues tab.
+Please contribute to the project and report your testing and experience with this application on the Issues or Discussions tab.
 
 ## What’s next
-Upcoming features include:
-- An updated scheduling for regeneration of Playlists
+Upcoming versions include:
+- More playlist types and improved curation.
+- Support for more Self-Hosted Music Servers.
+- Improved Documentation and Tutorials.
 - What is on your mind? Open an issue to tell me.
 
 
@@ -83,6 +110,7 @@ All setup and troubleshooting instructions now live in the [`docs/`](docs/) fold
 
 | I need… | Guide |
 |---|---|
+| **See everything the app can do** | **[`docs/FEATURES.md`](docs/FEATURES.md)** |
 | Look up an environment variable | **[`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md)** |
 | Fix something that isn't working | **[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)** |
 | Tune the AI prompt recipes | **[`recipes/README.md`](recipes/README.md)** |
@@ -120,52 +148,7 @@ docker compose up -d
 
 Then open **http://localhost:4545** and verify everything at **http://localhost:4545/system-check**.
 
-### Artist top tracks
-
-The **Top Tracks per Artist** slider on the This Is and Artist Radio pages is powered by a different
-source depending on your server, and the UI shows which one is active:
-
-| Server | Source | Label | Requires |
-|---|---|---|---|
-| Navidrome | Native `getTopSongs` endpoint | `Native` | Nothing |
-| Jellyfin | [Last.fm](https://www.last.fm/api) `artist.getTopTracks` | `Last.fm` | `LASTFM_API_KEY` for full effect |
-
-Jellyfin has no equivalent of Navidrome's top-songs endpoint, so set `LASTFM_API_KEY` to a free key from
-[last.fm/api/account/create](https://www.last.fm/api/account/create) to enable it. Last.fm returns song
-titles rather than server IDs, so MagicLists matches them against the artist's tracks already in your
-library; only matched tracks are used.
-
-The slider is **always visible** on both server types. Without a key it still reads *Source: Last.fm*
-but shows a setup prompt, and playlists are built with play-count ordering instead — so a missing key
-never blocks you, and the feature stays discoverable. `GET /api/top-tracks/strategies` reports this as
-`supported` (the server type can do top tracks) versus `configured` (it can right now).
-
-Last.fm resolves artists by MusicBrainz ID, and Jellyfin metadata often has none. When that happens,
-the This Is page shows a **MusicBrainz ID** field so you can paste one in (from
-[musicbrainz.org](https://musicbrainz.org)); it is used for the Last.fm lookup only and never changes
-which tracks are chosen.
-
-See [docs/JELLYFIN.md](docs/JELLYFIN.md) for details and [docs/API.md](docs/API.md) for
-`GET /api/top-tracks/strategies`.
-
 👉 Full instructions: **[`docs/DOCKER.md`](docs/DOCKER.md)**
-
-## 🩺 System Check Page
-
-MagicLists validates its configuration on startup. If anything is misconfigured you're redirected to a system check page that validates:
-
-- **Environment Variables** — that required variables are set
-- **Server URL** — that Navidrome or Jellyfin is reachable
-- **Authentication** — that your credentials work
-- **Artists API** — that API access returns results
-- **AI Provider** — that AI features are configured (Google, OpenRouter, Groq, or Ollama)
-- **Library Configuration** — multiple-library setup status
-
-Failed checks come with a suggested fix. You can also visit `/system-check` at any time:
-
-```bash
-curl "http://localhost:4545/system-check"
-```
 
 ## API
 

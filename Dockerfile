@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.15.2-slim
 
 # Set working directory
 WORKDIR /app
@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 COPY recipes/ ./recipes/
+COPY CHANGELOG.md ./CHANGELOG.md
 
 # Create database directory and set permissions
 RUN mkdir -p /app/data && chmod 755 /app/data
@@ -37,4 +38,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
 # Run the application
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-access-log: uvicorn's access log always logs at INFO and cannot be
+# filtered by status code. backend.main installs a middleware that logs each
+# request at a level derived from its status (2xx/3xx -> DEBUG, 4xx -> WARNING,
+# 5xx -> ERROR) so LOG_LEVEL actually controls what appears in `docker logs`.
+CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

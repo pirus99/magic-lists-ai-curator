@@ -61,6 +61,19 @@ curl -u your_username:your_password \
   "http://navidrome:4533/api/library?f=json" | jq '._embedded.subsonicLibrary'
 ```
 
+## Song Radio on Navidrome
+
+Song Radio has two similarity sources on Navidrome, and you can use either or both:
+
+| Source | Requires | Notes |
+|---|---|---|
+| **ListenBrainz** (default) | A MusicBrainz recording ID for the source track | Finds similar recordings globally, then matches them against your library |
+| **Navidrome similar-tracks (Subsonic)** | Nothing | Uses `getSimilarSongs2`, so it works entirely offline against your own library |
+
+Tick *Use Navidrome similar-tracks (Subsonic)* to add Subsonic candidates on top of ListenBrainz, or
+untick *Use ListenBrainz similarity recommendations* to rely on Subsonic alone — in that case no
+MusicBrainz ID is needed at all. The Subsonic engine is scoped to the first selected library.
+
 ## Verifying the connection
 
 ```bash

@@ -1,5 +1,5 @@
 import aiosqlite
-from typing import List, Optional, Dict
+from typing import Optional
 from datetime import datetime, timedelta
 
 
@@ -44,8 +44,6 @@ class _ConfigMixin:
     async def should_track_library_size(self) -> bool:
         """Check if we should track library size (90+ days since last tracking)"""
         await self.init_db()
-    
-        from datetime import datetime, timedelta
     
         # Get the last tracking timestamp
         last_tracked = await self.get_config("last_library_tracking")

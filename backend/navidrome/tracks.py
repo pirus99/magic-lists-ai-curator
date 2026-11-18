@@ -1,7 +1,12 @@
+import logging
+
 import httpx
 from typing import List, Dict, Any, Union, Optional
 
 from .utils import _normalize_genres
+
+
+logger = logging.getLogger(__name__)
 
 
 class _TracksMixin:
@@ -36,7 +41,7 @@ class _TracksMixin:
 
             song_data = subsonic_response.get("song", {})
             if not song_data:
-                print(f"⚠️ No song found for ID: {track_id}")
+                logger.warning(f"⚠️ No song found for ID: {track_id}")
                 return None
 
             raw_genres = song_data.get("genres", song_data.get("genre"))
@@ -59,7 +64,7 @@ class _TracksMixin:
                 "genres": normalized_genres,
             }
 
-            print(f"✅ Fetched track: {track['title']} by {track['artist']}")
+            logger.debug(f"✅ Fetched track: {track['title']} by {track['artist']}")
             return track
 
         except httpx.RequestError as e:
@@ -250,7 +255,7 @@ class _TracksMixin:
             batch_size = 500  # Max allowed by API
 
             library_filter = library_ids[0] if library_ids and len(library_ids) > 0 else None
-            print(f"🎵 Starting multi-genre track collection for {len(genres)} genres{' in library ' + library_filter if library_filter else ''}")
+            logger.debug(f"🎵 Starting multi-genre track collection for {len(genres)} genres{' in library ' + library_filter if library_filter else ''}")
 
             for genre in genres:
                 offset = 0
@@ -281,7 +286,7 @@ class _TracksMixin:
 
                         # If getSongsByGenre is not supported, fall back to search approach
                         if "not implemented" in error_msg.lower() or error_code == 0:
-                            print(f"⚠️ getSongsByGenre not supported, falling back to search method")
+                            logger.warning(f"⚠️ getSongsByGenre not supported, falling back to search method")
                             genre_tracks = await self._get_tracks_by_genre_fallback(genre)
                             all_tracks.extend(genre_tracks)
                             break
@@ -324,7 +329,7 @@ class _TracksMixin:
                     total_fetched += batch_count
                     offset += batch_size
 
-                    print(f"📦 Fetched batch for genre '{genre}': {batch_count} tracks (total: {total_fetched})")
+                    logger.debug(f"📦 Fetched batch for genre '{genre}': {batch_count} tracks (total: {total_fetched})")
 
                     # Safety check: prevent infinite loops
                     if batch_count < batch_size:
@@ -332,11 +337,11 @@ class _TracksMixin:
 
                     # Safety check: prevent too many API calls (max 100 batches = 50k tracks)
                     if offset >= 50000:
-                        print(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
+                        logger.warning(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
                         break
 
             deduped = self._deduplicate_tracks(all_tracks)
-            print(f"✅ Completed multi-genre collection: {len(deduped)} tracks for {len(genres)} genres")
+            logger.info(f"✅ Completed multi-genre collection: {len(deduped)} tracks for {len(genres)} genres")
             return deduped
 
         except httpx.RequestError as e:
@@ -366,7 +371,7 @@ class _TracksMixin:
             batch_size = 500  # Max allowed by API
 
             library_filter = library_ids[0] if library_ids and len(library_ids) > 0 else None
-            print(f"🎵 Starting genre track collection for '{genre}'{' in library ' + library_filter if library_filter else ''}")
+            logger.debug(f"🎵 Starting genre track collection for '{genre}'{' in library ' + library_filter if library_filter else ''}")
 
             while True:
                 params = self._get_subsonic_params()
@@ -395,7 +400,7 @@ class _TracksMixin:
 
                     # If getSongsByGenre is not supported, fall back to search approach
                     if "not implemented" in error_msg.lower() or error_code == 0:
-                        print(f"⚠️ getSongsByGenre not supported, falling back to search method")
+                        logger.warning(f"⚠️ getSongsByGenre not supported, falling back to search method")
                         return await self._get_tracks_by_genre_fallback(genre)
                     else:
                         raise Exception(f"Subsonic API error: {error_msg}")
@@ -436,7 +441,7 @@ class _TracksMixin:
                 total_fetched += batch_count
                 offset += batch_size
 
-                print(f"📦 Fetched batch: {batch_count} tracks (total: {total_fetched})")
+                logger.debug(f"📦 Fetched batch: {batch_count} tracks (total: {total_fetched})")
 
                 # Safety check: prevent infinite loops
                 if batch_count < batch_size:
@@ -444,11 +449,11 @@ class _TracksMixin:
 
                 # Safety check: prevent too many API calls (max 100 batches = 50k tracks)
                 if offset >= 50000:
-                    print(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
+                    logger.warning(f"⚠️ Reached safety limit of 50k tracks for genre '{genre}'")
                     break
 
             deduped = self._deduplicate_tracks(all_tracks)
-            print(f"✅ Completed genre collection: {len(deduped)} tracks for '{genre}'")
+            logger.info(f"✅ Completed genre collection: {len(deduped)} tracks for '{genre}'")
             return deduped
 
         except httpx.RequestError as e:
@@ -468,7 +473,7 @@ class _TracksMixin:
         Returns:
             List of tracks with format: {id, title, album, year, play_count}
         """
-        print(f"🔄 Using fallback search method for genre '{genre}'")
+        logger.debug(f"🔄 Using fallback search method for genre '{genre}'")
 
         try:
             await self._ensure_authenticated()
@@ -524,13 +529,182 @@ class _TracksMixin:
                     tracks_list.append(track)
 
             deduped = self._deduplicate_tracks(tracks_list)
-            print(f"✅ Fallback method found {len(deduped)} tracks for '{genre}'")
+            logger.info(f"✅ Fallback method found {len(deduped)} tracks for '{genre}'")
             return deduped
 
         except Exception as e:
-            print(f"❌ Fallback method also failed: {e}")
+            logger.error(f"❌ Fallback method also failed: {e}")
             return []
 
+
+    async def search_tracks(
+        self,
+        query: str,
+        library_ids: Union[List[str], str, None] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Search the library for tracks by title, artist, or album.
+
+        Uses the Subsonic ``search3`` endpoint so callers can locate a source
+        track for Song Radio without knowing its server ID in advance. The
+        returned tracks carry the same shape as every other track method so the
+        Song Radio pipeline can treat them uniformly.
+        """
+        if not query or not str(query).strip():
+            return []
+
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["query"] = str(query).strip()
+            params["artistCount"] = 0
+            params["albumCount"] = 0
+            params["songCount"] = max(1, int(limit))
+
+            if isinstance(library_ids, list) and library_ids:
+                params["musicFolderId"] = library_ids[0]
+            elif isinstance(library_ids, str) and library_ids:
+                params["musicFolderId"] = library_ids
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/search3.view",
+                params=params,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Subsonic API error: {error.get('message', 'Unknown error')}")
+
+            search_result = subsonic_response.get("searchResult3", {})
+            songs = search_result.get("song", [])
+            if not isinstance(songs, list):
+                songs = [songs] if songs else []
+
+            tracks: List[Dict[str, Any]] = []
+            for song in songs:
+                if not isinstance(song, dict):
+                    continue
+                raw_genres = song.get("genres", song.get("genre"))
+                tracks.append({
+                    "id": song.get("id"),
+                    "title": song.get("title"),
+                    "artist": song.get("artist"),
+                    "album": song.get("album"),
+                    "year": song.get("year"),
+                    "genre": song.get("genre"),
+                    "genres": _normalize_genres(raw_genres),
+                    "play_count": song.get("playCount", 0),
+                    "starred": song.get("starred") is not None,
+                    "rating": song.get("userRating", 0),
+                    "format": song.get("suffix"),
+                    "bit_rate": song.get("bitRate", 0),
+                    "bit_depth": song.get("bitDepth"),
+                    "duration": song.get("duration"),
+                    "track_number": song.get("track"),
+                    "recording_mbid": song.get("musicBrainzId") or song.get("mbid"),
+                })
+
+            deduped = self._deduplicate_tracks(tracks)
+            logger.debug(f"🔍 Search '{query}' returned {len(deduped)} track(s)")
+            return deduped
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error searching tracks for '{query}': {e}")
+
+    async def get_similar_tracks(
+        self,
+        track_id: str,
+        count: int = 50,
+        library_ids: Union[List[str], str, None] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch similar tracks for a source track using the Subsonic API.
+
+        Uses ``getSimilarSongs2`` (Navidrome's similarity engine) which returns
+        tracks from the local library that are similar to the given source track.
+        This is the Subsonic-native fallback for ListenBrainz similarity and does
+        not require any external service or MusicBrainz IDs.
+
+        Args:
+            track_id: The ID of the source track.
+            count: Maximum number of similar tracks to return.
+            library_ids: Optional library scope (first library is used).
+
+        Returns:
+            List of tracks in the standard track shape used across the client.
+        """
+        if not track_id:
+            return []
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["id"] = track_id
+            params["count"] = max(1, int(count))
+
+            if isinstance(library_ids, list) and library_ids:
+                params["musicFolderId"] = library_ids[0]
+            elif isinstance(library_ids, str) and library_ids:
+                params["musicFolderId"] = library_ids
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/getSimilarSongs2.view",
+                params=params,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Subsonic API error: {error.get('message', 'Unknown error')}")
+
+            similar = subsonic_response.get("similarSongs2", {})
+            songs = similar.get("song", [])
+            if not isinstance(songs, list):
+                songs = [songs] if songs else []
+
+            tracks: List[Dict[str, Any]] = []
+            for song in songs:
+                if not isinstance(song, dict):
+                    continue
+                raw_genres = song.get("genres", song.get("genre"))
+                tracks.append({
+                    "id": song.get("id"),
+                    "title": song.get("title"),
+                    "artist": song.get("artist"),
+                    "album": song.get("album"),
+                    "year": song.get("year"),
+                    "genre": song.get("genre"),
+                    "genres": _normalize_genres(raw_genres),
+                    "play_count": song.get("playCount", 0),
+                    "starred": song.get("starred") is not None,
+                    "rating": song.get("userRating", 0),
+                    "format": song.get("suffix"),
+                    "bit_rate": song.get("bitRate", 0),
+                    "bit_depth": song.get("bitDepth"),
+                    "duration": song.get("duration"),
+                    "track_number": song.get("track"),
+                    "recording_mbid": song.get("musicBrainzId") or song.get("mbid"),
+                })
+
+            deduped = self._deduplicate_tracks(tracks)
+            logger.debug(f"🎯 getSimilarSongs2 returned {len(deduped)} similar track(s) for {track_id}")
+            return deduped
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error fetching similar tracks for '{track_id}': {e}")
 
     async def get_starred(self, library_ids: Union[List[str], str, None] = None) -> List[Dict[str, Any]]:
         """Fetch starred tracks from Navidrome using getStarred API
@@ -599,7 +773,7 @@ class _TracksMixin:
                 })
 
             deduped = self._deduplicate_tracks(tracks)
-            print(f"⭐ Retrieved {len(deduped)} starred tracks")
+            logger.debug(f"⭐ Retrieved {len(deduped)} starred tracks")
             return deduped
 
         except httpx.RequestError as e:
@@ -696,7 +870,7 @@ class _TracksMixin:
             scan_status = subsonic_response.get("scanStatus", {})
             count = scan_status.get("count", 0)
         
-            print(f"📊 Total song count in library (via startScan): {count}")
+            logger.debug(f"📊 Total song count in library (via startScan): {count}")
             return count
             
         except httpx.RequestError as e:
@@ -731,11 +905,11 @@ class _TracksMixin:
                 'total_tracks': total_tracks
             }
 
-            print(f"📊 Calculated library stats: {stats}")
+            logger.debug(f"📊 Calculated library stats: {stats}")
             return stats
 
         except Exception as e:
-            print(f"⚠️ Error getting library stats, using defaults: {e}")
+            logger.warning(f"⚠️ Error getting library stats, using defaults: {e}")
             # Return safe defaults if we can't get stats
             return {
                 'max_play_count': 100,

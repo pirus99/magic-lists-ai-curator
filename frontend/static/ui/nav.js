@@ -77,7 +77,7 @@ function setActiveMenuItem(page) {
 // Navigation functionality
 function showContent(contentId) {
     // Hide all content sections
-    const contentSections = ['welcome-content', 'this-is-content', 'artist-radio-content', 'rediscover-content', 'genre-mix-content', 'manage-playlists-content', 'system-check-content', 'terms-content'];
+    const contentSections = ['welcome-content', 'this-is-content', 'artist-radio-content', 'song-radio-content', 'rediscover-content', 'genre-mix-content', 'manage-playlists-content', 'scheduler-content', 'system-check-content', 'terms-content'];
     contentSections.forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -96,6 +96,10 @@ function showContent(contentId) {
 document.addEventListener('click', function(event) {
     const link = event.target.closest('[data-page]');
     if (link) {
+        // Let the browser handle modified clicks (new tab/window, download, etc.)
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+            return;
+        }
         event.preventDefault();
         const page = link.getAttribute('data-page');
         
@@ -112,6 +116,25 @@ document.addEventListener('click', function(event) {
         }
     }
 });
+
+// Give every navigation link a real href so URLs stay consistent and links can
+// be opened in a new tab / copied. Keeps the SPA click handling above intact.
+function syncNavLinkHrefs() {
+    // getURLForPage() lives in app.js, which loads after this file
+    if (typeof getURLForPage !== 'function') return;
+    document.querySelectorAll('[data-page]').forEach(link => {
+        const page = link.getAttribute('data-page');
+        if (page) {
+            link.setAttribute('href', getURLForPage(page));
+        }
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', syncNavLinkHrefs);
+} else {
+    syncNavLinkHrefs();
+}
 
 // Mobile menu toggle functionality
 const mobileMenuBtn = document.getElementById('hs-navbar-alignment-collapse');
@@ -164,6 +187,8 @@ function handlePageNavigation(page) {
         if (selectedLibraryIds.length > 0) {
             setTimeout(() => loadArtistRadioArtists(), 100);
         }
+    } else if (page === 'song-radio') {
+        contentId = 'song-radio-content';
     } else if (page === 're-discover') {
         contentId = 'rediscover-content';
     } else if (page === 'genre-mix') {
@@ -176,6 +201,10 @@ function handlePageNavigation(page) {
         contentId = 'manage-playlists-content';
         // Load playlists when navigating to manage page
         setTimeout(() => loadPlaylists(), 100);
+    } else if (page === 'scheduler') {
+        contentId = 'scheduler-content';
+        // Load the refresh overview when navigating to the scheduler page
+        setTimeout(() => { if (window.loadSchedulerOverview) window.loadSchedulerOverview(); }, 100);
     } else if (page === 'system-check') {
         contentId = 'system-check-content';
         // Auto-run system checks when navigating to system check page
