@@ -5,10 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0]
 
 ### Added
 
+- **Application version information** (`backend/services/version_service.py`,
+  `frontend/templates/pages/_system_check.html`): the System Check page now
+  compares the local release tag parsed from `CHANGELOG.md` with the latest
+  GitHub release tag from `pirus99/magic-lists-ai-curator`. A status card shows
+  the current and latest version tags, whether an update is available, and a link
+  to the GitHub releases page.
+  - Sidebar notices appear above the dark-mode toggle on desktop and mobile only
+    when a newer release is available, and link to the System Check page.
+  - Version results are cached for six hours; re-running System Check forces a
+    fresh GitHub lookup.
+  - `CHANGELOG.md` is copied into the Docker image so installed containers can
+    determine their local release tag.
+  - Added `GET /api/version` and `GET /api/version/check` endpoints.
 - **Consistent logging policy** (`backend/logging_config.py`): `LOG_LEVEL` now
   controls both application logs and the HTTP access log, so `docker logs`
   behaves predictably. `ALL` adds database driver logs on top of `DEBUG`;
@@ -149,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unreadable top-tracks value in dark mode**: the numeric output next to the *Top Tracks
   per Artist* slider in the edit-playlist modal inherited a dark text color on a dark
   background.
+- **Other small UI fixes**: many small layout and darkmode tweaks.
 
 ## [1.2.1] - 2026-11-16
 
