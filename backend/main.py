@@ -292,14 +292,14 @@ async def read_root(request: Request):
     """Serve the main HTML page"""
     if not system_check_passed:
         return RedirectResponse(url="/system-check", status_code=302)
-    return templates.TemplateResponse("index.html", template_context(request))
+    return templates.TemplateResponse(request, "index.html", template_context(request))
 
 
 # SYSTEM CHECK FEATURE - START
 @app.get("/system-check", response_class=HTMLResponse)
 async def system_check_page(request: Request):
     """Serve the system check page"""
-    return templates.TemplateResponse("index.html", template_context(request))
+    return templates.TemplateResponse(request, "index.html", template_context(request))
 # SYSTEM CHECK FEATURE - END
 
 
@@ -310,7 +310,7 @@ async def get_help_content(help_type: str, request: Request):
     if help_type not in allowed_types:
         raise HTTPException(status_code=404, detail="Help content not found")
 
-    return templates.TemplateResponse(f"help/{help_type}.html", template_context(request))
+    return templates.TemplateResponse(request, f"help/{help_type}.html", template_context(request))
 
 
 # ---------------------------------------------------------------------------
@@ -985,7 +985,7 @@ async def spa_router(request: Request, path: str):
     if path in spa_paths:
         if not system_check_passed:
             return RedirectResponse(url="/system-check", status_code=302)
-        return templates.TemplateResponse("index.html", template_context(request))
+        return templates.TemplateResponse(request, "index.html", template_context(request))
     return RedirectResponse(url="/", status_code=302)
 
 

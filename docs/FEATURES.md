@@ -263,6 +263,10 @@ what has been added or substantially reworked since then.
   disappearing into the logs.
 - **Playlist cleanup** — playlists deleted directly in Navidrome or Jellyfin are removed from
   MagicLists automatically instead of lingering as broken entries.
+- **Predictable logging** — a single `LOG_LEVEL` now controls both application logs and the
+  HTTP access log, so successful requests can be hidden without hiding real failures.
+- **Runs on current FastAPI and Starlette** — the app no longer breaks on newer releases of
+  its web stack, so dependency updates and security patches can be applied.
 
 #### AI responses are handled properly
 

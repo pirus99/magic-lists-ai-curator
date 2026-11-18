@@ -120,6 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`TypeError: cannot use 'tuple' as a dict key` on every page load after upgrading
+  FastAPI/Starlette**: Starlette 1.x changed `Jinja2Templates.TemplateResponse` from
+  `(name, context)` to `(request, name, context)`. The old call style passed the context
+  dict as the template name, which Jinja2 then used in its cache key tuple and rejected as
+  unhashable. All four call sites in `backend/main.py` now pass `request` first, so the app
+  runs on current FastAPI/uvicorn as well as the previously pinned versions.
 - **Genre Mix scheduled refreshes never ran**: `refresh_genre_playlist` was typed to accept
   a `dict` but the scheduler passed a `ScheduledPlaylist` model, so every scheduled run
   raised `AttributeError` and was swallowed by the handler's own `try/except`. It also
