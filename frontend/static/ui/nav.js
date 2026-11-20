@@ -2,13 +2,25 @@
     const nav = {
         setActiveMenuItem(page) {
             const desktopLinks = document.querySelectorAll('#desktopSidebar [data-page]');
-            desktopLinks.forEach(link => { link.classList.remove('bg-gray-200'); link.classList.add('bg-gray-100'); });
+            desktopLinks.forEach(link => {
+                link.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+                link.classList.add('bg-gray-100', 'dark:bg-gray-800');
+            });
             const mobileLinks = document.querySelectorAll('#mobileSidebar [data-page]');
-            mobileLinks.forEach(link => { link.classList.remove('bg-gray-200'); link.classList.add('bg-white'); });
+            mobileLinks.forEach(link => {
+                link.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+                link.classList.add('bg-white', 'dark:bg-gray-900');
+            });
             const activeDesktopLinks = document.querySelectorAll(`#desktopSidebar [data-page="${page}"]`);
-            activeDesktopLinks.forEach(link => { link.classList.add('bg-gray-200'); link.classList.remove('bg-gray-100'); });
+            activeDesktopLinks.forEach(link => {
+                link.classList.add('bg-gray-200', 'dark:bg-gray-700');
+                link.classList.remove('bg-gray-100', 'dark:bg-gray-800');
+            });
             const activeMobileLinks = document.querySelectorAll(`#mobileSidebar [data-page="${page}"]`);
-            activeMobileLinks.forEach(link => { link.classList.add('bg-gray-200'); link.classList.remove('bg-white'); });
+            activeMobileLinks.forEach(link => {
+                link.classList.add('bg-gray-200', 'dark:bg-gray-700');
+                link.classList.remove('bg-white', 'dark:bg-gray-900');
+            });
         }
         ,
         handlePageNavigation(page) {
@@ -48,29 +60,29 @@ function setActiveMenuItem(page) {
     // Remove active state from all links in desktop sidebar
     const desktopLinks = document.querySelectorAll('#desktopSidebar [data-page]');
     desktopLinks.forEach(link => {
-        link.classList.remove('bg-gray-200');
-        link.classList.add('bg-gray-100');
+        link.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+        link.classList.add('bg-gray-100', 'dark:bg-gray-800');
     });
     
     // Remove active state from all links in mobile sidebar
     const mobileLinks = document.querySelectorAll('#mobileSidebar [data-page]');
     mobileLinks.forEach(link => {
-        link.classList.remove('bg-gray-200');
-        link.classList.add('bg-white');
+        link.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+        link.classList.add('bg-white', 'dark:bg-gray-900');
     });
     
     // Add active state to clicked desktop sidebar links
     const activeDesktopLinks = document.querySelectorAll(`#desktopSidebar [data-page="${page}"]`);
     activeDesktopLinks.forEach(link => {
-        link.classList.add('bg-gray-200');
-        link.classList.remove('bg-gray-100');
+        link.classList.add('bg-gray-200', 'dark:bg-gray-700');
+        link.classList.remove('bg-gray-100', 'dark:bg-gray-800');
     });
     
     // Add active state to clicked mobile sidebar links
     const activeMobileLinks = document.querySelectorAll(`#mobileSidebar [data-page="${page}"]`);
     activeMobileLinks.forEach(link => {
-        link.classList.add('bg-gray-200');
-        link.classList.remove('bg-white');
+        link.classList.add('bg-gray-200', 'dark:bg-gray-700');
+        link.classList.remove('bg-white', 'dark:bg-gray-900');
     });
 }
 

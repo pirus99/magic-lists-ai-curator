@@ -5,6 +5,59 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-11-XX
+
+### Added
+
+- **"Regenerate description on refresh" option in the edit-playlist modal**
+  (`frontend/templates/modals/_edit_playlist_modal.html`,
+  `frontend/static/ui/modals.js`): you can now decide per playlist whether a refresh
+  should replace the description with a freshly generated one. The checkbox is stored as
+  `refresh_description` in the playlist's `curation_settings` and defaults to *on*, so
+  existing playlists keep their previous behaviour.
+  - Unchecking it keeps your edited description when the playlist is refreshed, which is
+    what the old implicit "a description exists, so never touch it" rule did — but now it
+    is an explicit, visible choice instead of a side effect of editing.
+  - `PUT /api/playlists/{playlist_id}/settings` normalizes the value to a real boolean
+    before persisting it.
+- **Timezone and documentation index**: `TZ` is now documented as the way to control the
+  server-local time used by schedules and log timestamps.
+  - `TZ` added to the Docker Compose and `docker run` examples in `docs/DOCKER.md`, with a
+    note that schedules run in the container's local time.
+  - `TZ` documented in `docs/ENVIRONMENT.md`.
+  - New `docs/README.md` indexes the documentation set and links it from the top-level
+    `README.md`.
+
+### Changed
+
+- **Description handling on refresh is now uniform across all playlist types**
+  (`backend/playlist_metadata.py`): `resolve_refresh_description()` takes an explicit
+  `refresh_description` flag instead of the `metadata_overrides` dict, and a new
+  `description_refresh_enabled()` helper reads the setting from `curation_settings`.
+  - This Is and Genre Mix previously froze the description as soon as *any* description
+    existed (including the AI-generated one written at creation), so their descriptions
+    were never updated again. They now follow the checkbox like every other type.
+  - Artist Radio, Song Radio and Re-Discover previously overwrote the description on every
+    refresh regardless of user edits. They now honour the checkbox too.
+  - Clearing the description no longer silently re-enables regeneration on the next
+    refresh; only the checkbox controls it.
+
+### Fixed
+
+- **Active sidebar item not highlighted in dark mode** (`frontend/static/ui/nav.js`):
+  `setActiveMenuItem()` only toggled `bg-gray-200`, which has no effect in dark mode, so
+  the active item looked identical to the others (`dark:bg-gray-800`) and only appeared
+  highlighted while it still had keyboard focus (`dark:focus:bg-gray-700`). The active
+  state now also applies `dark:bg-gray-700` and removes the base dark background class,
+  so the current page stays highlighted until another sidebar item is selected, matching
+  light mode.
+- **Spacing-constraint messages flooded the log at `INFO`** (`backend/output_sorting.py`):
+  `ensure_artist_spacing()` and `ensure_album_spacing()` logged "songs could not be spaced
+  due to spacing constraints" at `warning`, so every playlist that could not fully satisfy
+  the requested artist/album spacing produced `⚠️` lines that looked like failures. These
+  are expected outcomes of the constraint solver, not errors, and are now logged at
+  `debug` — visible with `LOG_LEVEL=DEBUG` but no longer noise in normal operation.
+
 ## [1.3.0] - 2026-11-18
 
 ### Added
