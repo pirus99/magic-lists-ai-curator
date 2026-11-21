@@ -71,6 +71,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the requested artist/album spacing produced `⚠️` lines that looked like failures. These
   are expected outcomes of the constraint solver, not errors, and are now logged at
   `debug` — visible with `LOG_LEVEL=DEBUG` but no longer noise in normal operation.
+- **Description AI model health check** (`backend/services/health_check_service.py`):
+  when `DESCRIPTION_AI_MODEL` is set to a model different from `AI_MODEL`, the System
+  Check verifies that the description model is reachable through the configured AI
+  provider and displays the result in the AI provider section on the health check page.
+  Description model failures are warnings because description generation is optional.
 
 ## [1.3.0] - 2026-11-18
 

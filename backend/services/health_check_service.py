@@ -1,7 +1,7 @@
 import os
 import httpx
 import aiosqlite
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from google import genai
 
 from ..database import get_database_path
@@ -76,7 +76,15 @@ class HealthCheckService:
         checks.append(ai_check)
         if ai_check["status"] == "error":
             all_passed = False
-            
+
+        # Description-only AI model: only checked when it differs from the main
+        # AI_MODEL, so the default (shared) configuration is not double-checked.
+        desc_check = await self._check_description_ai_model()
+        if desc_check is not None:
+            checks.append(desc_check)
+            # Non-blocking: descriptions are a non-critical enhancement, so a
+            # failing description model is reported without failing startup.
+
         # MULTIPLE LIBRARIES FIX: Check for library configuration
         library_check = await self._check_navidrome_library_config()
         checks.append(library_check)
@@ -664,10 +672,48 @@ class HealthCheckService:
                 "suggestion": "Check AI_PROVIDER in .env file. Valid options: openrouter, groq, google, ollama"
             }
     
-    async def _check_openrouter_provider(self) -> Dict[str, str]:
+    async def _check_description_ai_model(self) -> Optional[Dict[str, str]]:
+        """Check the description-only AI model when it differs from the main model.
+
+        DESCRIPTION_AI_MODEL is an optional, cheaper model used only for writing
+        short playlist descriptions. We only run a connectivity check when it is
+        explicitly set to something other than the main AI_MODEL, so the default
+        (shared) configuration is not double-checked.
+        """
+        description_model = os.getenv("DESCRIPTION_AI_MODEL")
+        main_model = os.getenv("AI_MODEL")
+        if not description_model or description_model == main_model:
+            return None
+
+        provider_type = os.getenv("AI_PROVIDER", "openrouter")
+        if provider_type == "ollama":
+            result = await self._check_ollama_provider(model=description_model)
+        elif provider_type == "groq":
+            result = await self._check_groq_provider(model=description_model)
+        elif provider_type == "openrouter":
+            result = await self._check_openrouter_provider(model=description_model)
+        elif provider_type == "google":
+            result = await self._check_google_provider(model=description_model)
+        else:
+            return {
+                "name": "Description AI Model",
+                "status": "error",
+                "message": f"Unknown AI provider: {provider_type}",
+                "suggestion": "Check AI_PROVIDER in .env file. Valid options: openrouter, groq, google, ollama"
+            }
+
+        # Label the result as the description model and keep it non-blocking:
+        # descriptions are a non-critical enhancement, so a failing description
+        # model is reported as a warning rather than failing startup.
+        result["name"] = "Description AI Model"
+        if result["status"] == "error":
+            result["status"] = "warning"
+        return result
+
+    async def _check_openrouter_provider(self, model: Optional[str] = None) -> Dict[str, str]:
         """Check OpenRouter API key and connectivity"""
         api_key = os.getenv("AI_API_KEY")
-        model = os.getenv("AI_MODEL", "openai/gpt-3.5-turbo")
+        model = model or os.getenv("AI_MODEL", "openai/gpt-3.5-turbo")
         base_url = os.getenv("AI_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
         
         if not api_key:
@@ -732,9 +778,9 @@ class HealthCheckService:
                 "suggestion": "API key is configured but service connectivity could not be verified"
             }
     
-    async def _check_ollama_provider(self) -> Dict[str, str]:
+    async def _check_ollama_provider(self, model: Optional[str] = None) -> Dict[str, str]:
         """Check Ollama instance connectivity"""
-        model = os.getenv("AI_MODEL", "llama3.2")
+        model = model or os.getenv("AI_MODEL", "llama3.2")
         base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1/chat/completions")
         
         # Test Ollama connectivity with a minimal request
@@ -795,10 +841,10 @@ class HealthCheckService:
                 "suggestion": "Check your Ollama configuration in .env file"
             }
     
-    async def _check_groq_provider(self) -> Dict[str, str]:
+    async def _check_groq_provider(self, model: Optional[str] = None) -> Dict[str, str]:
         """Check Groq API key and connectivity"""
         api_key = os.getenv("AI_API_KEY")
-        model = os.getenv("AI_MODEL", "mixtral-8x7b-32768")  # Groq default
+        model = model or os.getenv("AI_MODEL", "mixtral-8x7b-32768")  # Groq default
         base_url = "https://api.groq.com/openai/v1/chat/completions"
         
         if not api_key:
@@ -863,10 +909,10 @@ class HealthCheckService:
                 "suggestion": "API key is configured but service connectivity could not be verified"
             }
     
-    async def _check_google_provider(self) -> Dict[str, str]:
+    async def _check_google_provider(self, model: Optional[str] = None) -> Dict[str, str]:
         """Check Google AI API key and connectivity using Google AI SDK"""
         api_key = os.getenv("AI_API_KEY")
-        model = os.getenv("AI_MODEL", "gemini-2.5-flash")
+        model = model or os.getenv("AI_MODEL", "gemini-2.5-flash")
         
         if not api_key:
             return {
