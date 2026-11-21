@@ -44,6 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Manage Playlists page showed wrong times and a hard-coded 12h format**
+  (`backend/database/playlists.py`, `frontend/static/utils.js`,
+  `frontend/static/playlists.js`): the "Created" and "Refreshed" timestamps were
+  stored with SQLite's `CURRENT_TIMESTAMP`, which is always UTC, while the rest of the
+  app (schedules, refresh history) stores server-local time. On a non-UTC server (e.g.
+  `TZ=America/New_York`) those two fields therefore displayed several hours off.
+  - `create_playlist`, `update_playlist_content` and `update_playlist_last_refreshed`
+    now write server-local timestamps via a shared `_now_iso()` helper instead of
+    `CURRENT_TIMESTAMP`, so `created_at`/`last_refreshed` match the scheduler's
+    `next_refresh` and `refresh_history` rows.
+  - `formatFriendlyDate` and `formatNextRefresh` now use `toLocaleString(undefined, …)`
+    (the same locale-aware approach as the scheduler modal's `formatDateTime`) instead
+    of a hard-coded `en-US` 12h am/pm format, so the time format follows the browser's
+    locale (24h or 12h) consistently across both pages.
 - **Active sidebar item not highlighted in dark mode** (`frontend/static/ui/nav.js`):
   `setActiveMenuItem()` only toggled `bg-gray-200`, which has no effect in dark mode, so
   the active item looked identical to the others (`dark:bg-gray-800`) and only appeared

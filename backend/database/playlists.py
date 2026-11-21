@@ -1,8 +1,22 @@
 import json
 import aiosqlite
+from datetime import datetime
 from typing import List, Optional, Dict
 
 from ..schemas import Playlist
+
+
+def _now_iso() -> str:
+    """Return the current server-local time as an ISO string.
+
+    SQLite's ``CURRENT_TIMESTAMP`` is always UTC, which makes naive timestamps
+    display several hours off for non-UTC servers (e.g. America/New_York). Writing
+    the server-local time explicitly keeps ``created_at``/``last_refreshed`` in the
+    same zone as the scheduler's ``next_refresh`` and ``refresh_history`` rows, so
+    the frontend (which renders naive strings as browser-local) shows the correct
+    wall-clock time.
+    """
+    return datetime.now().isoformat()
 
 
 def _safe_json_loads(value, default):
@@ -28,9 +42,9 @@ class _DatabasePlaylistsMixin:
 
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-                INSERT INTO playlists (artist_id, playlist_name, songs, description, navidrome_playlist_id, playlist_length, library_ids, curation_settings, playlist_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (artist_id, playlist_name, songs_json, description, navidrome_playlist_id, playlist_length, library_ids_json, curation_settings_json, playlist_type))
+                INSERT INTO playlists (artist_id, playlist_name, songs, description, navidrome_playlist_id, playlist_length, library_ids, curation_settings, playlist_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (artist_id, playlist_name, songs_json, description, navidrome_playlist_id, playlist_length, library_ids_json, curation_settings_json, playlist_type, _now_iso(), _now_iso()))
         
             playlist_id = cursor.lastrowid
             await db.commit()
@@ -358,9 +372,9 @@ class _DatabasePlaylistsMixin:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
                 UPDATE playlists 
-                SET songs = ?, description = ?, last_refreshed = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                SET songs = ?, description = ?, last_refreshed = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE navidrome_playlist_id = ?
-            """, (songs_json, description, navidrome_playlist_id))
+            """, (songs_json, description, _now_iso(), navidrome_playlist_id))
         
             await db.commit()
             return cursor.rowcount > 0
@@ -431,9 +445,9 @@ class _DatabasePlaylistsMixin:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
                 UPDATE playlists 
-                SET last_refreshed = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                SET last_refreshed = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE navidrome_playlist_id = ?
-            """, (navidrome_playlist_id,))
+            """, (_now_iso(), navidrome_playlist_id,))
         
             await db.commit()
             return cursor.rowcount > 0

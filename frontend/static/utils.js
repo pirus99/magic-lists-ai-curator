@@ -3,16 +3,17 @@
         formatFriendlyDate(dateString) {
             if (!dateString) return 'Never';
             const date = new Date(dateString);
-            const day = date.getDate();
-            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            const month = monthNames[date.getMonth()];
-            const year = date.getFullYear();
-            let hours = date.getHours();
-            const minutes = date.getMinutes().toString().padStart(2,'0');
-            const ampm = hours >= 12 ? 'pm' : 'am';
-            hours = hours % 12;
-            hours = hours ? hours : 12;
-            return `${day} ${month} ${year} ${hours}:${minutes}${ampm}`;
+            if (Number.isNaN(date.getTime())) return 'Never';
+            // Locale-aware (mirrors the scheduler modal's formatDateTime) so the
+            // time format follows the browser's locale instead of being hard-coded
+            // to 12h am/pm.
+            return date.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
         }
     };
 
@@ -312,22 +313,20 @@ function displayLastFmCard(checks) {
     }
 }
 
-// Helper function to format dates in friendly format (e.g., "5 Oct 2025 10:12am")
+// Helper function to format dates in a locale-aware format. Mirrors the
+// scheduler modal's formatDateTime so the time format follows the browser's
+// locale (24h or 12h) instead of being hard-coded to 12h am/pm.
 function formatFriendlyDate(dateString) {
     if (!dateString) return 'Never';
 
     const date = new Date(dateString);
-    const day = date.getDate();
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const month = monthNames[date.getMonth()];
-    const year = date.getFullYear();
+    if (Number.isNaN(date.getTime())) return 'Never';
 
-    let hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'pm' : 'am';
-    hours = hours % 12;
-    hours = hours ? hours : 12; // 0 should be 12
-
-    return `${day} ${month} ${year} ${hours}:${minutes}${ampm}`;
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 }
