@@ -46,12 +46,16 @@
         <p>When enabled, MagicLists asks the ListenBrainz API for recordings similar to your source track and matches them against your library. When disabled, the pool is built only from the other enabled sources.</p>
       </div>
       <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-        <p class="mb-1 font-semibold text-gray-900 dark:text-gray-100">Algorithm and minimum score</p>
-        <p>The algorithm controls how similarity is measured. The minimum score controls how broad or narrow the pool becomes: lower scores include more distant matches, higher scores stay closer to the source track.</p>
+        <p class="mb-1 font-semibold text-gray-900 dark:text-gray-100">ListenBrainz algorithm</p>
+        <p>The algorithm controls how similarity is measured. The exact algorithm workflow is known by ListenBrainz labs, but the names of the selectable Options name a timespan with a algorithm described by a single Word. Try out what works best for you.</p>
+      </div>
+      <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+        <p class="mb-1 font-semibold text-gray-900 dark:text-gray-100">ListenBrainz minimum similarity</p>
+        <p>The minimum score controls how broad or narrow the pool becomes: lower scores include more distant matches, higher scores stay closer to the source track but return fewer results.</p>
       </div>
       <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
         <p class="mb-1 font-semibold text-gray-900 dark:text-gray-100">Expansion rounds</p>
-        <p>After each round, the search continues from one of the newly found tracks to explore further along the similarity chain. More rounds build a larger and more adventurous pool, but the results drift further from the original song and the search takes longer.</p>
+        <p>This Value specifies the maximum number of Search rounds for Listenbrainz. After each search round, the search continues from one of the newly found tracks to explore further along the similarity chain. More rounds build a larger and more adventurous pool, but the results drift further from the original song and the search takes longer.</p>
       </div>
       <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
         <p class="mb-1 font-semibold text-gray-900 dark:text-gray-100">Find similar tracks</p>

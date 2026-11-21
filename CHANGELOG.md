@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-11-XX
+## [1.3.1] - 2026-11-21
 
 ### Added
 
@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `TZ` documented in `docs/ENVIRONMENT.md`.
   - New `docs/README.md` indexes the documentation set and links it from the top-level
     `README.md`.
+- **Description AI model health check** (`backend/services/health_check_service.py`):
+  when `DESCRIPTION_AI_MODEL` is set to a model different from `AI_MODEL`, the System
+  Check verifies that the description model is reachable through the configured AI
+  provider and displays the result in the AI provider section on the health check page.
+  Description model failures are warnings because description generation is optional.
 
 ### Changed
 
@@ -41,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     refresh regardless of user edits. They now honour the checkbox too.
   - Clearing the description no longer silently re-enables regeneration on the next
     refresh; only the checkbox controls it.
+- **Song Radio ListenBrainz options descriptions**:
+  Added more detailed explanations for the algorithm and minimum similarity options in the help page
+  (`frontend/templates/help/song_radio.html`) and the Artist Radio help page
+  (`frontend/templates/help/artist_radio.html`).
+  - Added a note to Score and Expansion Rounds on Song Radio page to explain the effect on playlist generation.
 
 ### Fixed
 
@@ -71,11 +81,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the requested artist/album spacing produced `⚠️` lines that looked like failures. These
   are expected outcomes of the constraint solver, not errors, and are now logged at
   `debug` — visible with `LOG_LEVEL=DEBUG` but no longer noise in normal operation.
-- **Description AI model health check** (`backend/services/health_check_service.py`):
-  when `DESCRIPTION_AI_MODEL` is set to a model different from `AI_MODEL`, the System
-  Check verifies that the description model is reachable through the configured AI
-  provider and displays the result in the AI provider section on the health check page.
-  Description model failures are warnings because description generation is optional.
 
 ## [1.3.0] - 2026-11-18
 
