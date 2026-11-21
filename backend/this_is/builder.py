@@ -266,10 +266,10 @@ async def refresh_this_is_playlist(playlist: Dict[str, Any], db: DatabaseManager
 
 def _resolve_description(original_playlist: Dict[str, Any], generated_description: str) -> str:
     """Resolve the refresh description using the shared metadata helper."""
-    from ..playlist_metadata import resolve_refresh_description
+    from ..playlist_metadata import description_refresh_enabled, resolve_refresh_description
 
     return resolve_refresh_description(
         existing_description=original_playlist.get("description"),
         generated_description=generated_description,
-        metadata_overrides={"description": bool(original_playlist.get("description"))},
+        refresh_description=description_refresh_enabled(original_playlist.get("curation_settings")),
     )

@@ -84,10 +84,10 @@ def ensure_artist_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
         logger.debug(f"↕️ (Artist) {repositioned_songs_count} songs repositioned")
         return new_playlist, valid
     if repositioned_songs_count > 0 and non_spaced_songs_count > 0:
-        logger.warning(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.debug(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
     if non_spaced_songs_count > 0:
-        logger.warning(f"⚠️ (Artist) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.debug(f"⚠️ (Artist) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
 
     return new_playlist, valid
@@ -172,10 +172,10 @@ def ensure_album_spacing(playlist: list[dict], spacing: int = 1) -> list[dict]:
         logger.debug(f"↕️ (Album) {repositioned_songs_count} songs repositioned")
         return new_playlist, valid
     if repositioned_songs_count > 0 and non_spaced_songs_count > 0:
-        logger.warning(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.debug(f"⚠️ (Album) {repositioned_songs_count} songs repositioned and {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
     if non_spaced_songs_count > 0:
-        logger.warning(f"⚠️ (Album) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
+        logger.debug(f"⚠️ (Album) {non_spaced_songs_count} songs could not be spaced due to spacing constraints")
         return new_playlist, valid
 
     return new_playlist, valid

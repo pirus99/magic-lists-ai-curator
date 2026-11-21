@@ -450,22 +450,32 @@ async function updatePlaylistCount() {
 }
 
 // Manage Playlists functionality
-// Format next refresh time in a user-friendly way
+// Format next refresh time in a user-friendly, locale-aware way (mirrors the
+// scheduler modal's formatDateTime so the time format follows the browser locale
+// instead of being hard-coded to 12h am/pm).
 function formatNextRefresh(nextRefreshTime) {
     const nextRefresh = new Date(nextRefreshTime);
+    if (Number.isNaN(nextRefresh.getTime())) return 'No scheduled refresh';
+
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
     const nextRefreshDate = new Date(nextRefresh.getFullYear(), nextRefresh.getMonth(), nextRefresh.getDate());
 
-    const timeString = nextRefresh.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const dateTimeString = nextRefresh.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 
     if (nextRefreshDate.getTime() === today.getTime()) {
-        return `${timeString} today`;
+        return `${dateTimeString} (today)`;
     } else if (nextRefreshDate.getTime() === tomorrow.getTime()) {
-        return `${timeString} tomorrow`;
+        return `${dateTimeString} (tomorrow)`;
     } else {
-        return `${nextRefresh.toLocaleDateString('en-GB')} ${timeString}`;
+        return dateTimeString;
     }
 }
 

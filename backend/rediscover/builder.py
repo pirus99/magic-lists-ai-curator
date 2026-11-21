@@ -180,8 +180,17 @@ async def refresh_rediscover_playlist(playlist: Dict[str, Any], db: DatabaseMana
     ai_description = first_track.get("ai_description", "")
     ai_curated = first_track.get("ai_curated", False)
 
+    from ..playlist_metadata import description_refresh_enabled, resolve_refresh_description
+
+    refresh_description = description_refresh_enabled(settings)
+
     track_ids = [track["id"] for track in tracks]
-    comment_to_use = ai_description if (ai_description and ai_curated) else "Re-Discover Weekly v2.0 - Automatically refreshed"
+    generated_comment = ai_description if (ai_description and ai_curated) else "Re-Discover Weekly v2.0 - Automatically refreshed"
+    comment_to_use = resolve_refresh_description(
+        existing_description=playlist.get("description"),
+        generated_description=generated_comment,
+        refresh_description=refresh_description,
+    )
     await server_client.update_playlist(
         playlist_id=navidrome_playlist_id,
         track_ids=track_ids,
@@ -189,7 +198,12 @@ async def refresh_rediscover_playlist(playlist: Dict[str, Any], db: DatabaseMana
     )
 
     track_titles = [track["title"] for track in tracks]
-    description_to_store = ai_description if ai_curated else "Algorithmic selection"
+    generated_description = ai_description if ai_curated else "Algorithmic selection"
+    description_to_store = resolve_refresh_description(
+        existing_description=playlist.get("description"),
+        generated_description=generated_description,
+        refresh_description=refresh_description,
+    )
     await db.update_playlist_content(
         navidrome_playlist_id=navidrome_playlist_id,
         songs=track_titles,

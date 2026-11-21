@@ -158,11 +158,19 @@ async def refresh_artist_radio_playlist(playlist: Dict[str, Any], db: DatabaseMa
     if not selected_ids:
         raise ValueError("No curated tracks generated")
 
+    from ..playlist_metadata import description_refresh_enabled, resolve_refresh_description
+
+    comment_to_use = resolve_refresh_description(
+        existing_description=playlist.get("description"),
+        generated_description=description,
+        refresh_description=description_refresh_enabled(settings),
+    )
+
     server_client = get_server_client()
     await server_client.update_playlist(
         playlist_id=navidrome_playlist_id,
         track_ids=selected_ids,
-        comment=description,
+        comment=comment_to_use,
     )
 
     titles = {track["id"]: track.get("title", "") for track in tracks}
@@ -170,7 +178,7 @@ async def refresh_artist_radio_playlist(playlist: Dict[str, Any], db: DatabaseMa
     await db.update_playlist_content(
         navidrome_playlist_id=navidrome_playlist_id,
         songs=track_titles,
-        description=description,
+        description=comment_to_use,
     )
     return len(track_titles)
 

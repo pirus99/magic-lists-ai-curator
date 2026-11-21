@@ -5,7 +5,84 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0]
+## [1.3.1] - 2026-11-21
+
+### Added
+
+- **"Regenerate description on refresh" option in the edit-playlist modal**
+  (`frontend/templates/modals/_edit_playlist_modal.html`,
+  `frontend/static/ui/modals.js`): you can now decide per playlist whether a refresh
+  should replace the description with a freshly generated one. The checkbox is stored as
+  `refresh_description` in the playlist's `curation_settings` and defaults to *on*, so
+  existing playlists keep their previous behaviour.
+  - Unchecking it keeps your edited description when the playlist is refreshed, which is
+    what the old implicit "a description exists, so never touch it" rule did — but now it
+    is an explicit, visible choice instead of a side effect of editing.
+  - `PUT /api/playlists/{playlist_id}/settings` normalizes the value to a real boolean
+    before persisting it.
+- **Timezone and documentation index**: `TZ` is now documented as the way to control the
+  server-local time used by schedules and log timestamps.
+  - `TZ` added to the Docker Compose and `docker run` examples in `docs/DOCKER.md`, with a
+    note that schedules run in the container's local time.
+  - `TZ` documented in `docs/ENVIRONMENT.md`.
+  - New `docs/README.md` indexes the documentation set and links it from the top-level
+    `README.md`.
+- **Description AI model health check** (`backend/services/health_check_service.py`):
+  when `DESCRIPTION_AI_MODEL` is set to a model different from `AI_MODEL`, the System
+  Check verifies that the description model is reachable through the configured AI
+  provider and displays the result in the AI provider section on the health check page.
+  Description model failures are warnings because description generation is optional.
+
+### Changed
+
+- **Description handling on refresh is now uniform across all playlist types**
+  (`backend/playlist_metadata.py`): `resolve_refresh_description()` takes an explicit
+  `refresh_description` flag instead of the `metadata_overrides` dict, and a new
+  `description_refresh_enabled()` helper reads the setting from `curation_settings`.
+  - This Is and Genre Mix previously froze the description as soon as *any* description
+    existed (including the AI-generated one written at creation), so their descriptions
+    were never updated again. They now follow the checkbox like every other type.
+  - Artist Radio, Song Radio and Re-Discover previously overwrote the description on every
+    refresh regardless of user edits. They now honour the checkbox too.
+  - Clearing the description no longer silently re-enables regeneration on the next
+    refresh; only the checkbox controls it.
+- **Song Radio ListenBrainz options descriptions**:
+  Added more detailed explanations for the algorithm and minimum similarity options in the help page
+  (`frontend/templates/help/song_radio.html`) and the Artist Radio help page
+  (`frontend/templates/help/artist_radio.html`).
+  - Added a note to Score and Expansion Rounds on Song Radio page to explain the effect on playlist generation.
+
+### Fixed
+
+- **Manage Playlists page showed wrong times and a hard-coded 12h format**
+  (`backend/database/playlists.py`, `frontend/static/utils.js`,
+  `frontend/static/playlists.js`): the "Created" and "Refreshed" timestamps were
+  stored with SQLite's `CURRENT_TIMESTAMP`, which is always UTC, while the rest of the
+  app (schedules, refresh history) stores server-local time. On a non-UTC server (e.g.
+  `TZ=America/New_York`) those two fields therefore displayed several hours off.
+  - `create_playlist`, `update_playlist_content` and `update_playlist_last_refreshed`
+    now write server-local timestamps via a shared `_now_iso()` helper instead of
+    `CURRENT_TIMESTAMP`, so `created_at`/`last_refreshed` match the scheduler's
+    `next_refresh` and `refresh_history` rows.
+  - `formatFriendlyDate` and `formatNextRefresh` now use `toLocaleString(undefined, …)`
+    (the same locale-aware approach as the scheduler modal's `formatDateTime`) instead
+    of a hard-coded `en-US` 12h am/pm format, so the time format follows the browser's
+    locale (24h or 12h) consistently across both pages.
+- **Active sidebar item not highlighted in dark mode** (`frontend/static/ui/nav.js`):
+  `setActiveMenuItem()` only toggled `bg-gray-200`, which has no effect in dark mode, so
+  the active item looked identical to the others (`dark:bg-gray-800`) and only appeared
+  highlighted while it still had keyboard focus (`dark:focus:bg-gray-700`). The active
+  state now also applies `dark:bg-gray-700` and removes the base dark background class,
+  so the current page stays highlighted until another sidebar item is selected, matching
+  light mode.
+- **Spacing-constraint messages flooded the log at `INFO`** (`backend/output_sorting.py`):
+  `ensure_artist_spacing()` and `ensure_album_spacing()` logged "songs could not be spaced
+  due to spacing constraints" at `warning`, so every playlist that could not fully satisfy
+  the requested artist/album spacing produced `⚠️` lines that looked like failures. These
+  are expected outcomes of the constraint solver, not errors, and are now logged at
+  `debug` — visible with `LOG_LEVEL=DEBUG` but no longer noise in normal operation.
+
+## [1.3.0] - 2026-11-18
 
 ### Added
 
